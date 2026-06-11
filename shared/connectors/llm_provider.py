@@ -109,13 +109,13 @@ def get_provider() -> LLMProvider:
     if provider_name == "ollama":
         return OllamaProvider()
     elif provider_name == "openai":
-            from shared.connectors.llm_openai import OpenAIProvider
+        from shared.connectors.llm_openai import OpenAIProvider
         return OpenAIProvider()
     elif provider_name == "gemini":
-            from shared.connectors.llm_gemini import GeminiProvider
+        from shared.connectors.llm_gemini import GeminiProvider
         return GeminiProvider()
     elif provider_name == "claude":
-            from shared.connectors.llm_claude import ClaudeProvider
+        from shared.connectors.llm_claude import ClaudeProvider
         return ClaudeProvider()
     else:
         logger.warning("Unknown LLM provider %s, falling back to Ollama", provider_name)
