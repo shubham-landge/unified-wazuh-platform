@@ -4,7 +4,7 @@ from fastapi import Request, HTTPException, Depends
 from fastapi.security import APIKeyHeader
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
 
-from app.config import settings
+from shared.config import settings
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 

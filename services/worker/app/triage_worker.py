@@ -1,12 +1,14 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
-
 import redis.asyncio as redis
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
-from app.config import settings
+from shared.config import settings
+from shared.models.alert import Alert
+from shared.models.ai_triage_result import AiTriageResult
+from shared.models.case import Case
+from shared.connectors.llm_provider import get_provider
 
 logger = logging.getLogger(__name__)
 
@@ -43,17 +45,15 @@ class TriageWorker:
 
         logger.info("Processing triage for alert %s", alert_id)
 
-        from sqlalchemy import select
-        from app.models.alert import Alert
+            from sqlalchemy import select
 
-        async with self.session_factory() as session:
+            async with self.session_factory() as session:
             result = await session.execute(select(Alert).where(Alert.id == alert_id))
             alert = result.scalar_one_or_none()
             if not alert:
                 logger.warning("Alert %s not found", alert_id)
                 return
 
-            from services.connectors.llm_provider import get_provider
             provider = get_provider()
 
             user_prompt = f"""
@@ -72,9 +72,6 @@ MITRE: {alert.mitre_tactic} / {alert.mitre_technique}
                 system_prompt=TRIAGE_PROMPT_SYSTEM,
                 user_prompt=user_prompt,
             )
-
-            from app.models.ai_triage_result import AiTriageResult
-            from app.models.case import Case
 
             triage = AiTriageResult(
                 alert_id=alert.id,

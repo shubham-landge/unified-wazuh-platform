@@ -5,7 +5,7 @@ from sqlalchemy import select, desc
 from starlette.status import HTTP_404_NOT_FOUND
 
 from app.db import get_db
-from app.models.vulnerability import Vulnerability
+from shared.models.vulnerability import Vulnerability
 from app.middleware.auth import validate_api_key
 
 router = APIRouter(prefix="/vulnerabilities", tags=["vulnerabilities"])

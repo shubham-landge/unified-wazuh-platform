@@ -73,8 +73,8 @@ services:
   # ─── FastAPI Backend ───
   api:
     build:
-      context: ./services/api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/api/Dockerfile
     container_name: soc-api
     restart: unless-stopped
     depends_on:
@@ -102,8 +102,8 @@ services:
   # ─── Background Workers ───
   worker:
     build:
-      context: ./services/worker
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/worker/Dockerfile
     container_name: soc-worker
     restart: unless-stopped
     depends_on:
@@ -130,8 +130,8 @@ services:
   # ─── Dashboard ───
   dashboard:
     build:
-      context: ./services/dashboard
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/dashboard/Dockerfile
     container_name: soc-dashboard
     restart: unless-stopped
     depends_on:

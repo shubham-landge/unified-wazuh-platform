@@ -1,4 +1,3 @@
-# Re-exported from shared package
 from shared.models.base import Base
 from shared.models.tenant import Tenant
 from shared.models.api_key import ApiKey

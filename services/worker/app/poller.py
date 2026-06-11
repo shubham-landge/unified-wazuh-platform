@@ -2,14 +2,12 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any
-
 import redis.asyncio as redis
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
-from app.config import settings
-from app.models.alert import Alert
-from app.models.base import Base
+from shared.config import settings
+from shared.models.alert import Alert
+from shared.connectors.wazuh_indexer import WazuhIndexerConnector
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +32,6 @@ class AlertPoller:
     async def poll(self):
         logger.info("Polling Wazuh Indexer for new alerts...")
 
-        from services.connectors.wazuh_indexer import WazuhIndexerConnector
         connector = WazuhIndexerConnector()
         raw_alerts = await connector.search_alerts(
             lookback_hours=settings.alert_lookback_hours,

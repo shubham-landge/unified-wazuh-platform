@@ -6,11 +6,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl && \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY services/dashboard/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app/ app/
-COPY templates/ templates/
+COPY services/dashboard/app/ app/
+COPY services/dashboard/templates/ templates/
 
 EXPOSE 80
 

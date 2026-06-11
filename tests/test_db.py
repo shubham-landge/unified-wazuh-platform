@@ -14,8 +14,8 @@ async def test_db_connection():
 
 @pytest.mark.asyncio
 async def test_create_alert():
-    from app.db import async_session
-    from app.models.alert import Alert
+from app.db import async_session
+from shared.models.alert import Alert
 
     async with async_session() as session:
         alert = Alert(
@@ -36,8 +36,8 @@ async def test_create_alert():
 
 @pytest.mark.asyncio
 async def test_create_case():
-    from app.db import async_session
-    from app.models.case import Case
+from app.db import async_session
+from shared.models.case import Case
 
     async with async_session() as session:
         case = Case(
@@ -54,8 +54,8 @@ async def test_create_case():
 
 @pytest.mark.asyncio
 async def test_create_analyst_note():
-    from app.db import async_session
-    from app.models.analyst_note import AnalystNote
+from app.db import async_session
+from shared.models.analyst_note import AnalystNote
 
     async with async_session() as session:
         note = AnalystNote(
@@ -72,8 +72,8 @@ async def test_create_analyst_note():
 
 @pytest.mark.asyncio
 async def test_create_vulnerability():
-    from app.db import async_session
-    from app.models.vulnerability import Vulnerability
+from app.db import async_session
+from shared.models.vulnerability import Vulnerability
 
     async with async_session() as session:
         vuln = Vulnerability(
@@ -92,8 +92,8 @@ async def test_create_vulnerability():
 
 @pytest.mark.asyncio
 async def test_create_audit_log():
-    from app.db import async_session
-    from app.models.audit_log import AuditLog
+from app.db import async_session
+from shared.models.audit_log import AuditLog
 
     async with async_session() as session:
         log = AuditLog(

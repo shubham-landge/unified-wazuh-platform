@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev curl && \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY services/api/requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 FROM python:3.12-slim
@@ -20,7 +20,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 
-COPY app/ app/
+COPY shared/ shared/
+COPY services/api/app/ app/
+COPY services/api/prompts/ app/prompts/
+
+ENV PYTHONPATH=/app
 
 EXPOSE 8000
 

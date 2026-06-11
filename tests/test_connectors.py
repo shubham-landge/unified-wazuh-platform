@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 @pytest.mark.asyncio
 async def test_ollama_provider_analyze():
-    from services.connectors.llm_provider import OllamaProvider
+    from shared.connectors.llm_provider import OllamaProvider
 
     provider = OllamaProvider(model="qwen2.5-coder:3b")
 
@@ -32,7 +32,7 @@ async def test_ollama_provider_analyze():
 
 @pytest.mark.asyncio
 async def test_ollama_provider_health():
-    from services.connectors.llm_provider import OllamaProvider
+    from shared.connectors.llm_provider import OllamaProvider
 
     provider = OllamaProvider(model="qwen2.5-coder:3b")
 
@@ -52,7 +52,7 @@ async def test_ollama_provider_health():
 
 @pytest.mark.asyncio
 async def test_mask_sensitive_data_ips():
-    from services.connectors.llm_provider import mask_sensitive_data
+    from shared.connectors.llm_provider import mask_sensitive_data
 
     text = "Source IP: 192.168.1.100 accessed from 10.0.0.50"
     masked = mask_sensitive_data(text)
@@ -62,7 +62,7 @@ async def test_mask_sensitive_data_ips():
 
 @pytest.mark.asyncio
 async def test_mask_sensitive_data_tokens():
-    from services.connectors.llm_provider import mask_sensitive_data
+    from shared.connectors.llm_provider import mask_sensitive_data
 
     text = "Token: ghp_abcdefghijklmnopqrstuvwxyz12345678901234"
     masked = mask_sensitive_data(text)
@@ -71,7 +71,7 @@ async def test_mask_sensitive_data_tokens():
 
 @pytest.mark.asyncio
 async def test_mask_sensitive_data_emails():
-    from services.connectors.llm_provider import mask_sensitive_data
+    from shared.connectors.llm_provider import mask_sensitive_data
 
     text = "User: admin@company.com accessed system"
     masked = mask_sensitive_data(text)
@@ -81,7 +81,7 @@ async def test_mask_sensitive_data_emails():
 
 @pytest.mark.asyncio
 async def test_get_provider_default():
-    from services.connectors.llm_provider import get_provider
+    from shared.connectors.llm_provider import get_provider
 
     provider = get_provider()
     assert provider is not None
@@ -90,7 +90,7 @@ async def test_get_provider_default():
 
 @pytest.mark.asyncio
 async def test_ollama_provider_malformed_json():
-    from services.connectors.llm_provider import OllamaProvider
+    from shared.connectors.llm_provider import OllamaProvider
 
     provider = OllamaProvider(model="qwen2.5-coder:3b")
 

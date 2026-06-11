@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
 from app.db import get_db
-from app.models.audit_log import AuditLog
+from shared.models.audit_log import AuditLog
 from app.middleware.auth import validate_api_key
 
 router = APIRouter(prefix="/audit", tags=["audit"])

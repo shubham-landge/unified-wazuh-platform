@@ -7,8 +7,8 @@ from pydantic import BaseModel
 from starlette.status import HTTP_404_NOT_FOUND
 
 from app.db import get_db
-from app.models.case import Case
-from app.models.analyst_note import AnalystNote
+from shared.models.case import Case
+from shared.models.analyst_note import AnalystNote
 from app.middleware.auth import validate_api_key
 
 router = APIRouter(prefix="/cases", tags=["cases"])

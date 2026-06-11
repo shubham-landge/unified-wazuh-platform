@@ -6,7 +6,7 @@ from sqlalchemy import select, desc
 from starlette.status import HTTP_404_NOT_FOUND
 
 from app.db import get_db
-from app.models.alert import Alert
+from shared.models.alert import Alert
 from app.middleware.auth import validate_api_key
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])

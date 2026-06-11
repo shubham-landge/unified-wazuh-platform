@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
-from app.models.base import Base
+from shared.models.base import Base
 
 
 class AnalystNote(Base):

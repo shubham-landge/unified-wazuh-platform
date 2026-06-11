@@ -5,9 +5,9 @@ from pydantic import BaseModel
 from starlette.status import HTTP_404_NOT_FOUND
 
 from app.db import get_db
-from app.models.alert import Alert
-from app.models.ai_triage_result import AiTriageResult
-from app.models.case import Case
+from shared.models.alert import Alert
+from shared.models.ai_triage_result import AiTriageResult
+from shared.models.case import Case
 from app.middleware.auth import validate_api_key
 
 router = APIRouter(prefix="/triage", tags=["triage"])
@@ -23,7 +23,7 @@ async def run_triage(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
 ):
-    from app.config import settings
+    from shared.config import settings
 
     import uuid
     try:

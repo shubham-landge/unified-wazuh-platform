@@ -36,7 +36,7 @@ async def health_check(db: AsyncSession = Depends(get_db), _: str = Depends(vali
 
 @router.get("/wazuh/health")
 async def wazuh_health(_: str = Depends(validate_api_key)):
-    from app.config import settings
+    from shared.config import settings
 
     checks = {
         "api_url": settings.wazuh_api_url,
@@ -49,7 +49,7 @@ async def wazuh_health(_: str = Depends(validate_api_key)):
 
 @router.get("/model/status")
 async def model_status(_: str = Depends(validate_api_key)):
-    from app.config import settings
+    from shared.config import settings
 
     return {
         "provider": settings.llm_provider,

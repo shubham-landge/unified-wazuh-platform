@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
 from app.db import get_db
-from app.models.asset import Asset
+from shared.models.asset import Asset
 from app.middleware.auth import validate_api_key
 
 router = APIRouter(prefix="/assets", tags=["assets"])

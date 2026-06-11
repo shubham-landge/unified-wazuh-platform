@@ -3,7 +3,7 @@ import logging
 from typing import Any
 from datetime import datetime, timedelta, timezone
 
-from app.config import settings
+from shared.config import settings
 
 logger = logging.getLogger(__name__)
 

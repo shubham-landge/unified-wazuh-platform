@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import String, Integer, DateTime, JSON, Text, BigInteger
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
-from app.models.base import Base
+from shared.models.base import Base
 
 
 class Alert(Base):

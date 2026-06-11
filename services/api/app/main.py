@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import settings
+from shared.config import settings
 from app.middleware.audit import AuditMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.dashboard_access import DashboardAccessMiddleware
