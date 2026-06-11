@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unified Wazuh SOC Platform</title>
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <script src="https://unpkg.com/alpinejs@3.14.3" defer></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        soc: {
+                            900: '#0a0f1a',
+                            800: '#0f1729',
+                            700: '#1a2338',
+                            600: '#2a3750',
+                            500: '#3b4a68',
+                            400: '#5c6f91',
+                            300: '#7e8fa8',
+                            200: '#a8b8cf',
+                            100: '#d1dce8',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background: #0a0f1a; color: #d1dce8; }
+        .card { background: #0f1729; border: 1px solid #1a2338; border-radius: 0.5rem; padding: 1rem; }
+        .card-header { color: #7e8fa8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+        .stat-value { font-size: 1.875rem; font-weight: 700; }
+        .badge { padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+        .badge-critical { background: #7f1d1d; color: #fecaca; }
+        .badge-high { background: #7c2d12; color: #fed7aa; }
+        .badge-medium { background: #713f12; color: #fde68a; }
+        .badge-low { background: #1e3a5f; color: #bfdbfe; }
+        .badge-open { background: #14532d; color: #bbf7d0; }
+        .badge-closed { background: #312e81; color: #c7d2fe; }
+        .nav-link { padding: 0.5rem 1rem; border-radius: 0.375rem; transition: all 0.2s; }
+        .nav-link:hover { background: #1a2338; }
+        .nav-link.active { background: #2a3750; color: white; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 0.75rem 0.5rem; color: #7e8fa8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #1a2338; }
+        td { padding: 0.75rem 0.5rem; border-bottom: 1px solid #1a2338; font-size: 0.875rem; }
+        tr:hover td { background: #1a2338; }
+        input, select { background: #0f1729; border: 1px solid #2a3750; color: #d1dce8; padding: 0.5rem; border-radius: 0.375rem; }
+        input:focus, select:focus { outline: none; border-color: #5c6f91; }
+    </style>
+</head>
+<body>
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <aside class="w-56 bg-soc-800 border-r border-soc-700 p-4 flex flex-col">
+            <div class="text-lg font-bold mb-8 px-3">
+                <span class="text-white">SOC</span>
+                <span class="text-soc-400">Platform</span>
+            </div>
+            <nav class="flex flex-col gap-1 flex-1">
+                <a href="/" class="nav-link {{ 'active' if page == 'overview' else 'text-soc-300' }}"
+                   hx-get="/" hx-target="body" hx-push-url="true">Overview</a>
+                <a href="/alerts" class="nav-link {{ 'active' if page == 'alerts' else 'text-soc-300' }}"
+                   hx-get="/alerts" hx-target="body" hx-push-url="true">Alerts</a>
+                <a href="/cases" class="nav-link {{ 'active' if page == 'cases' else 'text-soc-300' }}"
+                   hx-get="/cases" hx-target="body" hx-push-url="true">Cases</a>
+                <a href="/vulnerabilities" class="nav-link {{ 'active' if page == 'vulnerabilities' else 'text-soc-300' }}"
+                   hx-get="/vulnerabilities" hx-target="body" hx-push-url="true">Vulnerabilities</a>
+                <a href="/assets" class="nav-link {{ 'active' if page == 'assets' else 'text-soc-300' }}"
+                   hx-get="/assets" hx-target="body" hx-push-url="true">Assets</a>
+                <a href="/audit" class="nav-link {{ 'active' if page == 'audit' else 'text-soc-300' }}"
+                   hx-get="/audit" hx-target="body" hx-push-url="true">Audit Log</a>
+            </nav>
+            <div class="text-xs text-soc-500 px-3">
+                v1.0.0
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto p-6">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>

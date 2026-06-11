@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<div x-data="{ search: '' }">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Asset Inventory</h1>
+        <input type="text" placeholder="Search..." x-model="search" class="w-48">
+    </div>
+
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Agent Name</th>
+                    <th>Agent IP</th>
+                    <th>OS</th>
+                    <th>Status</th>
+                    <th>Groups</th>
+                    <th>Criticality</th>
+                    <th>Owner</th>
+                    <th>Last Seen</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for asset in assets %}
+                <tr x-show="search === '' || '{{ asset.agent_name }}'.toLowerCase().includes(search.toLowerCase())">
+                    <td class="font-semibold">{{ asset.agent_name or 'N/A' }}</td>
+                    <td class="font-mono text-xs">{{ asset.agent_ip or 'N/A' }}</td>
+                    <td class="text-xs">{{ asset.os_name or 'N/A' }} {{ asset.os_version or '' }}</td>
+                    <td><span class="badge badge-{{ 'open' if asset.status == 'active' else 'closed' }}">{{ asset.status }}</span></td>
+                    <td>
+                        {% for group in asset.groups or [] %}
+                        <span class="badge badge-low">{{ group }}</span>
+                        {% endfor %}
+                    </td>
+                    <td>{{ asset.criticality or '5' }}/10</td>
+                    <td>{{ asset.owner or '—' }}</td>
+                    <td class="text-xs">{{ asset.last_seen[:19] if asset.last_seen else 'N/A' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

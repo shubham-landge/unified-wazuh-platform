@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div x-data="{ search: '', statusFilter: '' }">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Cases</h1>
+        <div class="flex gap-2">
+            <input type="text" placeholder="Search..." x-model="search" class="w-48">
+            <select x-model="statusFilter">
+                <option value="">All Status</option>
+                <option value="open">Open</option>
+                <option value="in_progress">In Progress</option>
+                <option value="resolved">Resolved</option>
+                <option value="closed">Closed</option>
+                <option value="false_positive">False Positive</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Created</th>
+                    <th>Severity</th>
+                    <th>Status</th>
+                    <th>Title</th>
+                    <th>Category</th>
+                    <th>Assigned</th>
+                    <th>Escalated</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for case in cases %}
+                <tr class="cursor-pointer"
+                    hx-get="/cases/{{ case.id }}"
+                    hx-target="body"
+                    hx-push-url="true"
+                    x-show="(statusFilter === '' || case.status === statusFilter) && (search === '' || '{{ case.title }}'.toLowerCase().includes(search.toLowerCase()))">
+                    <td class="text-xs font-mono">{{ case.created_at[:19] if case.created_at else 'N/A' }}</td>
+                    <td><span class="badge badge-{{ case.severity }}">{{ case.severity }}</span></td>
+                    <td><span class="badge badge-{{ case.status }}">{{ case.status }}</span></td>
+                    <td class="max-w-sm truncate">{{ case.title }}</td>
+                    <td>{{ case.category or 'N/A' }}</td>
+                    <td>{{ case.assigned_to or '—' }}</td>
+                    <td>{{ '⚠' if case.escalation_required else '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

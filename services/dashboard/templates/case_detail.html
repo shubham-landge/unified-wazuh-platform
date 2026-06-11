@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-4xl" x-data="{ note: '', analyst: '' }">
+    <a href="/cases" class="text-soc-400 hover:text-white text-sm mb-4 inline-block"
+       hx-get="/cases" hx-target="body" hx-push-url="true">← Back to Cases</a>
+
+    <h1 class="text-2xl font-bold mb-6">Case Detail</h1>
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+        <div class="card">
+            <div class="card-header">Details</div>
+            <div class="font-semibold text-lg">{{ case.title }}</div>
+            <div class="text-sm text-soc-400 mt-1">{{ case.description or 'No description' }}</div>
+            <div class="flex gap-2 mt-3">
+                <span class="badge badge-{{ case.severity }}">{{ case.severity }}</span>
+                <span class="badge badge-{{ case.status }}">{{ case.status }}</span>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">Assignment</div>
+            <div class="text-sm">Assigned to: <strong>{{ case.assigned_to or 'Unassigned' }}</strong></div>
+            <div class="text-sm">Category: {{ case.category or 'N/A' }}</div>
+            <div class="text-sm">Risk Score: {{ '%.2f'|format(case.risk_score) if case.risk_score else 'N/A' }}</div>
+            <div class="text-sm">Escalation: {{ '⚠ Required' if case.escalation_required else 'None' }}</div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+        <div class="flex gap-2">
+            <button class="bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded text-sm"
+                    hx-patch="/cases/{{ case.id }}"
+                    hx-vals='{"status": "in_progress"}'
+                    hx-target="body"
+                    hx-swap="outerHTML">Start Investigation</button>
+            <button class="bg-blue-700 hover:bg-blue-600 text-white px-3 py-1.5 rounded text-sm"
+                    hx-patch="/cases/{{ case.id }}"
+                    hx-vals='{"status": "resolved"}'
+                    hx-target="body"
+                    hx-swap="outerHTML">Resolve</button>
+            <button class="bg-red-900 hover:bg-red-800 text-white px-3 py-1.5 rounded text-sm"
+                    hx-patch="/cases/{{ case.id }}"
+                    hx-vals='{"status": "closed"}'
+                    hx-target="body"
+                    hx-swap="outerHTML">Close</button>
+        </div>
+    </div>
+
+    <!-- Notes -->
+    <div class="card mb-6">
+        <div class="card-header">Analyst Notes</div>
+
+        <div class="space-y-3 mb-4">
+            {% for note in case.notes or [] %}
+            <div class="bg-soc-700 p-3 rounded">
+                <div class="flex justify-between text-sm">
+                    <span class="font-semibold">{{ note.analyst }}</span>
+                    <span class="text-soc-400 text-xs">{{ note.created_at[:19] }}</span>
+                </div>
+                <div class="text-sm mt-1 text-soc-200">{{ note.note }}</div>
+            </div>
+            {% endfor %}
+            {% if not case.notes %}
+            <div class="text-soc-500 text-sm">No notes yet.</div>
+            {% endif %}
+        </div>
+
+        <div class="flex gap-2">
+            <input type="text" placeholder="Your name" x-model="analyst" class="w-32">
+            <input type="text" placeholder="Add a note..." x-model="note" class="flex-1">
+            <button class="bg-soc-600 hover:bg-soc-500 text-white px-4 py-2 rounded"
+                    hx-post="/cases/{{ case.id }}/notes"
+                    hx-vals='{"analyst": analyst, "note": note}'
+                    hx-target="body"
+                    hx-swap="outerHTML"
+                    :disabled="!note || !analyst">Add Note</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

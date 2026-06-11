@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<div x-data="{ search: '' }">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Audit Log</h1>
+        <input type="text" placeholder="Search..." x-model="search" class="w-48">
+    </div>
+
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Action</th>
+                    <th>Resource</th>
+                    <th>Actor</th>
+                    <th>Status</th>
+                    <th>Latency</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in entries %}
+                <tr>
+                    <td class="text-xs font-mono">{{ entry.created_at[:19] if entry.created_at else 'N/A' }}</td>
+                    <td><span class="badge badge-low">{{ entry.action }}</span></td>
+                    <td class="text-xs">{{ entry.resource_type }} / {{ (entry.resource_id or '—')[:16] }}</td>
+                    <td class="text-xs">{{ entry.actor[:24] }}</td>
+                    <td><span class="badge badge-{{ 'open' if entry.status == 'success' else 'closed' }}">{{ entry.status }}</span></td>
+                    <td class="text-xs">{{ entry.latency_ms or 'N/A' }}ms</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

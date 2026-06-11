@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-4xl">
+    <a href="/alerts" class="text-soc-400 hover:text-white text-sm mb-4 inline-block"
+       hx-get="/alerts" hx-target="body" hx-push-url="true">← Back to Alerts</a>
+
+    <h1 class="text-2xl font-bold mb-6">Alert Detail</h1>
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+        <div class="card">
+            <div class="card-header">Rule</div>
+            <div class="font-semibold">{{ alert.rule_description }}</div>
+            <div class="text-sm text-soc-400 mt-1">Rule ID: {{ alert.rule_id }} | Level: {{ alert.rule_level }}</div>
+            <div class="mt-2">
+                {% for group in alert.rule_groups or [] %}
+                <span class="badge badge-low">{{ group }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">Agent</div>
+            <div class="font-semibold">{{ alert.agent_name or 'N/A' }}</div>
+            <div class="text-sm text-soc-400">IP: {{ alert.agent_ip or 'N/A' }}</div>
+            <div class="text-sm text-soc-400">ID: {{ alert.agent_id or 'N/A' }}</div>
+        </div>
+        <div class="card">
+            <div class="card-header">Network</div>
+            <div class="text-sm">Source: <span class="font-mono">{{ alert.source_ip or 'N/A' }}</span></div>
+            <div class="text-sm">Destination: <span class="font-mono">{{ alert.destination_ip or 'N/A' }}</span></div>
+            <div class="text-sm">Protocol: {{ alert.protocol or 'N/A' }}</div>
+        </div>
+        <div class="card">
+            <div class="card-header">Entities</div>
+            <div class="text-sm">User: {{ alert.user_name or 'N/A' }}</div>
+            <div class="text-sm">Process: {{ alert.process_name or 'N/A' }}</div>
+            <div class="text-sm">File: {{ alert.file_name or 'N/A' }}</div>
+            <div class="text-sm text-xs font-mono">Hash: {{ alert.file_hash or 'N/A' }}</div>
+        </div>
+    </div>
+
+    {% if alert.mitre_tactic or alert.mitre_technique %}
+    <div class="card mb-6">
+        <div class="card-header">MITRE ATT&CK</div>
+        <div class="flex gap-4">
+            <div><span class="text-soc-400">Tactic:</span> {{ alert.mitre_tactic }}</div>
+            <div><span class="text-soc-400">Technique:</span> {{ alert.mitre_technique }}</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="flex gap-2 mt-6">
+        <button class="bg-soc-600 hover:bg-soc-500 text-white px-4 py-2 rounded font-semibold"
+                hx-post="/triage/run"
+                hx-vals='{"alert_id": "{{ alert.id }}"}'
+                hx-target="#triage-result"
+                hx-swap="innerHTML">
+            Run AI Triage
+        </button>
+    </div>
+    <div id="triage-result" class="mt-4"></div>
+</div>
+{% endblock %}

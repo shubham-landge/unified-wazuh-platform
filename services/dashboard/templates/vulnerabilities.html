@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<div x-data="{ search: '', severityFilter: '' }">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Vulnerabilities</h1>
+        <div class="flex gap-2">
+            <input type="text" placeholder="Search CVE..." x-model="search" class="w-48">
+            <select x-model="severityFilter">
+                <option value="">All Severities</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>CVE</th>
+                    <th>Severity</th>
+                    <th>CVSS</th>
+                    <th>EPSS</th>
+                    <th>KEV</th>
+                    <th>Risk Score</th>
+                    <th>Package</th>
+                    <th>Status</th>
+                    <th>SLA</th>
+                    <th>Owner</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for vuln in vulnerabilities %}
+                <tr>
+                    <td class="font-mono text-sm">{{ vuln.cve_id }}</td>
+                    <td><span class="badge badge-{{ vuln.severity }}">{{ vuln.severity }}</span></td>
+                    <td>{{ vuln.cvss_score or 'N/A' }}</td>
+                    <td class="text-xs">{{ '%.4f'|format(vuln.epss_score) if vuln.epss_score else 'N/A' }}</td>
+                    <td>{{ '⚠' if vuln.cisa_kev else '—' }}</td>
+                    <td class="font-semibold">{{ '%.2f'|format(vuln.risk_score) if vuln.risk_score else 'N/A' }}</td>
+                    <td class="text-xs">{{ vuln.package_name or 'N/A' }}</td>
+                    <td><span class="badge badge-{{ 'open' if vuln.status == 'open' else 'closed' }}">{{ vuln.status }}</span></td>
+                    <td class="text-xs font-mono">{{ vuln.patch_sla[:10] if vuln.patch_sla else 'N/A' }}</td>
+                    <td>{{ vuln.assigned_owner or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

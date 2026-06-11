@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div x-data="{ search: '', levelFilter: '0' }">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Alerts</h1>
+        <div class="flex gap-2">
+            <input type="text" placeholder="Search..." x-model="search" class="w-48">
+            <select x-model="levelFilter" @change="window.location.href = '/alerts?level=' + levelFilter">
+                <option value="0">All Levels</option>
+                <option value="7">Level 7+ (Medium)</option>
+                <option value="10">Level 10+ (High)</option>
+                <option value="12">Level 12+ (Critical)</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Level</th>
+                    <th>Rule ID</th>
+                    <th>Description</th>
+                    <th>Agent</th>
+                    <th>Source IP</th>
+                    <th>User</th>
+                    <th>MITRE</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for alert in alerts %}
+                <tr class="cursor-pointer"
+                    hx-get="/alerts/{{ alert.id }}"
+                    hx-target="body"
+                    hx-push-url="true"
+                    x-show="search === '' || '{{ alert.rule_description }}'.toLowerCase().includes(search.toLowerCase())">
+                    <td class="text-xs font-mono">{{ alert.timestamp[:19] if alert.timestamp else 'N/A' }}</td>
+                    <td><span class="badge badge-{{ 'critical' if alert.rule_level >= 12 else 'high' if alert.rule_level >= 10 else 'medium' if alert.rule_level >= 7 else 'low' }}">{{ alert.rule_level }}</span></td>
+                    <td class="font-mono text-xs">{{ alert.rule_id }}</td>
+                    <td class="max-w-sm truncate">{{ alert.rule_description }}</td>
+                    <td>{{ alert.agent_name }}</td>
+                    <td class="font-mono text-xs">{{ alert.source_ip or 'N/A' }}</td>
+                    <td>{{ alert.user_name or 'N/A' }}</td>
+                    <td class="text-xs">{{ alert.mitre_technique or 'N/A' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
