@@ -34,7 +34,7 @@
 |---|---|
 | **Branch** | `tool/antigravity` |
 | **PR** | — |
-| **Status** | 📝 Not Started |
+| **Status** | 🔄 In Progress |
 | **Task** | Dashboard enhancements (charts, settings page), deployment documentation |
 | **Files to create/modify** | Dashboard templates, `docs/DASHBOARD-GUIDE.md`, `docs/DEPLOYMENT-GUIDE.md` |
 | **Blockers** | None |
