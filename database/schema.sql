@@ -106,7 +106,7 @@ CREATE INDEX idx_alerts_agent ON alerts(agent_id);
 CREATE INDEX idx_alerts_source_ip ON alerts(source_ip);
 CREATE INDEX idx_alerts_groups ON alerts USING GIN(rule_groups);
 CREATE INDEX idx_alerts_mitre ON alerts(mitre_technique);
-CREATE INDEX idx_alerts_unprocessed ON alerts(ingested_at) WHERE ingested_at > NOW() - INTERVAL '24 hours';
+CREATE INDEX idx_alerts_ingested_at ON alerts(ingested_at DESC);
 
 -- ─── AI Triage Results (every AI decision) ───
 CREATE TABLE ai_triage_results (

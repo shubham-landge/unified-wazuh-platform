@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Critical Alert Notification</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Inter,Arial,sans-serif;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;padding:20px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.05);overflow:hidden;border:1px solid #e2e8f0;">
+          <!-- Header -->
+          <tr>
+            <td style="background:#dc2626;padding:24px;text-align:left;">
+              <h1 style="color:#ffffff;margin:0;font-size:22px;font-weight:700;letter-spacing:-0.02em;">🚨 Critical Alert Detected</h1>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:30px;background:#ffffff;">
+              <p style="margin:0 0 20px 0;font-size:14px;color:#1e293b;line-height:1.6;">
+                The platform security parser identified an active high-level threat that requires immediate analyst investigation.
+              </p>
+              
+              <table role="presentation" width="100%" cellpadding="10" cellspacing="0" border="0" style="background:#f8fafc;border-radius:6px;border:1px solid #f1f5f9;margin-bottom:24px;">
+                <tr>
+                  <td width="30%" style="color:#64748b;font-size:12px;font-weight:bold;text-transform:uppercase;padding:12px 10px;border-bottom:1px solid #e2e8f0;">Rule Signature</td>
+                  <td style="font-weight:600;font-size:13px;color:#0f1729;padding:12px 10px;border-bottom:1px solid #e2e8f0;">{{ rule_description }}</td>
+                </tr>
+                <tr>
+                  <td style="color:#64748b;font-size:12px;font-weight:bold;text-transform:uppercase;padding:12px 10px;border-bottom:1px solid #e2e8f0;">Severity</td>
+                  <td style="color:#dc2626;font-weight:700;font-size:13px;padding:12px 10px;border-bottom:1px solid #e2e8f0;">CRITICAL (Level {{ rule_level }})</td>
+                </tr>
+                <tr>
+                  <td style="color:#64748b;font-size:12px;font-weight:bold;text-transform:uppercase;padding:12px 10px;border-bottom:1px solid #e2e8f0;">Monitored Agent</td>
+                  <td style="font-size:13px;color:#334155;padding:12px 10px;border-bottom:1px solid #e2e8f0;">{{ agent_name }} ({{ agent_ip }})</td>
+                </tr>
+                <tr>
+                  <td style="color:#64748b;font-size:12px;font-weight:bold;text-transform:uppercase;padding:12px 10px;border-bottom:1px solid #e2e8f0;">Source IP</td>
+                  <td style="font-family:monospace;font-size:13px;color:#334155;padding:12px 10px;border-bottom:1px solid #e2e8f0;">{{ source_ip }}</td>
+                </tr>
+                <tr>
+                  <td style="color:#64748b;font-size:12px;font-weight:bold;text-transform:uppercase;padding:12px 10px;border-bottom:1px solid #e2e8f0;">Event Timestamp</td>
+                  <td style="font-family:monospace;font-size:13px;color:#334155;padding:12px 10px;border-bottom:1px solid #e2e8f0;">{{ timestamp }}</td>
+                </tr>
+                <tr>
+                  <td style="color:#64748b;font-size:12px;font-weight:bold;text-transform:uppercase;padding:12px 10px;">AI Copilot Summary</td>
+                  <td style="font-size:13px;color:#334155;padding:12px 10px;line-height:1.5;">{{ ai_summary }}</td>
+                </tr>
+              </table>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center" style="padding:10px 0;">
+                    <a href="{{ dashboard_url }}/alerts/{{ alert_id }}" target="_blank"
+                       style="background:#3b82f6;color:#ffffff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px;display:inline-block;box-shadow:0 2px 4px rgba(59,130,246,0.2);">
+                      View in SOC Dashboard &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding:20px;border-top:1px solid #e2e8f0;text-align:center;color:#94a3b8;font-size:12px;background:#f8fafc;">
+              <p style="margin:0 0 4px 0;font-weight:bold;">Security Operations Center Platform</p>
+              <p style="margin:0;">This is an auto-generated notification. Please do not reply directly to this email.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

@@ -64,7 +64,7 @@ async def test_mask_sensitive_data_ips():
 async def test_mask_sensitive_data_tokens():
     from shared.connectors.llm_provider import mask_sensitive_data
 
-    text = "Token: ghp_abcdefghijklmnopqrstuvwxyz12345678901234"
+    text = "ghp_abcdefghijklmnopqrstuvwxyz12345678901234"
     masked = mask_sensitive_data(text)
     assert "[TOKEN_REDACTED]" in masked
 

@@ -22,7 +22,6 @@ ENV PATH=/root/.local/bin:$PATH
 
 COPY shared/ shared/
 COPY services/api/app/ app/
-COPY services/api/prompts/ app/prompts/
 
 ENV PYTHONPATH=/app
 

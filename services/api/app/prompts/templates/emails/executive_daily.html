@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Daily SOC Executive Summary</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Inter,Arial,sans-serif;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;padding:20px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.05);overflow:hidden;border:1px solid #e2e8f0;">
+          <!-- Header -->
+          <tr>
+            <td style="background:#3b82f6;padding:24px;text-align:left;">
+              <h1 style="color:#ffffff;margin:0;font-size:20px;font-weight:700;letter-spacing:-0.02em;">📊 Daily SOC Operations Summary</h1>
+              <p style="color:#bfdbfe;margin:4px 0 0 0;font-size:12px;font-family:monospace;">Date: {{ report_date }}</p>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:30px;background:#ffffff;">
+              <p style="margin:0 0 20px 0;font-size:14px;color:#1e293b;line-height:1.6;">
+                Below is the daily digest of security metrics and incident remediation cycles processed by the platform.
+              </p>
+              
+              <!-- Metrics Cards Table-based Grid -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+                <tr>
+                  <!-- Card 1 -->
+                  <td width="48%" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:15px;text-align:center;">
+                    <div style="font-size:24px;font-weight:bold;color:#0f1729;margin-bottom:4px;">{{ total_alerts }}</div>
+                    <div style="font-size:9px;color:#64748b;text-transform:uppercase;font-weight:700;letter-spacing:0.05em;">Alerts Ingested</div>
+                  </td>
+                  <td width="4%">&nbsp;</td>
+                  <!-- Card 2 -->
+                  <td width="48%" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:15px;text-align:center;">
+                    <div style="font-size:24px;font-weight:bold;color:#ea580c;margin-bottom:4px;">{{ open_cases }}</div>
+                    <div style="font-size:9px;color:#64748b;text-transform:uppercase;font-weight:700;letter-spacing:0.05em;">Active Open Cases</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td height="12" colspan="3">&nbsp;</td>
+                </tr>
+                <tr>
+                  <!-- Card 3 -->
+                  <td width="48%" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:15px;text-align:center;">
+                    <div style="font-size:24px;font-weight:bold;color:#dc2626;margin-bottom:4px;">{{ critical_vulns }}</div>
+                    <div style="font-size:9px;color:#64748b;text-transform:uppercase;font-weight:700;letter-spacing:0.05em;">Critical CVEs</div>
+                  </td>
+                  <td width="4%">&nbsp;</td>
+                  <!-- Card 4 -->
+                  <td width="48%" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:15px;text-align:center;">
+                    <div style="font-size:24px;font-weight:bold;color:#059669;margin-bottom:4px;">{{ resolved_cases }}</div>
+                    <div style="font-size:9px;color:#64748b;text-transform:uppercase;font-weight:700;letter-spacing:0.05em;">Resolved Cases</div>
+                  </td>
+                </tr>
+              </table>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center" style="padding:10px 0;">
+                    <a href="{{ dashboard_url }}" target="_blank"
+                       style="background:#3b82f6;color:#ffffff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px;display:inline-block;box-shadow:0 2px 4px rgba(59,130,246,0.2);">
+                      Access Operations Dashboard &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding:20px;border-top:1px solid #e2e8f0;text-align:center;color:#94a3b8;font-size:12px;background:#f8fafc;">
+              <p style="margin:0 0 4px 0;font-weight:bold;">Security Operations Center Platform</p>
+              <p style="margin:0;">This is an auto-generated notification. Please do not reply directly to this email.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

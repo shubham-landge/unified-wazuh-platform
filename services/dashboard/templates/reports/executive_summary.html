@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Executive Summary Report</title>
+  <style>
+    @page { margin: 2cm; }
+    body { font-family: 'Inter', Arial, sans-serif; color: #1a1a2e; font-size: 11pt; line-height: 1.5; }
+    h1 { font-size: 18pt; color: #0f1729; border-bottom: 2px solid #3b82f6; padding-bottom: 8px; margin-top: 0; }
+    h2 { font-size: 14pt; color: #1e293b; margin-top: 24px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+    th { background: #f1f5f9; text-align: left; padding: 10px 8px; font-size: 9pt; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; }
+    td { padding: 10px 8px; border-bottom: 1px solid #e2e8f0; font-size: 10pt; }
+    .header { display: flex; justify-content: space-between; margin-bottom: 24px; }
+    .footer { position: fixed; bottom: 0; width: 100%; text-align: center; font-size: 8pt; color: #94a3b8; }
+    .severity-critical { color: #dc2626; font-weight: 600; }
+    .severity-high { color: #ea580c; font-weight: 600; }
+    .severity-medium { color: #ca8a04; font-weight: 600; }
+    .meta-table td { border-bottom: none; padding: 6px 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Executive Summary</h1>
+      <p style="color: #64748b; margin: 4px 0 0 0;">Date: {{ date }}</p>
+    </div>
+    <div>
+      {% if logo_url %}
+      <img src="{{ logo_url }}" alt="Logo" height="40">
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="meta">
+    <table class="meta-table">
+      <tr><td width="150" style="color: #64748b;">Incident ID:</td><td><strong>{{ incident_id }}</strong></td></tr>
+      <tr><td style="color: #64748b;">Severity:</td><td><span class="severity-{{ severity }}">{{ severity|upper }}</span></td></tr>
+      <tr><td style="color: #64748b;">Status:</td><td>{{ status }}</td></tr>
+      <tr><td style="color: #64748b;">Duration:</td><td>{{ duration }}</td></tr>
+      <tr><td style="color: #64748b;">Affected Assets:</td><td>{{ affected_assets }}</td></tr>
+      <tr><td style="color: #64748b;">Report Generated:</td><td>{{ generated_at }}</td></tr>
+    </table>
+  </div>
+
+  <h2>What Happened</h2>
+  <p>{{ summary }}</p>
+
+  <h2>Impact</h2>
+  <p>{{ impact }}</p>
+
+  <h2>Actions Taken</h2>
+  <ol style="padding-left: 20px;">
+    {% for action in actions %}
+    <li>{{ action }}</li>
+    {% endfor %}
+  </ol>
+
+  <h2>Recommendations</h2>
+  <ol style="padding-left: 20px;">
+    {% for rec in recommendations %}
+    <li>{{ rec }}</li>
+    {% endfor %}
+  </ol>
+
+  <div class="footer">
+    <p>Confidential — For authorized recipients only | SOC Platform v1.0</p>
+  </div>
+</body>
+</html>

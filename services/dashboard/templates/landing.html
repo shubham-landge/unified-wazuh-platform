@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unified Wazuh SOC Platform - AI-Powered Threat Detection & Vulnerability Triage</title>
+    <meta name="description" content="Empower your Security Operations Center with real-time AI triage, automated alert correlation, case management, and prioritized vulnerability patching for Wazuh infrastructure.">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- HTMX and Alpine.js -->
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <script src="https://unpkg.com/alpinejs@3.14.3" defer></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        deep: '#070b14',
+                        surface: '#0d1321',
+                        elevated: '#151d30',
+                        primary: '#e8edf5',
+                        secondary: '#94a3b8',
+                        muted: '#64748b',
+                        accent: {
+                            blue: '#3b82f6',
+                            red: '#dc2626',
+                            green: '#22c55e',
+                            yellow: '#eab308',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body {
+            background-color: #070b14;
+            color: #e8edf5;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #070b14;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #151d30;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3b82f6;
+        }
+        
+        /* Glassmorphism effects */
+        .glass-card {
+            background: linear-gradient(135deg, rgba(21, 29, 48, 0.7) 0%, rgba(13, 19, 33, 0.8) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+        }
+        .glass-card:hover {
+            border-color: rgba(59, 130, 246, 0.2);
+            box-shadow: 0 10px 30px -10px rgba(59, 130, 246, 0.15);
+        }
+    </style>
+</head>
+<body class="font-sans antialiased text-primary selection:bg-accent-blue/30 selection:text-white" x-data="{ emailSubmitted: false }">
+
+    <!-- Header Navigation -->
+    <header class="w-full border-b border-white/5 bg-deep/80 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="p-1.5 bg-accent-blue/15 border border-accent-blue/30 rounded-lg">
+                    <svg class="w-6 h-6 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
+                    </svg>
+                </div>
+                <span class="font-bold text-white tracking-wide text-lg">WAZUH <span class="text-xs font-semibold px-1.5 py-0.5 ml-1 bg-accent-blue/10 text-accent-blue border border-accent-blue/20 rounded">AI</span></span>
+            </div>
+            
+            <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-secondary">
+                <a href="#features" class="hover:text-white transition-colors">Features</a>
+                <a href="#architecture" class="hover:text-white transition-colors">Architecture</a>
+                <a href="#pricing" class="hover:text-white transition-colors">Pricing</a>
+            </nav>
+            
+            <div class="flex items-center gap-4">
+                <a href="/" id="btn-dashboard-nav" class="px-4 py-2 text-sm font-semibold text-white bg-accent-blue/10 border border-accent-blue/30 hover:bg-accent-blue/20 hover:border-accent-blue/50 rounded-xl transition-all shadow-[0_0_15px_rgba(59,130,246,0.1)]">
+                    Go to Dashboard
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="relative overflow-hidden py-24 lg:py-32 flex flex-col items-center justify-center border-b border-white/5">
+        <!-- Background radial gradients -->
+        <div class="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-accent-blue/10 rounded-full blur-[120px] pointer-events-none -z-10"></div>
+        <div class="absolute bottom-10 right-10 w-[300px] h-[300px] bg-accent-red/5 rounded-full blur-[80px] pointer-events-none -z-10"></div>
+
+        <div class="max-w-4xl mx-auto px-6 text-center">
+            <!-- Alert/Badge -->
+            <div class="inline-flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-full text-xs font-medium text-accent-blue mb-8">
+                <span class="w-1.5 h-1.5 bg-accent-blue rounded-full animate-ping"></span>
+                <span>Version 1.0.0 Now Available</span>
+            </div>
+            
+            <!-- H1 Title -->
+            <h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight leading-tight mb-6">
+                Unified Wazuh <span class="bg-clip-text text-transparent bg-gradient-to-r from-accent-blue via-blue-400 to-indigo-400">SOC Platform</span>
+            </h1>
+            
+            <!-- Subtitle -->
+            <p class="text-lg sm:text-xl text-secondary max-w-2xl mx-auto mb-10 leading-relaxed">
+                AI-powered SOC operations & vulnerability management for Wazuh. Automate triage, incident investigation, and risk-prioritization in a unified pane.
+            </p>
+            
+            <!-- CTAs -->
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <a href="/" id="btn-get-started" class="w-full sm:w-auto px-8 py-3.5 bg-accent-blue hover:bg-blue-600 text-white font-semibold rounded-xl transition-all shadow-lg shadow-accent-blue/25 hover:shadow-accent-blue/35 text-center flex items-center justify-center gap-2">
+                    Get Started <span class="text-lg">→</span>
+                </a>
+                <a href="https://github.com/shubham-landge/unified-wazuh-platform" id="btn-github" target="_blank" rel="noopener" class="w-full sm:w-auto px-8 py-3.5 bg-white/5 border border-white/10 hover:bg-white/10 text-white font-semibold rounded-xl transition-all text-center">
+                    View on GitHub
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Grid -->
+    <section id="features" class="py-24 max-w-7xl mx-auto px-6 border-b border-white/5">
+        <div class="text-center mb-16">
+            <h2 class="text-3xl font-bold text-white tracking-tight">Supercharge Your Security Operations</h2>
+            <p class="text-sm text-secondary mt-2">Everything you need to triage, analyze, and remediate alerts faster.</p>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- AI Triage -->
+            <div class="glass-card p-8 rounded-2xl flex flex-col justify-between transition-all">
+                <div>
+                    <div class="w-12 h-12 bg-accent-blue/10 border border-accent-blue/20 rounded-xl flex items-center justify-center text-2xl mb-6">
+                        🤖
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-3">AI Triage</h3>
+                    <p class="text-secondary text-sm leading-relaxed">
+                        Automatic alert analysis using localized Ollama models or Cloud LLMs. Evaluates severity, confidence levels, false-positive likelihood, and maps events directly to MITRE ATT&CK tactics.
+                    </p>
+                </div>
+                <div class="mt-6 flex items-center gap-1.5 text-xs text-accent-blue font-semibold">
+                    <span>Includes MITRE ATT&CK Mapping</span>
+                </div>
+            </div>
+
+            <!-- Case Management -->
+            <div class="glass-card p-8 rounded-2xl flex flex-col justify-between transition-all">
+                <div>
+                    <div class="w-12 h-12 bg-accent-yellow/10 border border-accent-yellow/20 rounded-xl flex items-center justify-center text-2xl mb-6">
+                        📋
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-3">Case Management</h3>
+                    <p class="text-secondary text-sm leading-relaxed">
+                        Track incident lifecycles with a structured case timeline. Analysts can add markdown notes, attach raw evidence objects, audit action histories, and coordinate handoffs seamlessly.
+                    </p>
+                </div>
+                <div class="mt-6 flex items-center gap-1.5 text-xs text-accent-yellow font-semibold">
+                    <span>Collaborative Incident Timeline</span>
+                </div>
+            </div>
+
+            <!-- Vulnerability Management -->
+            <div class="glass-card p-8 rounded-2xl flex flex-col justify-between transition-all">
+                <div>
+                    <div class="w-12 h-12 bg-accent-green/10 border border-accent-green/20 rounded-xl flex items-center justify-center text-2xl mb-6">
+                        🛡️
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-3">Vulnerability Management</h3>
+                    <p class="text-secondary text-sm leading-relaxed">
+                        Risk-scored CVE inventory integrated directly with Wazuh. Enriches alerts with real-time EPSS and CISA KEV catalogs to calculate actual risk and enforce SLA patch deadlines.
+                    </p>
+                </div>
+                <div class="mt-6 flex items-center gap-1.5 text-xs text-accent-green font-semibold">
+                    <span>Enriched with EPSS & CISA KEV</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Architecture Section -->
+    <section id="architecture" class="py-24 bg-surface/30 border-b border-white/5">
+        <div class="max-w-5xl mx-auto px-6 text-center">
+            <h2 class="text-3xl font-bold text-white tracking-tight mb-4">Architecture</h2>
+            <p class="text-sm text-secondary mb-16 max-w-lg mx-auto">
+                Designed to run alongside your existing Wazuh clusters in a highly secure, containerized architecture.
+            </p>
+            
+            <!-- Architecture Diagram (SVG) -->
+            <div class="glass-card p-8 rounded-2xl flex items-center justify-center overflow-x-auto">
+                <svg width="800" height="340" viewBox="0 0 800 340" fill="none" xmlns="http://www.w3.org/2000/svg" class="max-w-full h-auto">
+                    <!-- Definitions for markers/gradients -->
+                    <defs>
+                        <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                            <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6"/>
+                        </marker>
+                        <marker id="arrow-gray" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                            <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+                        </marker>
+                    </defs>
+
+                    <!-- Background grid/canvas lines (subtle) -->
+                    <line x1="100" y1="170" x2="700" y2="170" stroke="rgba(255,255,255,0.03)" stroke-dasharray="4 4" />
+                    
+                    <!-- Wazuh Cluster Box -->
+                    <rect x="40" y="110" width="160" height="120" rx="12" fill="#0d1321" stroke="#f59e0b" stroke-width="2" />
+                    <text x="120" y="150" fill="#e8edf5" font-family="Inter" font-size="14" font-weight="bold" text-anchor="middle">Wazuh Infra</text>
+                    <text x="120" y="175" fill="#94a3b8" font-family="Inter" font-size="11" text-anchor="middle">Wazuh Managers</text>
+                    <text x="120" y="195" fill="#94a3b8" font-family="Inter" font-size="11" text-anchor="middle">Elastic Indexers</text>
+                    
+                    <!-- Arrow between Wazuh and SOC Platform -->
+                    <path d="M 205 170 L 305 170" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrow)" />
+                    <path d="M 305 170 L 205 170" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrow)" />
+                    <text x="255" y="155" fill="#3b82f6" font-family="Inter" font-size="10" font-weight="semibold" text-anchor="middle">Alert Polling</text>
+                    
+                    <!-- SOC Platform Core Container Box -->
+                    <rect x="315" y="60" width="180" height="220" rx="16" fill="#151d30" stroke="#3b82f6" stroke-width="2" />
+                    <text x="405" y="95" fill="#e8edf5" font-family="Inter" font-size="14" font-weight="bold" text-anchor="middle">SOC Platform</text>
+                    
+                    <!-- Inside SOC Platform components -->
+                    <rect x="335" y="120" width="140" height="40" rx="6" fill="#0d1321" stroke="rgba(255,255,255,0.1)" />
+                    <text x="405" y="145" fill="#e8edf5" font-family="Inter" font-size="11" text-anchor="middle">FastAPI Engine</text>
+                    
+                    <rect x="335" y="175" width="140" height="40" rx="6" fill="#0d1321" stroke="rgba(255,255,255,0.1)" />
+                    <text x="405" y="200" fill="#e8edf5" font-family="Inter" font-size="11" text-anchor="middle">Triage Workers</text>
+                    
+                    <rect x="335" y="230" width="140" height="35" rx="6" fill="#0d1321" stroke="rgba(255,255,255,0.1)" />
+                    <text x="405" y="252" fill="#e8edf5" font-family="Inter" font-size="10" font-weight="medium" text-anchor="middle">PostgreSQL + Redis</text>
+
+                    <!-- Arrow between SOC Platform and Dashboard -->
+                    <path d="M 500 170 L 600 170" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrow)" />
+                    <text x="550" y="155" fill="#3b82f6" font-family="Inter" font-size="10" font-weight="semibold" text-anchor="middle">HTMX / UI</text>
+
+                    <!-- Analyst Dashboard Box -->
+                    <rect x="610" y="110" width="150" height="120" rx="12" fill="#0d1321" stroke="#3b82f6" stroke-width="2" />
+                    <text x="685" y="150" fill="#e8edf5" font-family="Inter" font-size="13" font-weight="bold" text-anchor="middle">SOC Dashboard</text>
+                    <text x="685" y="175" fill="#94a3b8" font-family="Inter" font-size="11" text-anchor="middle">Jinja2 + Alpine.js</text>
+                    <text x="685" y="195" fill="#94a3b8" font-family="Inter" font-size="11" text-anchor="middle">Analyst Console</text>
+
+                    <!-- LLM Connector (Pointing from bottom or top) -->
+                    <rect x="330" y="300" width="150" height="30" rx="6" fill="#070b14" stroke="#64748b" stroke-width="1.5" />
+                    <text x="405" y="318" fill="#64748b" font-family="Inter" font-size="10" font-weight="semibold" text-anchor="middle">Ollama / Cloud LLMs</text>
+                    
+                    <path d="M 405 295 L 405 285" stroke="#64748b" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#arrow-gray)" />
+                </svg>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="py-24 max-w-7xl mx-auto px-6 border-b border-white/5">
+        <div class="text-center mb-16">
+            <h2 class="text-3xl font-bold text-white tracking-tight">Flexible Deployments</h2>
+            <p class="text-sm text-secondary mt-2">Choose the option that fits your security organization's scale.</p>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Community Plan -->
+            <div class="glass-card p-8 rounded-2xl flex flex-col justify-between relative overflow-hidden">
+                <div>
+                    <h3 class="text-lg font-bold text-white mb-2">Community</h3>
+                    <div class="flex items-baseline gap-1 mb-4">
+                        <span class="text-3xl font-extrabold text-white">Free</span>
+                    </div>
+                    <p class="text-secondary text-xs mb-8">Best for lab environments and single-manager trial networks.</p>
+                    
+                    <ul class="space-y-3.5 text-xs text-secondary mb-8">
+                        <li class="flex items-center gap-2">
+                            <span class="text-accent-green">✓</span> 1 Wazuh Manager / Indexer
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="text-accent-green">✓</span> Basic local AI Triage
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="text-accent-green">✓</span> Basic case management
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="text-accent-green">✓</span> Community Support
+                        </li>
+                    </ul>
+                </div>
+                <a href="/" id="btn-price-free" class="w-full py-2.5 bg-white/5 hover:bg-white/10 text-white font-semibold rounded-lg text-center text-xs transition-all border border-white/10">
+                    Get Started
+                </a>
+            </div>
+
+            <!-- Professional Plan -->
+            <div class="glass-card p-8 rounded-2xl flex flex-col justify-between border-accent-blue/30 relative overflow-hidden shadow-xl shadow-accent-blue/5">
+                <div class="absolute top-0 right-0 bg-accent-blue text-[9px] font-bold text-white px-3 py-1 rounded-bl-lg uppercase tracking-wider">
+                    Recommended
+                </div>
+                <div>
+                    <h3 class="text-lg font-bold text-white mb-2">Professional</h3>
+                    <div class="flex items-baseline gap-1 mb-4">
+                        <span class="text-3xl font-extrabold text-white">$499</span>
+                        <span class="text-xs text-muted">/month</span>
+                    </div>
+                    <p class="text-secondary text-xs mb-8">Ideal for security teams running multi-tenant or multi-cluster sites.</p>
+                    
+                    <ul class="space-y-3.5 text-xs text-secondary mb-8">
+                        <li class="flex items-center gap-2">
+                            <span class="text-accent-blue font-bold">✓</span> Multi-tenant isolation
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="text-accent-blue font-bold">✓</span> Full AI triage engine
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="text-accent-blue font-bold">✓</span> Advanced case timeline
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="text-accent-blue font-bold">✓</span> EPSS / KEV Vuln scoring
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="text-accent-blue font-bold">✓</span> 9x5 Business Support
+                        </li>
+                    </ul>
+                </div>
+                <button id="btn-price-pro" @click="window.location.href='mailto:sales@wazuh-ai.local?subject=Unified%20Wazuh%20SOC%20Platform%20-%20Professional%20Inquiry'" class="w-full py-2.5 bg-accent-blue hover:bg-blue-600 text-white font-semibold rounded-lg text-center text-xs transition-all shadow-md shadow-accent-blue/20">
+                    Contact Us
+                </button>
+            </div>
+
+            <!-- Enterprise Plan -->
+            <div class="glass-card p-8 rounded-2xl flex flex-col justify-between relative overflow-hidden">
+                <div>
+                    <h3 class="text-lg font-bold text-white mb-2">Enterprise</h3>
+                    <div class="flex items-baseline gap-1 mb-4">
+                        <span class="text-3xl font-extrabold text-white">Custom</span>
+                    </div>
+                    <p class="text-secondary text-xs mb-8">Tailored for large MSSPs, financial sectors, or government SOCs.</p>
+                    
+                    <ul class="space-y-3.5 text-xs text-secondary mb-8">
+                        <li class="flex items-center gap-2">
+                            <span class="text-accent-green">✓</span> Unlimited tenants & managers
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="text-accent-green">✓</span> Dedicated AI models + cloud LLM
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="text-accent-green">✓</span> 24/7/365 SLA Guarantee
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="text-accent-green">✓</span> Custom integrations & SSO
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="text-accent-green">✓</span> Dedicated success architect
+                        </li>
+                    </ul>
+                </div>
+                <button id="btn-price-enterprise" @click="window.location.href='mailto:sales@wazuh-ai.local?subject=Unified%20Wazuh%20SOC%20Platform%20-%20Enterprise%20Inquiry'" class="w-full py-2.5 bg-white/5 hover:bg-white/10 text-white font-semibold rounded-lg text-center text-xs transition-all border border-white/10">
+                    Contact Sales
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="py-24 max-w-4xl mx-auto px-6 text-center">
+        <h2 class="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-4">Ready to Automate Your SOC?</h2>
+        <p class="text-sm text-secondary max-w-md mx-auto mb-8">
+            Stay up to date with core updates, security advisories, and feature releases.
+        </p>
+        
+        <div class="max-w-md mx-auto" x-show="!emailSubmitted">
+            <form id="landing-email-form" @submit.prevent="emailSubmitted = true" class="flex gap-2 p-1.5 bg-surface border border-white/10 rounded-xl">
+                <input type="email" placeholder="Enter your work email" required class="flex-1 bg-transparent border-0 outline-none px-3 py-2 text-sm text-white placeholder-muted">
+                <button type="submit" id="btn-submit-email" class="px-5 py-2 bg-accent-blue hover:bg-blue-600 text-white font-semibold text-xs rounded-lg transition-all shadow-md shadow-accent-blue/15">
+                    Subscribe
+                </button>
+            </form>
+        </div>
+        
+        <div class="p-4 bg-accent-green/10 border border-accent-green/20 rounded-xl max-w-md mx-auto text-sm text-white flex items-center justify-center gap-2" x-show="emailSubmitted" x-transition>
+            <span class="text-accent-green font-bold">✓</span> Thank you! You've been subscribed to our updates.
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="w-full border-t border-white/5 bg-deep/50 py-12 text-center text-xs text-muted">
+        <div class="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p>&copy; 2026 Unified Wazuh SOC Platform. Open-source under Apache-2.0.</p>
+            <p>Built for Wazuh Infrastructure integrations.</p>
+        </div>
+    </footer>
+
+</body>
+</html>

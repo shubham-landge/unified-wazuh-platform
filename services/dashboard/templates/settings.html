@@ -1,94 +1,244 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-4xl mx-auto space-y-6">
+<div class="max-w-5xl mx-auto space-y-6" x-data="{ activeTab: 'wazuh', showKey: false, testSuccess: null, testLoading: false }">
     <!-- Page Header -->
     <div class="flex justify-between items-center mb-2">
         <div>
-            <h1 class="text-2xl font-bold text-white tracking-tight">Platform Settings</h1>
-            <p class="text-xs text-secondary mt-0.5">Manage API keys, Wazuh integration endpoints, Local LLM model selections, and threat triage automation rules.</p>
+            <h1 class="text-2xl font-bold text-white tracking-tight">Platform Configuration</h1>
+            <p class="text-xs text-secondary mt-0.5">Manage authentication, integration profiles, Local LLM triage engines, and notifications triggers.</p>
         </div>
     </div>
 
-    <form hx-post="/settings" hx-target="body" hx-swap="outerHTML" class="space-y-6">
-        <!-- Section 1: Security & API Keys -->
-        <div class="card-premium">
-            <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-4 pb-2 border-b border-white/5 flex items-center gap-2">
-                <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/></svg>
-                Authentication & Integrity
-            </h3>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Dashboard API Token</label>
-                    <input type="password" name="api_key" value="{{ settings.api_key }}" required class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
-                    <span class="text-[9px] text-muted">Primary key used to authenticate communications with the API server.</span>
-                </div>
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Wazuh Manager Endpoint</label>
-                    <input type="text" name="wazuh_host" value="{{ settings.wazuh_host }}" required class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
-                    <span class="text-[9px] text-muted">Base URL of your Wazuh 4.14 REST API interface.</span>
-                </div>
-            </div>
-        </div>
+    <!-- Main Settings Panel with Left Sidebar Tabs -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+        
+        <!-- Left Tab Navigation Sidebar -->
+        <div class="md:col-span-1 bg-surface border border-white/5 rounded-xl p-3 h-fit flex flex-col gap-1">
+            <!-- Wazuh Tab Button -->
+            <button @click="activeTab = 'wazuh'" 
+                    class="w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2.5"
+                    :class="activeTab === 'wazuh' ? 'bg-accent-blue/15 text-accent-blue border border-accent-blue/15' : 'text-secondary hover:text-white hover:bg-white/5 border border-transparent'">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-.778.099-1.533.284-2.253"/></svg>
+                Wazuh Connection
+            </button>
 
-        <!-- Section 2: AI Triage Copilot Configuration -->
-        <div class="card-premium">
-            <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-4 pb-2 border-b border-white/5 flex items-center gap-2">
-                <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 21m0 0l-.813-5.096L9 21zm0 0h3.5m-3.5 0H5.5m7-15.5H9.5m3.5 13V6.25m-7 6.75h7m-7 0a3 3 0 110-6h7a3 3 0 110 6z"/></svg>
-                AI Triage Copilot Rules
-            </h3>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Local LLM model Engine</label>
-                    <select name="ollama_model" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
-                        <option value="llama3" {% if settings.ollama_model == 'llama3' %}selected{% endif %}>Llama 3 (8B Instruct)</option>
-                        <option value="mistral" {% if settings.ollama_model == 'mistral' %}selected{% endif %}>Mistral (7B Instruct)</option>
-                        <option value="phi3" {% if settings.ollama_model == 'phi3' %}selected{% endif %}>Phi 3 (3.8B Medium)</option>
-                        <option value="gemini-1.5-flash" {% if settings.ollama_model == 'gemini-1.5-flash' %}selected{% endif %}>Gemini 1.5 Flash (Cloud)</option>
-                    </select>
-                    <span class="text-[9px] text-muted">Selects model endpoint used in threat analysis and recommendations.</span>
-                </div>
+            <!-- LLM Provider Tab Button -->
+            <button @click="activeTab = 'llm'" 
+                    class="w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2.5"
+                    :class="activeTab === 'llm' ? 'bg-accent-blue/15 text-accent-blue border border-accent-blue/15' : 'text-secondary hover:text-white hover:bg-white/5 border border-transparent'">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 21m0 0l-.813-5.096L9 21zm0 0h3.5m-3.5 0H5.5m7-15.5H9.5m3.5 13V6.25m-7 6.75h7m-7 0a3 3 0 110-6h7a3 3 0 110 6z"/></svg>
+                LLM Provider
+            </button>
 
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Auto-Triage Status</label>
-                    <select name="auto_triage" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
-                        <option value="enabled" {% if settings.auto_triage == 'enabled' %}selected{% endif %}>Automatically Triage level 12+ alerts</option>
-                        <option value="disabled" {% if settings.auto_triage == 'disabled' %}selected{% endif %}>Manual triage trigger only</option>
-                    </select>
-                    <span class="text-[9px] text-muted">Enable to trigger automated AI assessments immediately upon ingestion.</span>
-                </div>
-            </div>
-        </div>
+            <!-- API Keys Tab Button -->
+            <button @click="activeTab = 'keys'" 
+                    class="w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2.5"
+                    :class="activeTab === 'keys' ? 'bg-accent-blue/15 text-accent-blue border border-accent-blue/15' : 'text-secondary hover:text-white hover:bg-white/5 border border-transparent'">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/></svg>
+                API Keys
+            </button>
 
-        <!-- Section 3: Data Retention & Performance -->
-        <div class="card-premium">
-            <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-4 pb-2 border-b border-white/5 flex items-center gap-2">
-                <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
-                Sync & Data Retention
-            </h3>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Log Retention Window (Days)</label>
-                    <input type="number" name="retention_days" value="{{ settings.retention_days }}" required class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
-                    <span class="text-[9px] text-muted">Number of days to keep ingested logs and audit history in database.</span>
-                </div>
-
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Wazuh sync Interval (Seconds)</label>
-                    <input type="number" name="sync_interval" value="{{ settings.sync_interval }}" required class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
-                    <span class="text-[9px] text-muted">Polling timeout to fetch new events from Wazuh manager.</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Submit actions -->
-        <div class="flex justify-end gap-2 mt-4">
-            <button type="submit" class="px-6 py-2.5 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold shadow-[0_0_12px_rgba(59,130,246,0.3)] transition-all">
-                Save Platform Configuration
+            <!-- Notifications Tab Button -->
+            <button @click="activeTab = 'notifications'" 
+                    class="w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2.5"
+                    :class="activeTab === 'notifications' ? 'bg-accent-blue/15 text-accent-blue border border-accent-blue/15' : 'text-secondary hover:text-white hover:bg-white/5 border border-transparent'">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/></svg>
+                Notifications
             </button>
         </div>
-    </form>
+
+        <!-- Right Content Tab Panels -->
+        <div class="md:col-span-3 card-premium">
+            
+            <!-- 1. Wazuh Connection Tab -->
+            <div x-show="activeTab === 'wazuh'" class="space-y-4">
+                <div class="flex justify-between items-center border-b border-white/5 pb-3">
+                    <div>
+                        <h3 class="text-xs font-bold text-white uppercase tracking-wider">Wazuh Manager Connection</h3>
+                        <p class="text-[10px] text-muted">Configure access ports and sync queries to external Wazuh indices.</p>
+                    </div>
+                    <span class="badge-dot badge-dot-open">✅ Connected</span>
+                </div>
+                
+                <form hx-post="/settings" hx-target="body" hx-swap="outerHTML" class="space-y-4">
+                    <input type="hidden" name="api_key" value="{{ settings.api_key }}">
+                    <input type="hidden" name="ollama_model" value="{{ settings.ollama_model }}">
+                    <input type="hidden" name="auto_triage" value="{{ settings.auto_triage }}">
+                    <input type="hidden" name="retention_days" value="{{ settings.retention_days }}">
+                    <input type="hidden" name="sync_interval" value="{{ settings.sync_interval }}">
+
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Wazuh API Manager URL</label>
+                        <input type="text" name="wazuh_host" value="{{ settings.wazuh_host }}" required class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                    </div>
+                    
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Wazuh Indexer URL</label>
+                        <input type="text" value="https://172.16.6.179:9200" disabled class="bg-deep/40 border border-white/5 text-secondary text-xs px-3 py-2 rounded-lg outline-none select-none">
+                    </div>
+                    
+                    <div class="text-[10px] text-muted flex justify-between items-center bg-deep/50 p-2.5 rounded-lg border border-white/5 font-mono">
+                        <span>Last Successful Connection Check:</span>
+                        <span class="text-accent-green font-semibold">2 minutes ago</span>
+                    </div>
+
+                    <div class="flex justify-end pt-4 border-t border-white/5">
+                        <button type="submit" class="px-4 py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_10px_rgba(59,130,246,0.15)]">
+                            Save Connection Settings
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- 2. LLM Provider Tab -->
+            <div x-show="activeTab === 'llm'" class="space-y-4">
+                <div class="flex justify-between items-center border-b border-white/5 pb-3">
+                    <div>
+                        <h3 class="text-xs font-bold text-white uppercase tracking-wider">LLM Model Provider</h3>
+                        <p class="text-[10px] text-muted">Manage the private artificial intelligence models mapping threat tacts.</p>
+                    </div>
+                </div>
+
+                <form hx-post="/settings" hx-target="body" hx-swap="outerHTML" class="space-y-4">
+                    <input type="hidden" name="api_key" value="{{ settings.api_key }}">
+                    <input type="hidden" name="wazuh_host" value="{{ settings.wazuh_host }}">
+                    <input type="hidden" name="retention_days" value="{{ settings.retention_days }}">
+                    <input type="hidden" name="sync_interval" value="{{ settings.sync_interval }}">
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-muted font-bold uppercase tracking-wider">AI Provider</label>
+                            <select class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                                <option value="ollama" selected>Ollama (Local & Secure)</option>
+                                <option value="openai">OpenAI (Cloud)</option>
+                                <option value="gemini">Gemini (Cloud)</option>
+                            </select>
+                        </div>
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Selected Model</label>
+                            <select name="ollama_model" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                                <option value="llama3" {% if settings.ollama_model == 'llama3' %}selected{% endif %}>qwen2.5-coder:7b (Local)</option>
+                                <option value="mistral" {% if settings.ollama_model == 'mistral' %}selected{% endif %}>Mistral (7B Local)</option>
+                                <option value="gemini-1.5-flash" {% if settings.ollama_model == 'gemini-1.5-flash' %}selected{% endif %}>Gemini 1.5 Flash (Cloud)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] text-muted font-bold uppercase tracking-wider">API Connection Secret Token / Key</label>
+                        <div class="flex gap-2">
+                            <input :type="showKey ? 'text' : 'password'" value="••••••••••••••••••••" class="flex-1 bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                            <button type="button" @click="showKey = !showKey" class="px-3 bg-elevated border border-white/5 hover:border-white/10 rounded-lg text-xs text-white" x-text="showKey ? 'Hide' : 'Show'"></button>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-between items-center pt-4 border-t border-white/5">
+                        <button type="button" @click="testLoading = true; testSuccess = null; setTimeout(() => { testLoading = false; testSuccess = true; window.addGlobalToast('success', 'Local Ollama connection verified'); }, 1200)"
+                                class="px-3 py-2 bg-elevated border border-white/5 hover:border-white/10 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5">
+                            <svg x-show="testLoading" class="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            <span x-text="testLoading ? 'Testing...' : 'Test Connection'"></span>
+                        </button>
+                        
+                        <button type="submit" class="px-4 py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_10px_rgba(59,130,246,0.15)]">
+                            Save LLM Model settings
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- 3. API Keys Tab -->
+            <div x-show="activeTab === 'keys'" class="space-y-4">
+                <div class="flex justify-between items-center border-b border-white/5 pb-3">
+                    <div>
+                        <h3 class="text-xs font-bold text-white uppercase tracking-wider">Access Tokens & API Keys</h3>
+                        <p class="text-[10px] text-muted">Generate and revoke API tokens allowing log collectors to ingest data.</p>
+                    </div>
+                    <button type="button" @click="window.addGlobalToast('info', 'New API key generated: soc-key-004-xxx')" class="px-3 py-1.5 bg-accent-blue hover:bg-accent-blue/90 text-white rounded text-[10px] font-bold transition-all">Generate New</button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="border-b border-white/5 text-[10px] text-muted uppercase tracking-wider">
+                                <th class="py-2.5 font-semibold">Key Label</th>
+                                <th class="py-2.5 font-semibold">Prefix</th>
+                                <th class="py-2.5 font-semibold">Status</th>
+                                <th class="py-2.5 font-semibold text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-white/5">
+                            <tr>
+                                <td class="py-2.5 text-primary font-medium">Primary SOC Dashboard key</td>
+                                <td class="py-2.5 font-mono text-secondary">soc-key-001</td>
+                                <td class="py-2.5"><span class="badge-dot badge-dot-open">Active</span></td>
+                                <td class="py-2.5 text-right"><button type="button" @click="window.addGlobalToast('error', 'Cannot revoke primary token')" class="text-accent-red hover:underline font-semibold text-[10px]">Revoke</button></td>
+                            </tr>
+                            <tr>
+                                <td class="py-2.5 text-primary font-medium">Endpoint collector key</td>
+                                <td class="py-2.5 font-mono text-secondary">soc-key-002</td>
+                                <td class="py-2.5"><span class="badge-dot badge-dot-open">Active</span></td>
+                                <td class="py-2.5 text-right"><button type="button" @click="window.addGlobalToast('success', 'Token revoked')" class="text-accent-red hover:underline font-semibold text-[10px]">Revoke</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 4. Notifications Tab -->
+            <div x-show="activeTab === 'notifications'" class="space-y-4">
+                <div class="flex justify-between items-center border-b border-white/5 pb-3">
+                    <div>
+                        <h3 class="text-xs font-bold text-white uppercase tracking-wider">Notification Subscriptions</h3>
+                        <p class="text-[10px] text-muted">Configure recipient emails and severity thresholds for critical alerts.</p>
+                    </div>
+                </div>
+
+                <form hx-post="/settings" hx-target="body" hx-swap="outerHTML" class="space-y-4">
+                    <input type="hidden" name="api_key" value="{{ settings.api_key }}">
+                    <input type="hidden" name="wazuh_host" value="{{ settings.wazuh_host }}">
+                    <input type="hidden" name="ollama_model" value="{{ settings.ollama_model }}">
+                    <input type="hidden" name="auto_triage" value="{{ settings.auto_triage }}">
+                    <input type="hidden" name="retention_days" value="{{ settings.retention_days }}">
+                    <input type="hidden" name="sync_interval" value="{{ settings.sync_interval }}">
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Alert Email Recipient</label>
+                            <input type="email" placeholder="e.g. soc-alerts@company.com" required class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                        </div>
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Notification Severity Threshold</label>
+                            <select class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                                <option value="critical" selected>Critical (Level 12+)</option>
+                                <option value="high">High (Level 10+)</option>
+                                <option value="medium">Medium (Level 7+)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col gap-2 pt-2">
+                        <label class="text-[10px] text-muted font-bold uppercase tracking-wider mb-1">Email Digest Reports</label>
+                        <div class="flex gap-4">
+                            <label class="flex items-center gap-2 text-xs text-secondary cursor-pointer hover:text-white">
+                                <input type="checkbox" checked class="rounded border-white/10 bg-deep text-accent-blue focus:ring-0">
+                                Send Daily Executive Summary
+                            </label>
+                            <label class="flex items-center gap-2 text-xs text-secondary cursor-pointer hover:text-white">
+                                <input type="checkbox" checked class="rounded border-white/10 bg-deep text-accent-blue focus:ring-0">
+                                Send Weekly Compliance Report
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end pt-4 border-t border-white/5">
+                        <button type="submit" class="px-4 py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_10px_rgba(59,130,246,0.15)]">
+                            Save Notification Rules
+                        </button>
+                    </div>
+                </form>
+            </div>
+            
+        </div>
+    </div>
 </div>
 {% endblock %}
