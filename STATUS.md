@@ -2,7 +2,7 @@
 
 > **Project Board**: https://github.com/users/shubham-landge/projects/1
 > **Repository**: https://github.com/shubham-landge/unified-wazuh-platform
-> **Updated**: 2026-06-11
+> **Updated**: 2026-06-13
 
 ---
 
@@ -33,10 +33,10 @@
 | Field | Value |
 |---|---|
 | **Branch** | `tool/antigravity` |
-| **PR** | #1 |
-| **Status** | 🔄 In Progress — WP1: Diagrams |
+| **PR** | #2 |
+| **Status** | ✅ Complete |
 | **Task** | Dashboard enhancements (charts, settings page), deployment documentation |
-| **Files to create/modify** | Dashboard templates, `docs/DASHBOARD-GUIDE.md`, `docs/DEPLOYMENT-GUIDE.md` |
+| **Files created/modified** | All dashboard templates, `services/dashboard/static/charts.js`, `docs/DASHBOARD-GUIDE.md`, `docs/DEPLOYMENT-GUIDE.md` |
 | **Blockers** | None |
 
 ## OpenCode — Integration & Deploy
