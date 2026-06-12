@@ -1,62 +1,159 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-4xl">
-    <a href="/alerts" class="text-soc-400 hover:text-white text-sm mb-4 inline-block"
-       hx-get="/alerts" hx-target="body" hx-push-url="true">← Back to Alerts</a>
-
-    <h1 class="text-2xl font-bold mb-6">Alert Detail</h1>
-
-    <div class="grid grid-cols-2 gap-4 mb-6">
-        <div class="card">
-            <div class="card-header">Rule</div>
-            <div class="font-semibold">{{ alert.rule_description }}</div>
-            <div class="text-sm text-soc-400 mt-1">Rule ID: {{ alert.rule_id }} | Level: {{ alert.rule_level }}</div>
-            <div class="mt-2">
-                {% for group in alert.rule_groups or [] %}
-                <span class="badge badge-low">{{ group }}</span>
-                {% endfor %}
-            </div>
-        </div>
-        <div class="card">
-            <div class="card-header">Agent</div>
-            <div class="font-semibold">{{ alert.agent_name or 'N/A' }}</div>
-            <div class="text-sm text-soc-400">IP: {{ alert.agent_ip or 'N/A' }}</div>
-            <div class="text-sm text-soc-400">ID: {{ alert.agent_id or 'N/A' }}</div>
-        </div>
-        <div class="card">
-            <div class="card-header">Network</div>
-            <div class="text-sm">Source: <span class="font-mono">{{ alert.source_ip or 'N/A' }}</span></div>
-            <div class="text-sm">Destination: <span class="font-mono">{{ alert.destination_ip or 'N/A' }}</span></div>
-            <div class="text-sm">Protocol: {{ alert.protocol or 'N/A' }}</div>
-        </div>
-        <div class="card">
-            <div class="card-header">Entities</div>
-            <div class="text-sm">User: {{ alert.user_name or 'N/A' }}</div>
-            <div class="text-sm">Process: {{ alert.process_name or 'N/A' }}</div>
-            <div class="text-sm">File: {{ alert.file_name or 'N/A' }}</div>
-            <div class="text-sm text-xs font-mono">Hash: {{ alert.file_hash or 'N/A' }}</div>
+<div class="max-w-5xl mx-auto space-y-6">
+    <!-- Breadcrumb & Back Actions -->
+    <div class="flex items-center justify-between pb-2">
+        <a href="/alerts" class="inline-flex items-center gap-1.5 text-xs text-accent-blue hover:underline font-semibold"
+           hx-get="/alerts" hx-target="body" hx-push-url="true">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/></svg>
+            Back to Alerts List
+        </a>
+        <div class="text-[10px] text-muted font-mono">
+            Ingested At: {{ alert.ingested_at[:19].replace('T', ' ') if alert.ingested_at else 'N/A' }}
         </div>
     </div>
 
+    <!-- Alert Title Block -->
+    <div class="card-premium bg-gradient-to-r from-surface to-elevated/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <span class="badge-dot {% if alert.rule_level >= 12 %}badge-dot-critical{% elif alert.rule_level >= 10 %}badge-dot-high{% elif alert.rule_level >= 7 %}badge-dot-medium{% else %}badge-dot-low{% endif %} mb-2">
+                Level {{ alert.rule_level }} Severity
+            </span>
+            <h1 class="text-xl font-extrabold text-white tracking-tight">{{ alert.rule_description }}</h1>
+            <p class="text-xs text-muted font-mono mt-1">UUID: {{ alert.id }} | Rule ID: {{ alert.rule_id }}</p>
+        </div>
+        
+        <!-- Quick Action: Create Manual Case -->
+        <button hx-post="/cases"
+                hx-vals='{"title": "Investigation: {{ alert.rule_description }}", "description": "Manual case creation from alert {{ alert.id }}", "severity": "{% if alert.rule_level >= 12 %}critical{% elif alert.rule_level >= 10 %}high{% else %}medium{% endif %}", "category": "manual", "alert_id": "{{ alert.id }}"}'
+                hx-target="body"
+                hx-swap="outerHTML"
+                class="px-4 py-2 border border-white/10 hover:bg-white/5 text-white rounded-lg text-xs font-semibold transition-all">
+            Escalate to Case
+        </button>
+    </div>
+
+    <!-- Details Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Left Side: Rule & Entities -->
+        <div class="space-y-6">
+            <!-- Rule Details -->
+            <div class="card-premium">
+                <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-4 pb-2 border-b border-white/5 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    Rule Signature Details
+                </h3>
+                <div class="space-y-2.5 text-xs">
+                    <div class="flex justify-between"><span class="text-secondary">Signature Description:</span> <span class="text-primary font-medium text-right max-w-xs">{{ alert.rule_description }}</span></div>
+                    <div class="flex justify-between"><span class="text-secondary">Wazuh Rule ID:</span> <span class="text-white font-mono font-semibold">{{ alert.rule_id }}</span></div>
+                    <div class="flex justify-between"><span class="text-secondary">Signature Severity:</span> <span class="font-semibold text-accent-yellow">Level {{ alert.rule_level }}</span></div>
+                    <div class="flex justify-between"><span class="text-secondary">Signature Groups:</span> 
+                        <span class="flex flex-wrap gap-1 justify-end">
+                            {% for group in alert.rule_groups or [] %}
+                            <span class="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] font-mono text-secondary">{{ group }}</span>
+                            {% endfor %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Host Entities -->
+            <div class="card-premium">
+                <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-4 pb-2 border-b border-white/5 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    User & Process Entities
+                </h3>
+                <div class="space-y-2.5 text-xs font-mono">
+                    <div class="flex justify-between text-xs font-sans"><span class="text-secondary">Username:</span> <span class="text-primary font-semibold">{{ alert.user_name or 'N/A' }}</span></div>
+                    <div class="flex justify-between text-xs font-sans"><span class="text-secondary">Process Name:</span> <span class="text-primary font-semibold">{{ alert.process_name or 'N/A' }}</span></div>
+                    <div class="flex justify-between text-xs font-sans"><span class="text-secondary">Target File:</span> <span class="text-primary font-semibold text-right max-w-xs truncate">{{ alert.file_name or 'N/A' }}</span></div>
+                    <div class="flex flex-col gap-1 border-t border-white/5 pt-2">
+                        <span class="text-xs font-sans text-secondary">File Cryptographic Hash (MD5/SHA256):</span> 
+                        <span class="text-[10px] text-muted break-all">{{ alert.file_hash or 'N/A' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side: Agent & Network -->
+        <div class="space-y-6">
+            <!-- Agent details -->
+            <div class="card-premium">
+                <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-4 pb-2 border-b border-white/5 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25"/></svg>
+                    Asset / Agent Registry
+                </h3>
+                <div class="space-y-2.5 text-xs">
+                    <div class="flex justify-between"><span class="text-secondary">Wazuh Agent Name:</span> <span class="text-white font-semibold">{{ alert.agent_name or 'Localhost' }}</span></div>
+                    <div class="flex justify-between"><span class="text-secondary">Internal IP Address:</span> <span class="text-primary font-mono font-semibold">{{ alert.agent_ip or '127.0.0.1' }}</span></div>
+                    <div class="flex justify-between"><span class="text-secondary">Agent Database ID:</span> <span class="text-primary font-mono">{{ alert.agent_id or '000' }}</span></div>
+                </div>
+            </div>
+
+            <!-- Network Parameters -->
+            <div class="card-premium">
+                <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-4 pb-2 border-b border-white/5 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-.778.099-1.533.284-2.253"/></svg>
+                    Network Flow Details
+                </h3>
+                <div class="space-y-2.5 text-xs font-mono">
+                    <div class="flex justify-between text-xs font-sans"><span class="text-secondary">Source Address:</span> <span class="text-primary font-semibold">{{ alert.source_ip or 'N/A' }}</span></div>
+                    <div class="flex justify-between text-xs font-sans"><span class="text-secondary">Destination Address:</span> <span class="text-primary font-semibold">{{ alert.destination_ip or 'N/A' }}</span></div>
+                    <div class="flex justify-between text-xs font-sans"><span class="text-secondary">Network Protocol:</span> <span class="text-primary font-semibold uppercase">{{ alert.protocol or 'N/A' }}</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MITRE Card -->
     {% if alert.mitre_tactic or alert.mitre_technique %}
-    <div class="card mb-6">
-        <div class="card-header">MITRE ATT&CK</div>
-        <div class="flex gap-4">
-            <div><span class="text-soc-400">Tactic:</span> {{ alert.mitre_tactic }}</div>
-            <div><span class="text-soc-400">Technique:</span> {{ alert.mitre_technique }}</div>
+    <div class="card-premium">
+        <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-4 pb-2 border-b border-white/5 flex items-center gap-2">
+            <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/></svg>
+            MITRE ATT&CK Framework Classification
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div class="bg-deep/50 border border-white/5 p-3 rounded-lg flex flex-col gap-1">
+                <span class="text-[10px] text-muted font-bold tracking-wide uppercase">Attack Tactic</span>
+                <span class="text-primary font-medium">{{ alert.mitre_tactic or 'N/A' }}</span>
+            </div>
+            <div class="bg-deep/50 border border-white/5 p-3 rounded-lg flex flex-col gap-1">
+                <span class="text-[10px] text-muted font-bold tracking-wide uppercase">Attack Technique</span>
+                <span class="text-primary font-medium font-mono">{{ alert.mitre_technique or 'N/A' }}</span>
+            </div>
         </div>
     </div>
     {% endif %}
 
-    <div class="flex gap-2 mt-6">
-        <button class="bg-soc-600 hover:bg-soc-500 text-white px-4 py-2 rounded font-semibold"
-                hx-post="/triage/run"
-                hx-vals='{"alert_id": "{{ alert.id }}"}'
-                hx-target="#triage-result"
-                hx-swap="innerHTML">
-            Run AI Triage
-        </button>
+    <!-- AI Triage Action Trigger Block -->
+    <div class="card-premium border-l-4 border-accent-blue bg-gradient-to-r from-accent-blue/5 to-transparent">
+        <div class="flex items-center justify-between flex-wrap gap-4">
+            <div>
+                <h3 class="text-xs font-bold text-white uppercase tracking-wider">AI Copilot Threat Analysis</h3>
+                <p class="text-xs text-secondary mt-1">Submit alert payload to Local LLM models for immediate security assessment, mapping, and response recommendations.</p>
+            </div>
+            
+            <div class="relative">
+                <!-- Trigger Button with HTMX spinner class -->
+                <button class="px-5 py-2.5 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold shadow-[0_0_15px_rgba(59,130,246,0.3)] transition-all flex items-center gap-2"
+                        hx-post="/triage/run"
+                        hx-vals='{"alert_id": "{{ alert.id }}"}'
+                        hx-target="#triage-result"
+                        hx-swap="innerHTML"
+                        hx-indicator="#triage-spinner">
+                    <span>Analyze Event</span>
+                    <!-- Spinner Icon (hidden by default, shown by HTMX during request) -->
+                    <svg id="triage-spinner" class="animate-spin h-4 w-4 text-white htmx-indicator" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Target container for triage partial -->
+        <div id="triage-result" class="mt-4"></div>
     </div>
-    <div id="triage-result" class="mt-4"></div>
 </div>
 {% endblock %}

@@ -1,0 +1,157 @@
+/* Custom premium styles for SOC Dashboard */
+body {
+    background-color: #070b14;
+    color: #e8edf5;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Card components */
+.card-premium {
+    background-color: #0d1321;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.card-premium:hover {
+    transform: translateY(-2px);
+    border-color: rgba(59, 130, 246, 0.2);
+    box-shadow: 0 6px 24px -2px rgba(0, 0, 0, 0.7);
+}
+
+/* Card gradients for severity */
+.gradient-blue {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.02) 100%) !important;
+    border-left: 4px solid #3b82f6 !important;
+}
+.gradient-red {
+    background: linear-gradient(135deg, rgba(220, 38, 38, 0.1) 0%, rgba(220, 38, 38, 0.02) 100%) !important;
+    border-left: 4px solid #dc2626 !important;
+}
+.gradient-green {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.02) 100%) !important;
+    border-left: 4px solid #22c55e !important;
+}
+
+/* Severity badge styling with colored dots */
+.badge-dot {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.badge-dot::before {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+}
+
+.badge-dot-critical {
+    color: #fca5a5;
+    background-color: rgba(220, 38, 38, 0.15);
+    border-color: rgba(220, 38, 38, 0.3);
+}
+.badge-dot-critical::before { background-color: #dc2626; }
+
+.badge-dot-high {
+    color: #fed7aa;
+    background-color: rgba(249, 115, 22, 0.15);
+    border-color: rgba(249, 115, 22, 0.3);
+}
+.badge-dot-high::before { background-color: #f97316; }
+
+.badge-dot-medium {
+    color: #fef08a;
+    background-color: rgba(234, 179, 8, 0.15);
+    border-color: rgba(234, 179, 8, 0.3);
+}
+.badge-dot-medium::before { background-color: #eab308; }
+
+.badge-dot-low {
+    color: #bfdbfe;
+    background-color: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+.badge-dot-low::before { background-color: #3b82f6; }
+
+/* Statuses */
+.badge-dot-open {
+    color: #bbf7d0;
+    background-color: rgba(34, 197, 94, 0.15);
+    border-color: rgba(34, 197, 94, 0.3);
+}
+.badge-dot-open::before { background-color: #22c55e; }
+
+.badge-dot-closed {
+    color: #cbd5e1;
+    background-color: rgba(100, 116, 139, 0.15);
+    border-color: rgba(100, 116, 139, 0.3);
+}
+.badge-dot-closed::before { background-color: #64748b; }
+
+.badge-dot-in_progress {
+    color: #fef08a;
+    background-color: rgba(234, 179, 8, 0.15);
+    border-color: rgba(234, 179, 8, 0.3);
+}
+.badge-dot-in_progress::before { background-color: #eab308; }
+
+.badge-dot-resolved {
+    color: #c084fc;
+    background-color: rgba(168, 85, 247, 0.15);
+    border-color: rgba(168, 85, 247, 0.3);
+}
+.badge-dot-resolved::before { background-color: #a855f7; }
+
+.badge-dot-false_positive {
+    color: #f472b6;
+    background-color: rgba(244, 114, 182, 0.15);
+    border-color: rgba(244, 114, 182, 0.3);
+}
+.badge-dot-false_positive::before { background-color: #f472b6; }
+
+/* Shimmer Loading Skeleton */
+.skeleton {
+    background: linear-gradient(90deg, #151d30 25%, #1f2a45 50%, #151d30 75%);
+    background-size: 200% 100%;
+    animation: loading-shimmer 1.5s infinite;
+}
+@keyframes loading-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Toast animations */
+@keyframes slide-in-right {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+.toast-slide-in {
+    animation: slide-in-right 0.3s forwards ease-out;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #070b14;
+}
+::-webkit-scrollbar-thumb {
+    background: #151d30;
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #3b82f6;
+}

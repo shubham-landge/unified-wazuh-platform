@@ -10,6 +10,7 @@ COPY services/dashboard/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY services/dashboard/app/ app/
+COPY services/dashboard/static/ static/
 COPY services/dashboard/templates/ templates/
 
 EXPOSE 80

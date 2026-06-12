@@ -1,52 +1,327 @@
 {% extends "base.html" %}
 {% block content %}
-<div x-data="{ search: '', levelFilter: '0' }">
+<div x-data="alertsDashboardState()">
+    <!-- Page Header & Title -->
     <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold">Alerts</h1>
-        <div class="flex gap-2">
-            <input type="text" placeholder="Search..." x-model="search" class="w-48">
-            <select x-model="levelFilter" @change="window.location.href = '/alerts?level=' + levelFilter">
-                <option value="0">All Levels</option>
-                <option value="7">Level 7+ (Medium)</option>
-                <option value="10">Level 10+ (High)</option>
-                <option value="12">Level 12+ (Critical)</option>
-            </select>
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">Security Alerts Console</h1>
+            <p class="text-xs text-secondary mt-0.5">Filter, inspect, and execute automated AI triage on active Wazuh alerts.</p>
+        </div>
+        
+        <!-- Action Button -->
+        <button @click="triggerBulkCase()" x-show="selectedAlerts.length > 0" class="px-4 py-2 bg-gradient-to-r from-accent-blue to-accent-blue/80 text-white rounded-lg text-xs font-semibold hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] transition-all flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+            Create Case (<span x-text="selectedAlerts.length"></span>)
+        </button>
+    </div>
+
+    <!-- Quick Stats Row (Based on filtered state or raw alerts) -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="card-premium border-l-4 border-accent-red">
+            <div class="text-[9px] font-bold text-muted uppercase tracking-wider">Critical (L12+)</div>
+            <div class="text-xl font-extrabold text-white mt-1" x-text="countCritical()">0</div>
+        </div>
+        <div class="card-premium border-l-4 border-accent-yellow">
+            <div class="text-[9px] font-bold text-muted uppercase tracking-wider">High (L10-L11)</div>
+            <div class="text-xl font-extrabold text-white mt-1" x-text="countHigh()">0</div>
+        </div>
+        <div class="card-premium border-l-4 border-accent-blue">
+            <div class="text-[9px] font-bold text-muted uppercase tracking-wider">Medium (L7-L9)</div>
+            <div class="text-xl font-extrabold text-white mt-1" x-text="countMedium()">0</div>
+        </div>
+        <div class="card-premium border-l-4 border-muted">
+            <div class="text-[9px] font-bold text-muted uppercase tracking-wider">Low (L0-L6)</div>
+            <div class="text-xl font-extrabold text-white mt-1" x-text="countLow()">0</div>
         </div>
     </div>
 
-    <div class="card">
-        <table>
-            <thead>
-                <tr>
-                    <th>Time</th>
-                    <th>Level</th>
-                    <th>Rule ID</th>
-                    <th>Description</th>
-                    <th>Agent</th>
-                    <th>Source IP</th>
-                    <th>User</th>
-                    <th>MITRE</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for alert in alerts %}
-                <tr class="cursor-pointer"
-                    hx-get="/alerts/{{ alert.id }}"
-                    hx-target="body"
-                    hx-push-url="true"
-                    x-show="search === '' || '{{ alert.rule_description }}'.toLowerCase().includes(search.toLowerCase())">
-                    <td class="text-xs font-mono">{{ alert.timestamp[:19] if alert.timestamp else 'N/A' }}</td>
-                    <td><span class="badge badge-{{ 'critical' if alert.rule_level >= 12 else 'high' if alert.rule_level >= 10 else 'medium' if alert.rule_level >= 7 else 'low' }}">{{ alert.rule_level }}</span></td>
-                    <td class="font-mono text-xs">{{ alert.rule_id }}</td>
-                    <td class="max-w-sm truncate">{{ alert.rule_description }}</td>
-                    <td>{{ alert.agent_name }}</td>
-                    <td class="font-mono text-xs">{{ alert.source_ip or 'N/A' }}</td>
-                    <td>{{ alert.user_name or 'N/A' }}</td>
-                    <td class="text-xs">{{ alert.mitre_technique or 'N/A' }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <!-- Filter Toolbar -->
+    <div class="card-premium p-4 mb-6 bg-surface/50 border border-white/5 space-y-3">
+        <div class="flex flex-wrap gap-3 items-center">
+            <!-- Search -->
+            <div class="flex-1 min-w-[200px] relative">
+                <input type="text" placeholder="Search description, rule ID, or IP..." x-model="search" class="w-full bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+            </div>
+
+            <!-- Severity Filter -->
+            <select x-model="severityFilter" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                <option value="">All Severities</option>
+                <option value="critical">Critical (Level 12+)</option>
+                <option value="high">High (Level 10+)</option>
+                <option value="medium">Medium (Level 7+)</option>
+                <option value="low">Low (Level 0+)</option>
+            </select>
+
+            <!-- Agent Filter -->
+            <select x-model="agentFilter" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                <option value="">All Agents</option>
+                <template x-for="agent in getUniqueAgents()" :key="agent">
+                    <option :value="agent" x-text="agent"></option>
+                </template>
+            </select>
+
+            <!-- Group Filter -->
+            <select x-model="groupFilter" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                <option value="">All Groups</option>
+                <template x-for="grp in getUniqueGroups()" :key="grp">
+                    <option :value="grp" x-text="grp"></option>
+                </template>
+            </select>
+
+            <!-- Time Filter -->
+            <select x-model="timeFilter" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                <option value="all">All Logs</option>
+                <option value="24h">Last 24 Hours</option>
+                <option value="7d">Last 7 Days</option>
+            </select>
+
+            <!-- Clear filters -->
+            <button @click="resetFilters()" x-show="search || severityFilter || agentFilter || groupFilter || timeFilter !== 'all'" class="text-xs text-accent-blue hover:underline">
+                Clear Filters
+            </button>
+        </div>
+    </div>
+
+    <!-- Alert List Data Table -->
+    <div class="card-premium overflow-hidden border border-white/5">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="border-b border-white/10 bg-deep/40">
+                        <th class="p-3 w-10">
+                            <input type="checkbox" @change="toggleSelectAll($event)" :checked="selectedAlerts.length === filteredAlerts().length && filteredAlerts().length > 0" class="rounded border-white/10 bg-deep focus:ring-0">
+                        </th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Level</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Time</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Rule ID</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Description</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Agent</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Source IP</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">AI Triage</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                    <template x-for="alert in paginatedAlerts()" :key="alert.id">
+                        <tr class="hover:bg-white/5 transition-all cursor-pointer">
+                            <td class="p-3" @click.stop>
+                                <input type="checkbox" :value="alert.id" x-model="selectedAlerts" class="rounded border-white/10 bg-deep focus:ring-0">
+                            </td>
+                            <td class="p-3" @click="openAlert(alert.id)">
+                                <span class="badge-dot" :class="{
+                                    'badge-dot-critical': alert.rule_level >= 12,
+                                    'badge-dot-high': alert.rule_level >= 10 && alert.rule_level < 12,
+                                    'badge-dot-medium': alert.rule_level >= 7 && alert.rule_level < 10,
+                                    'badge-dot-low': alert.rule_level < 7
+                                }" x-text="'Lvl ' + alert.rule_level"></span>
+                            </td>
+                            <td class="p-3 text-secondary font-mono" x-text="formatTime(alert.timestamp)" @click="openAlert(alert.id)"></td>
+                            <td class="p-3 text-secondary font-mono" x-text="alert.rule_id" @click="openAlert(alert.id)"></td>
+                            <td class="p-3 font-medium text-primary max-w-xs truncate" x-text="alert.rule_description" @click="openAlert(alert.id)"></td>
+                            <td class="p-3 text-secondary font-mono" x-text="alert.agent_name || 'N/A'" @click="openAlert(alert.id)"></td>
+                            <td class="p-3 text-secondary font-mono" x-text="alert.source_ip || 'N/A'" @click="openAlert(alert.id)"></td>
+                            <td class="p-3" @click="openAlert(alert.id)">
+                                <span class="badge-dot" :class="alert.rule_level >= 10 ? 'badge-dot-open text-accent-green bg-accent-green/10' : 'badge-dot-closed text-muted bg-white/5'">
+                                    <span x-text="alert.rule_level >= 10 ? '🤖 Ready' : '—'"></span>
+                                </span>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr x-show="filteredAlerts().length === 0">
+                        <td colspan="8" class="p-12 text-center text-muted">
+                            <svg class="w-8 h-8 mx-auto text-muted/30 mb-2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                            <span class="font-medium">No matching alerts found</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="px-4 py-3 bg-deep/20 border-t border-white/5 flex items-center justify-between text-xs" x-show="filteredAlerts().length > 0">
+            <div class="text-muted">
+                Showing <span class="text-primary font-semibold" x-text="startIndex() + 1"></span> to 
+                <span class="text-primary font-semibold" x-text="endIndex()"></span> of 
+                <span class="text-primary font-semibold" x-text="filteredAlerts().length"></span> alerts
+            </div>
+            <div class="flex gap-1.5">
+                <button @click="prevPage()" :disabled="currentPage === 1" class="px-2.5 py-1.5 bg-surface border border-white/5 hover:border-white/10 rounded disabled:opacity-50 text-white font-medium">Previous</button>
+                <button @click="nextPage()" :disabled="currentPage >= totalPages()" class="px-2.5 py-1.5 bg-surface border border-white/5 hover:border-white/10 rounded disabled:opacity-50 text-white font-medium">Next</button>
+            </div>
+        </div>
     </div>
 </div>
+
+<script>
+    function alertsDashboardState() {
+        return {
+            alerts: [
+                {% for alert in alerts %}
+                {
+                    id: "{{ alert.id }}",
+                    rule_id: "{{ alert.rule_id }}",
+                    rule_description: "{{ alert.rule_description }}",
+                    rule_level: {{ alert.rule_level }},
+                    rule_groups: [{% for g in alert.rule_groups %}"{{ g }}",{% endfor %}],
+                    agent_name: "{{ alert.agent_name }}",
+                    source_ip: "{{ alert.source_ip or '' }}",
+                    timestamp: "{{ alert.timestamp or '' }}"
+                },
+                {% endfor %}
+            ],
+            search: '',
+            severityFilter: '',
+            agentFilter: '',
+            groupFilter: '',
+            timeFilter: 'all',
+            currentPage: 1,
+            pageSize: 20,
+            selectedAlerts: [],
+
+            init() {
+                // Fetch URL search query if exists
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('search')) {
+                    this.search = params.get('search');
+                }
+            },
+
+            formatTime(ts) {
+                if (!ts) return 'N/A';
+                return ts.substring(0, 19).replace('T', ' ');
+            },
+
+            resetFilters() {
+                this.search = '';
+                this.severityFilter = '';
+                this.agentFilter = '';
+                this.groupFilter = '';
+                this.timeFilter = 'all';
+                this.currentPage = 1;
+            },
+
+            getUniqueAgents() {
+                const agents = this.alerts.map(a => a.agent_name).filter(Boolean);
+                return [...new Set(agents)].sort();
+            },
+
+            getUniqueGroups() {
+                const groups = [];
+                this.alerts.forEach(a => {
+                    if (a.rule_groups) {
+                        a.rule_groups.forEach(g => {
+                            if (g) groups.push(g);
+                        });
+                    }
+                });
+                return [...new Set(groups)].sort();
+            },
+
+            filteredAlerts() {
+                return this.alerts.filter(alert => {
+                    // Search Match
+                    const query = this.search.toLowerCase();
+                    const matchesSearch = !this.search || 
+                        alert.rule_description.toLowerCase().includes(query) ||
+                        alert.rule_id.toString().includes(query) ||
+                        alert.source_ip.includes(query) ||
+                        alert.agent_name.toLowerCase().includes(query);
+
+                    // Severity Match
+                    let matchesSeverity = true;
+                    if (this.severityFilter === 'critical') matchesSeverity = alert.rule_level >= 12;
+                    else if (this.severityFilter === 'high') matchesSeverity = alert.rule_level >= 10 && alert.rule_level < 12;
+                    else if (this.severityFilter === 'medium') matchesSeverity = alert.rule_level >= 7 && alert.rule_level < 10;
+                    else if (this.severityFilter === 'low') matchesSeverity = alert.rule_level < 7;
+
+                    // Agent Match
+                    const matchesAgent = !this.agentFilter || alert.agent_name === this.agentFilter;
+
+                    // Group Match
+                    const matchesGroup = !this.groupFilter || (alert.rule_groups && alert.rule_groups.includes(this.groupFilter));
+
+                    // Time Match
+                    let matchesTime = true;
+                    if (this.timeFilter === '24h' && alert.timestamp) {
+                        const alertDate = new Date(alert.timestamp);
+                        const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+                        matchesTime = alertDate >= dayAgo;
+                    } else if (this.timeFilter === '7d' && alert.timestamp) {
+                        const alertDate = new Date(alert.timestamp);
+                        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+                        matchesTime = alertDate >= weekAgo;
+                    }
+
+                    return matchesSearch && matchesSeverity && matchesAgent && matchesGroup && matchesTime;
+                });
+            },
+
+            // Stats computations based on CURRENT state
+            countCritical() { return this.alerts.filter(a => a.rule_level >= 12).length; },
+            countHigh() { return this.alerts.filter(a => a.rule_level >= 10 && a.rule_level < 12).length; },
+            countMedium() { return this.alerts.filter(a => a.rule_level >= 7 && a.rule_level < 10).length; },
+            countLow() { return this.alerts.filter(a => a.rule_level < 7).length; },
+
+            // Pagination Helpers
+            totalPages() {
+                return Math.ceil(this.filteredAlerts().length / this.pageSize) || 1;
+            },
+            startIndex() {
+                return (this.currentPage - 1) * this.pageSize;
+            },
+            endIndex() {
+                return Math.min(this.startIndex() + this.pageSize, this.filteredAlerts().length);
+            },
+            paginatedAlerts() {
+                return this.filteredAlerts().slice(this.startIndex(), this.endIndex());
+            },
+            prevPage() {
+                if (this.currentPage > 1) this.currentPage--;
+            },
+            nextPage() {
+                if (this.currentPage < this.totalPages()) this.currentPage++;
+            },
+
+            // Selection Helpers
+            toggleSelectAll(e) {
+                if (e.target.checked) {
+                    this.selectedAlerts = this.filteredAlerts().map(a => a.id);
+                } else {
+                    this.selectedAlerts = [];
+                }
+            },
+
+            openAlert(id) {
+                htmx.ajax('GET', `/alerts/${id}`, {target: 'body', swap: 'outerHTML', pushUrl: true});
+            },
+
+            triggerBulkCase() {
+                if (this.selectedAlerts.length === 0) return;
+                
+                // Get descriptions for selected alerts
+                const selectedAlertObjects = this.alerts.filter(a => this.selectedAlerts.includes(a.id));
+                const firstAlert = selectedAlertObjects[0];
+                const count = this.selectedAlerts.length;
+                
+                // Create a bulk case title
+                const bulkTitle = count === 1 ? firstAlert.rule_description : `Bulk Triage Case: ${count} correlation alerts`;
+                const bulkDesc = `Linked alerts:\n` + selectedAlertObjects.map(a => `- ${a.rule_description} (Rule ${a.rule_id})`).join('\n');
+                
+                // Trigger POST using HTMX
+                window.addGlobalToast("info", `Initiating bulk case for ${count} alerts...`);
+                
+                htmx.ajax('POST', '/cases', {
+                    values: {
+                        title: bulkTitle,
+                        description: bulkDesc,
+                        severity: firstAlert.rule_level >= 12 ? 'critical' : firstAlert.rule_level >= 10 ? 'high' : 'medium',
+                        category: 'bulk_triage',
+                        alert_id: firstAlert.id
+                    },
+                    target: 'body',
+                    swap: 'outerHTML'
+                });
+            }
+        };
+    }
+</script>
 {% endblock %}

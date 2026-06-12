@@ -1,44 +1,233 @@
 {% extends "base.html" %}
 {% block content %}
-<div x-data="{ search: '' }">
+<div x-data="assetsDashboardState()">
+    <!-- Page Header -->
     <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold">Asset Inventory</h1>
-        <input type="text" placeholder="Search..." x-model="search" class="w-48">
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">Asset & Agent Inventory</h1>
+            <p class="text-xs text-secondary mt-0.5">Real-time status of monitored endpoints, system architecture details, and asset criticality ratings.</p>
+        </div>
+        <div class="text-xs text-muted font-mono bg-surface border border-white/5 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+            <span class="w-2 h-2 bg-accent-green rounded-full animate-pulse"></span>
+            Agent sync daemon active
+        </div>
     </div>
 
-    <div class="card">
-        <table>
-            <thead>
-                <tr>
-                    <th>Agent Name</th>
-                    <th>Agent IP</th>
-                    <th>OS</th>
-                    <th>Status</th>
-                    <th>Groups</th>
-                    <th>Criticality</th>
-                    <th>Owner</th>
-                    <th>Last Seen</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for asset in assets %}
-                <tr x-show="search === '' || '{{ asset.agent_name }}'.toLowerCase().includes(search.toLowerCase())">
-                    <td class="font-semibold">{{ asset.agent_name or 'N/A' }}</td>
-                    <td class="font-mono text-xs">{{ asset.agent_ip or 'N/A' }}</td>
-                    <td class="text-xs">{{ asset.os_name or 'N/A' }} {{ asset.os_version or '' }}</td>
-                    <td><span class="badge badge-{{ 'open' if asset.status == 'active' else 'closed' }}">{{ asset.status }}</span></td>
-                    <td>
-                        {% for group in asset.groups or [] %}
-                        <span class="badge badge-low">{{ group }}</span>
-                        {% endfor %}
-                    </td>
-                    <td>{{ asset.criticality or '5' }}/10</td>
-                    <td>{{ asset.owner or '—' }}</td>
-                    <td class="text-xs">{{ asset.last_seen[:19] if asset.last_seen else 'N/A' }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <!-- Asset Summary Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="card-premium border-l-4 border-accent-blue">
+            <div class="text-[9px] font-bold text-muted uppercase tracking-wider">Total Endpoints</div>
+            <div class="text-xl font-extrabold text-white mt-1" x-text="assets.length">0</div>
+        </div>
+        <div class="card-premium border-l-4 border-accent-green">
+            <div class="text-[9px] font-bold text-muted uppercase tracking-wider">Active Agents</div>
+            <div class="text-xl font-extrabold text-white mt-1" x-text="countActive()">0</div>
+        </div>
+        <div class="card-premium border-l-4 border-muted">
+            <div class="text-[9px] font-bold text-muted uppercase tracking-wider">Disconnected</div>
+            <div class="text-xl font-extrabold text-white mt-1" x-text="countDisconnected()">0</div>
+        </div>
+        <div class="card-premium border-l-4 border-accent-red">
+            <div class="text-[9px] font-bold text-muted uppercase tracking-wider">High Criticality (&ge;8)</div>
+            <div class="text-xl font-extrabold text-white mt-1" x-text="countHighCriticality()">0</div>
+        </div>
+    </div>
+
+    <!-- Filter Toolbar -->
+    <div class="card-premium p-4 mb-6 bg-surface/50 border border-white/5">
+        <div class="flex flex-wrap gap-3 items-center">
+            <!-- Search -->
+            <div class="flex-1 min-w-[200px]">
+                <input type="text" placeholder="Search agent name, IP, or owner..." x-model="search" class="w-full bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+            </div>
+
+            <!-- Status Filter -->
+            <select x-model="statusFilter" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                <option value="">All Statuses</option>
+                <option value="active">Active</option>
+                <option value="disconnected">Disconnected</option>
+            </select>
+
+            <!-- OS Filter -->
+            <select x-model="osFilter" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                <option value="">All OS Platforms</option>
+                <template x-for="os in getUniqueOS()" :key="os">
+                    <option :value="os" x-text="os"></option>
+                </template>
+            </select>
+
+            <!-- Criticality Filter -->
+            <select x-model="criticalityFilter" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                <option value="">All Criticality</option>
+                <option value="high">High (&ge; 8)</option>
+                <option value="medium">Medium (4 - 7)</option>
+                <option value="low">Low (&le; 3)</option>
+            </select>
+
+            <!-- Clear filters -->
+            <button @click="resetFilters()" x-show="search || statusFilter || osFilter || criticalityFilter" class="text-xs text-accent-blue hover:underline">
+                Clear Filters
+            </button>
+        </div>
+    </div>
+
+    <!-- Assets Data Table -->
+    <div class="card-premium overflow-hidden border border-white/5">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="border-b border-white/10 bg-deep/40">
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Agent Name</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Internal IP</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">OS Details</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Status</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Groups</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Criticality</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Owner</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Last Seen</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                    <template x-for="a in paginatedAssets()" :key="a.id">
+                        <tr class="hover:bg-white/5 transition-all">
+                            <td class="p-3 font-bold text-primary" x-text="a.agent_name || 'N/A'"></td>
+                            <td class="p-3 font-mono text-secondary" x-text="a.agent_ip || 'N/A'"></td>
+                            <td class="p-3 text-secondary font-medium" x-text="(a.os_name || 'N/A') + ' ' + (a.os_version || '')"></td>
+                            <td class="p-3">
+                                <span class="badge-dot" :class="a.status === 'active' ? 'badge-dot-open' : 'badge-dot-closed'" x-text="a.status === 'active' ? 'Active' : 'Disconnected'"></span>
+                            </td>
+                            <td class="p-3">
+                                <div class="flex flex-wrap gap-1">
+                                    <template x-for="group in a.groups" :key="group">
+                                        <span class="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] font-mono text-secondary" x-text="group"></span>
+                                    </template>
+                                    <span x-show="!a.groups || a.groups.length === 0" class="text-muted">—</span>
+                                </div>
+                            </td>
+                            <td class="p-3 font-mono">
+                                <span class="font-bold"
+                                      :class="{
+                                          'text-accent-red': a.criticality >= 8,
+                                          'text-accent-yellow': a.criticality >= 4 && a.criticality < 8,
+                                          'text-accent-blue': a.criticality < 4
+                                      }" x-text="a.criticality + '/10'"></span>
+                            </td>
+                            <td class="p-3 text-secondary font-medium" x-text="a.owner || '—'"></td>
+                            <td class="p-3 text-secondary font-mono text-[10px]" x-text="formatTime(a.last_seen)"></td>
+                        </tr>
+                    </template>
+                    <tr x-show="filteredAssets().length === 0">
+                        <td colspan="8" class="p-12 text-center text-muted">
+                            <svg class="w-8 h-8 mx-auto text-muted/30 mb-2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25"/></svg>
+                            <span class="font-medium">No endpoints registered</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="px-4 py-3 bg-deep/20 border-t border-white/5 flex items-center justify-between text-xs" x-show="filteredAssets().length > 0">
+            <div class="text-muted">
+                Showing <span class="text-primary font-semibold" x-text="startIndex() + 1"></span> to 
+                <span class="text-primary font-semibold" x-text="endIndex()"></span> of 
+                <span class="text-primary font-semibold" x-text="filteredAssets().length"></span> assets
+            </div>
+            <div class="flex gap-1.5">
+                <button @click="prevPage()" :disabled="currentPage === 1" class="px-2.5 py-1.5 bg-surface border border-white/5 hover:border-white/10 rounded disabled:opacity-50 text-white font-medium">Previous</button>
+                <button @click="nextPage()" :disabled="currentPage >= totalPages()" class="px-2.5 py-1.5 bg-surface border border-white/5 hover:border-white/10 rounded disabled:opacity-50 text-white font-medium">Next</button>
+            </div>
+        </div>
     </div>
 </div>
+
+<script>
+    function assetsDashboardState() {
+        return {
+            assets: [
+                {% for asset in assets %}
+                {
+                    id: "{{ asset.id }}",
+                    agent_name: "{{ asset.agent_name }}",
+                    agent_ip: "{{ asset.agent_ip or '' }}",
+                    os_name: "{{ asset.os_name or '' }}",
+                    os_version: "{{ asset.os_version or '' }}",
+                    status: "{{ asset.status }}",
+                    groups: [{% for g in asset.groups or [] %}"{{ g }}",{% endfor %}],
+                    criticality: {{ asset.criticality or 5 }},
+                    owner: "{{ asset.owner or '' }}",
+                    last_seen: "{{ asset.last_seen or '' }}"
+                },
+                {% endfor %}
+            ],
+            search: '',
+            statusFilter: '',
+            osFilter: '',
+            criticalityFilter: '',
+            currentPage: 1,
+            pageSize: 20,
+
+            formatTime(ts) {
+                if (!ts) return 'N/A';
+                return ts.substring(0, 19).replace('T', ' ');
+            },
+
+            resetFilters() {
+                this.search = '';
+                this.statusFilter = '';
+                this.osFilter = '';
+                this.criticalityFilter = '';
+                this.currentPage = 1;
+            },
+
+            getUniqueOS() {
+                const platforms = this.assets.map(a => a.os_name).filter(Boolean);
+                return [...new Set(platforms)].sort();
+            },
+
+            filteredAssets() {
+                return this.assets.filter(a => {
+                    const query = this.search.toLowerCase();
+                    const matchesSearch = !this.search || 
+                        a.agent_name.toLowerCase().includes(query) ||
+                        a.agent_ip.includes(query) ||
+                        a.owner.toLowerCase().includes(query);
+
+                    const matchesStatus = !this.statusFilter || a.status === this.statusFilter;
+                    const matchesOS = !this.osFilter || a.os_name === this.osFilter;
+                    
+                    let matchesCrit = true;
+                    if (this.criticalityFilter === 'high') matchesCrit = a.criticality >= 8;
+                    else if (this.criticalityFilter === 'medium') matchesCrit = a.criticality >= 4 && a.criticality < 8;
+                    else if (this.criticalityFilter === 'low') matchesCrit = a.criticality <= 3;
+
+                    return matchesSearch && matchesStatus && matchesOS && matchesCrit;
+                });
+            },
+
+            countActive() { return this.assets.filter(a => a.status === 'active').length; },
+            countDisconnected() { return this.assets.filter(a => a.status !== 'active').length; },
+            countHighCriticality() { return this.assets.filter(a => a.criticality >= 8).length; },
+
+            totalPages() {
+                return Math.ceil(this.filteredAssets().length / this.pageSize) || 1;
+            },
+            startIndex() {
+                return (this.currentPage - 1) * this.pageSize;
+            },
+            endIndex() {
+                return Math.min(this.startIndex() + this.pageSize, this.filteredAssets().length);
+            },
+            paginatedAssets() {
+                return this.filteredAssets().slice(this.startIndex(), this.endIndex());
+            },
+            prevPage() {
+                if (this.currentPage > 1) this.currentPage--;
+            },
+            nextPage() {
+                if (this.currentPage < this.totalPages()) this.currentPage++;
+            }
+        };
+    }
+</script>
 {% endblock %}

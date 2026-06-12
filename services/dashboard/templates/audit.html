@@ -1,36 +1,214 @@
 {% extends "base.html" %}
 {% block content %}
-<div x-data="{ search: '' }">
+<div x-data="auditLogsDashboardState()">
+    <!-- Page Header -->
     <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold">Audit Log</h1>
-        <input type="text" placeholder="Search..." x-model="search" class="w-48">
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">System Audit logs</h1>
+            <p class="text-xs text-secondary mt-0.5">Chronological record of platform modifications, user actions, API invocations, and database transactions.</p>
+        </div>
+        <div class="text-xs text-muted font-mono bg-surface border border-white/5 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+            <span class="w-2 h-2 bg-accent-green rounded-full animate-pulse"></span>
+            Audit Engine Ingestion Active
+        </div>
     </div>
 
-    <div class="card">
-        <table>
-            <thead>
-                <tr>
-                    <th>Time</th>
-                    <th>Action</th>
-                    <th>Resource</th>
-                    <th>Actor</th>
-                    <th>Status</th>
-                    <th>Latency</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for entry in entries %}
-                <tr>
-                    <td class="text-xs font-mono">{{ entry.created_at[:19] if entry.created_at else 'N/A' }}</td>
-                    <td><span class="badge badge-low">{{ entry.action }}</span></td>
-                    <td class="text-xs">{{ entry.resource_type }} / {{ (entry.resource_id or '—')[:16] }}</td>
-                    <td class="text-xs">{{ entry.actor[:24] }}</td>
-                    <td><span class="badge badge-{{ 'open' if entry.status == 'success' else 'closed' }}">{{ entry.status }}</span></td>
-                    <td class="text-xs">{{ entry.latency_ms or 'N/A' }}ms</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <!-- Stats Summary -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="card-premium border-l-4 border-accent-blue">
+            <div class="text-[9px] font-bold text-muted uppercase tracking-wider">Total Actions</div>
+            <div class="text-xl font-extrabold text-white mt-1" x-text="entries.length">0</div>
+        </div>
+        <div class="card-premium border-l-4 border-accent-green">
+            <div class="text-[9px] font-bold text-muted uppercase tracking-wider">Success Actions</div>
+            <div class="text-xl font-extrabold text-white mt-1" x-text="countSuccess()">0</div>
+        </div>
+        <div class="card-premium border-l-4 border-accent-red">
+            <div class="text-[9px] font-bold text-muted uppercase tracking-wider">Failures/Errors</div>
+            <div class="text-xl font-extrabold text-white mt-1" x-text="countFailure()">0</div>
+        </div>
+        <div class="card-premium border-l-4 border-accent-yellow">
+            <div class="text-[9px] font-bold text-muted uppercase tracking-wider">Avg Latency</div>
+            <div class="text-xl font-extrabold text-white mt-1" x-text="avgLatency() + ' ms'">0 ms</div>
+        </div>
+    </div>
+
+    <!-- Filter Toolbar -->
+    <div class="card-premium p-4 mb-6 bg-surface/50 border border-white/5">
+        <div class="flex flex-wrap gap-3 items-center">
+            <!-- Search -->
+            <div class="flex-1 min-w-[200px]">
+                <input type="text" placeholder="Search actor, resource ID, or action..." x-model="search" class="w-full bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+            </div>
+
+            <!-- Action type filter -->
+            <select x-model="actionFilter" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                <option value="">All Actions</option>
+                <template x-for="act in getUniqueActions()" :key="act">
+                    <option :value="act" x-text="act"></option>
+                </template>
+            </select>
+
+            <!-- Status filter -->
+            <select x-model="statusFilter" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                <option value="">All Statuses</option>
+                <option value="success">Success</option>
+                <option value="failure">Failure / Error</option>
+            </select>
+
+            <!-- Clear filters -->
+            <button @click="resetFilters()" x-show="search || actionFilter || statusFilter" class="text-xs text-accent-blue hover:underline">
+                Clear Filters
+            </button>
+        </div>
+    </div>
+
+    <!-- Audit Logs Table -->
+    <div class="card-premium overflow-hidden border border-white/5">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="border-b border-white/10 bg-deep/40">
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Timestamp</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Action</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Resource Details</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Actor / System</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Status</th>
+                        <th class="p-3 font-semibold text-muted text-[10px] uppercase tracking-wider">Latency</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                    <template x-for="e in paginatedEntries()" :key="e.id">
+                        <tr class="hover:bg-white/5 transition-all">
+                            <td class="p-3 font-mono text-secondary text-[10px]" x-text="formatTime(e.created_at)"></td>
+                            <td class="p-3">
+                                <span class="px-2 py-0.5 bg-accent-blue/15 text-accent-blue border border-accent-blue/20 rounded font-semibold text-[10px]" x-text="e.action"></span>
+                            </td>
+                            <td class="p-3 text-secondary" x-text="e.resource_type + ' / ' + (e.resource_id ? e.resource_id.substring(0, 8) : '—')"></td>
+                            <td class="p-3 text-secondary font-mono" x-text="e.actor ? e.actor.substring(0, 16) : 'N/A'"></td>
+                            <td class="p-3">
+                                <span class="badge-dot" :class="e.status === 'success' ? 'badge-dot-open' : 'badge-dot-critical'" x-text="e.status"></span>
+                            </td>
+                            <td class="p-3 font-mono">
+                                <span class="font-semibold"
+                                      :class="{
+                                          'text-accent-red': e.latency_ms >= 500,
+                                          'text-accent-yellow': e.latency_ms >= 100 && e.latency_ms < 500,
+                                          'text-accent-green': e.latency_ms < 100
+                                      }" x-text="(e.latency_ms || '—') + 'ms'"></span>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr x-show="filteredEntries().length === 0">
+                        <td colspan="6" class="p-12 text-center text-muted">
+                            <svg class="w-8 h-8 mx-auto text-muted/30 mb-2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                            <span class="font-medium">No audit entries found</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="px-4 py-3 bg-deep/20 border-t border-white/5 flex items-center justify-between text-xs" x-show="filteredEntries().length > 0">
+            <div class="text-muted">
+                Showing <span class="text-primary font-semibold" x-text="startIndex() + 1"></span> to 
+                <span class="text-primary font-semibold" x-text="endIndex()"></span> of 
+                <span class="text-primary font-semibold" x-text="filteredEntries().length"></span> entries
+            </div>
+            <div class="flex gap-1.5">
+                <button @click="prevPage()" :disabled="currentPage === 1" class="px-2.5 py-1.5 bg-surface border border-white/5 hover:border-white/10 rounded disabled:opacity-50 text-white font-medium">Previous</button>
+                <button @click="nextPage()" :disabled="currentPage >= totalPages()" class="px-2.5 py-1.5 bg-surface border border-white/5 hover:border-white/10 rounded disabled:opacity-50 text-white font-medium">Next</button>
+            </div>
+        </div>
     </div>
 </div>
+
+<script>
+    function auditLogsDashboardState() {
+        return {
+            entries: [
+                {% for entry in entries %}
+                {
+                    id: "{{ entry.id }}",
+                    created_at: "{{ entry.created_at }}",
+                    action: "{{ entry.action }}",
+                    resource_type: "{{ entry.resource_type }}",
+                    resource_id: "{{ entry.resource_id or '' }}",
+                    actor: "{{ entry.actor }}",
+                    status: "{{ entry.status }}",
+                    latency_ms: {{ entry.latency_ms or 0 }}
+                },
+                {% endfor %}
+            ],
+            search: '',
+            actionFilter: '',
+            statusFilter: '',
+            currentPage: 1,
+            pageSize: 20,
+
+            formatTime(ts) {
+                if (!ts) return 'N/A';
+                return ts.substring(0, 19).replace('T', ' ');
+            },
+
+            resetFilters() {
+                this.search = '';
+                this.actionFilter = '';
+                this.statusFilter = '';
+                this.currentPage = 1;
+            },
+
+            getUniqueActions() {
+                const actions = this.entries.map(e => e.action).filter(Boolean);
+                return [...new Set(actions)].sort();
+            },
+
+            filteredEntries() {
+                return this.entries.filter(e => {
+                    const query = this.search.toLowerCase();
+                    const matchesSearch = !this.search || 
+                        e.action.toLowerCase().includes(query) ||
+                        e.resource_type.toLowerCase().includes(query) ||
+                        e.actor.toLowerCase().includes(query);
+
+                    const matchesAction = !this.actionFilter || e.action === this.actionFilter;
+                    
+                    let matchesStatus = true;
+                    if (this.statusFilter === 'success') matchesStatus = e.status === 'success';
+                    else if (this.statusFilter === 'failure') matchesStatus = e.status !== 'success';
+
+                    return matchesSearch && matchesAction && matchesStatus;
+                });
+            },
+
+            countSuccess() { return this.entries.filter(e => e.status === 'success').length; },
+            countFailure() { return this.entries.filter(e => e.status !== 'success').length; },
+            avgLatency() {
+                if (this.entries.length === 0) return 0;
+                const total = this.entries.reduce((sum, e) => sum + (e.latency_ms || 0), 0);
+                return Math.round(total / this.entries.length);
+            },
+
+            totalPages() {
+                return Math.ceil(this.filteredEntries().length / this.pageSize) || 1;
+            },
+            startIndex() {
+                return (this.currentPage - 1) * this.pageSize;
+            },
+            endIndex() {
+                return Math.min(this.startIndex() + this.pageSize, this.filteredEntries().length);
+            },
+            paginatedEntries() {
+                return this.filteredEntries().slice(this.startIndex(), this.endIndex());
+            },
+            prevPage() {
+                if (this.currentPage > 1) this.currentPage--;
+            },
+            nextPage() {
+                if (this.currentPage < this.totalPages()) this.currentPage++;
+            }
+        };
+    }
+</script>
 {% endblock %}
