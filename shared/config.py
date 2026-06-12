@@ -18,12 +18,12 @@ class Settings(BaseSettings):
     wazuh_api_url: str = "https://172.16.2.130:55000"
     wazuh_api_user: str = ""
     wazuh_api_password: SecretStr = SecretStr("")
-    wazuh_api_verify_ssl: bool = False
+    wazuh_api_verify_ssl: bool = True
 
     wazuh_indexer_url: str = "https://172.16.6.179:9200"
     wazuh_indexer_user: str = ""
     wazuh_indexer_password: SecretStr = SecretStr("")
-    wazuh_indexer_verify_ssl: bool = False
+    wazuh_indexer_verify_ssl: bool = True
 
     llm_provider: str = "ollama"
     ollama_base_url: str = "http://ollama:11434"
@@ -37,9 +37,10 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.5-flash"
 
     claude_api_key: Optional[SecretStr] = None
-    claude_model: str = "claude-3-5-sonnet-20241022"
+    claude_model: str = "claude-opus-4-8"
 
-    api_keys: Union[List[str], str] = Field(default_factory=lambda: ["soc-key-001"])
+    # No default — must be set explicitly in .env to prevent accidental open access
+    api_keys: Union[List[str], str] = Field(default_factory=list)
 
     @field_validator('api_keys', mode='before')
     @classmethod
@@ -55,6 +56,9 @@ class Settings(BaseSettings):
         return v
 
     api_rate_limit: int = 100
+
+    # Comma-separated allowed CORS origins. Empty = no CORS (API-only, no browser access).
+    cors_allowed_origins: str = ""
 
     dashboard_allowed_cidrs: str = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
