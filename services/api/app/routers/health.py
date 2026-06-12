@@ -9,7 +9,7 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
-async def health_check(db: AsyncSession = Depends(get_db), _: str = Depends(validate_api_key)):
+async def health_check(db: AsyncSession = Depends(get_db)):
     status = "healthy"
     db_ok = False
     db_latency = 0

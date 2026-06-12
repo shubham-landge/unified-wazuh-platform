@@ -5,8 +5,8 @@ from starlette.status import HTTP_403_FORBIDDEN
 
 from shared.config import settings
 
-# Paths exempt from CIDR restriction (API docs, OpenAPI schema)
-_EXEMPT_PREFIXES = ("/docs", "/redoc", "/openapi.json")
+# Paths exempt from CIDR restriction (healthcheck, API docs, OpenAPI schema)
+_EXEMPT_PREFIXES = ("/health", "/docs", "/redoc", "/openapi.json")
 
 
 class DashboardAccessMiddleware(BaseHTTPMiddleware):
