@@ -34,7 +34,7 @@
 |---|---|
 | **Branch** | `tool/antigravity` |
 | **PR** | #1 |
-| **Status** | ✅ Complete |
+| **Status** | 🔄 In Progress — WP1: Diagrams |
 | **Task** | Dashboard enhancements (charts, settings page), deployment documentation |
 | **Files to create/modify** | Dashboard templates, `docs/DASHBOARD-GUIDE.md`, `docs/DEPLOYMENT-GUIDE.md` |
 | **Blockers** | None |
