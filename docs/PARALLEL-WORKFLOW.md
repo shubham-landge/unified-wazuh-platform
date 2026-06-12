@@ -141,9 +141,49 @@ cd /app && PYTHONPATH=/app python3 -m pytest tests/ -v --skip-db
 5. dev ──> main (after all tests pass)
 ```
 
+## Status Reporting (REQUIRED for all tools)
+
+Every tool MUST update `STATUS.md` before and after each work session.
+
+### Status update commands:
+```bash
+# When starting work — update your section in STATUS.md
+# Change "📝 Not Started" to "🔄 In Progress"
+
+# When completing a phase:
+sed -i '' 's/Status:.*📝 Not Started.*$/Status: 🔄 In Progress/' STATUS.md
+
+# When done:
+sed -i '' 's/Status:.*🔄 In Progress.*$/Status: ✅ Complete | PR: #X/' STATUS.md
+```
+
+### What to report in each update:
+1. What you started/finished
+2. Files created or modified
+3. Any blockers or questions
+4. Time spent (rough estimate)
+
+### Opening a PR:
+```bash
+git checkout -b dev && git merge --no-ff tool/<name>
+# Push dev, create PR
+gh pr create --base main --head dev --title "Tool: <summary>" --body "See STATUS.md"
+```
+
+## Monitoring & Visibility
+
+| Resource | URL/Purpose | Frequency |
+|---|---|---|
+| **Project Board** | https://github.com/users/shubham-landge/projects/1 | Auto-syncs with PRs |
+| **STATUS.md** | `/STATUS.md` in repo root | Update per work session |
+| **Branch commits** | `git log --oneline tool/<name> -5` | Any time |
+| **Open PRs** | `gh pr list --state open` | Daily review |
+| **Status script** | `bash deploy/status.sh` | Quick overview |
+
 ## Communication Rules
 
-- Each tool updates this file's completion status
+- Each tool updates `STATUS.md` before starting and after completing work
 - If you need to modify a file owned by another tool, create a PR comment on their branch
 - Never force-push to main
 - Always rebase on latest dev before creating PR
+- Update `STATUS.md` in every commit that changes work status
