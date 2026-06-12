@@ -1,78 +1,238 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-4xl" x-data="{ note: '', analyst: '' }">
-    <a href="/cases" class="text-soc-400 hover:text-white text-sm mb-4 inline-block"
-       hx-get="/cases" hx-target="body" hx-push-url="true">← Back to Cases</a>
-
-    <h1 class="text-2xl font-bold mb-6">Case Detail</h1>
-
-    <div class="grid grid-cols-2 gap-4 mb-6">
-        <div class="card">
-            <div class="card-header">Details</div>
-            <div class="font-semibold text-lg">{{ case.title }}</div>
-            <div class="text-sm text-soc-400 mt-1">{{ case.description or 'No description' }}</div>
-            <div class="flex gap-2 mt-3">
-                <span class="badge badge-{{ case.severity }}">{{ case.severity }}</span>
-                <span class="badge badge-{{ case.status }}">{{ case.status }}</span>
-            </div>
-        </div>
-        <div class="card">
-            <div class="card-header">Assignment</div>
-            <div class="text-sm">Assigned to: <strong>{{ case.assigned_to or 'Unassigned' }}</strong></div>
-            <div class="text-sm">Category: {{ case.category or 'N/A' }}</div>
-            <div class="text-sm">Risk Score: {{ '%.2f'|format(case.risk_score) if case.risk_score else 'N/A' }}</div>
-            <div class="text-sm">Escalation: {{ '⚠ Required' if case.escalation_required else 'None' }}</div>
+<div class="max-w-6xl mx-auto space-y-6" x-data="{ note: '', analyst: '', note_type: 'general', assign_modal: false }">
+    <!-- Header Navigation -->
+    <div class="flex items-center justify-between pb-2">
+        <a href="/cases" class="inline-flex items-center gap-1.5 text-xs text-accent-blue hover:underline font-semibold"
+           hx-get="/cases" hx-target="body" hx-push-url="true">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/></svg>
+            Back to Case Manager
+        </a>
+        <div class="text-[10px] text-muted font-mono">
+            Created: {{ case.created_at[:19].replace('T', ' ') }}
         </div>
     </div>
 
-    <div class="grid grid-cols-2 gap-4 mb-6">
-        <div class="flex gap-2">
-            <button class="bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded text-sm"
+    <!-- Case Identity Block -->
+    <div class="card-premium bg-gradient-to-r from-surface to-elevated/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2 mb-2 flex-wrap">
+                <span class="badge-dot badge-dot-{{ case.severity }} uppercase">{{ case.severity }} severity</span>
+                <span class="badge-dot badge-dot-{{ case.status }} uppercase">{{ case.status.replace('_', ' ') }}</span>
+                {% if case.escalation_required %}
+                <span class="badge-dot badge-dot-critical uppercase">⚠ Escalated</span>
+                {% endif %}
+            </div>
+            <h1 class="text-xl font-extrabold text-white tracking-tight">{{ case.title }}</h1>
+            <p class="text-xs text-muted font-mono mt-1">UUID: {{ case.id }}</p>
+        </div>
+
+        <!-- Quick Status Control Panel -->
+        <div class="flex items-center gap-2">
+            {% if case.status == 'open' %}
+            <button class="px-3 py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_10px_rgba(59,130,246,0.2)]"
                     hx-patch="/cases/{{ case.id }}"
                     hx-vals='{"status": "in_progress"}'
                     hx-target="body"
-                    hx-swap="outerHTML">Start Investigation</button>
-            <button class="bg-blue-700 hover:bg-blue-600 text-white px-3 py-1.5 rounded text-sm"
+                    hx-swap="outerHTML">
+                Investigate
+            </button>
+            {% endif %}
+            {% if case.status != 'resolved' and case.status != 'closed' %}
+            <button class="px-3 py-2 bg-accent-green hover:bg-accent-green/90 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_10px_rgba(34,197,94,0.2)]"
                     hx-patch="/cases/{{ case.id }}"
                     hx-vals='{"status": "resolved"}'
                     hx-target="body"
-                    hx-swap="outerHTML">Resolve</button>
-            <button class="bg-red-900 hover:bg-red-800 text-white px-3 py-1.5 rounded text-sm"
+                    hx-swap="outerHTML">
+                Resolve
+            </button>
+            {% endif %}
+            {% if case.status != 'closed' %}
+            <button class="px-3 py-2 bg-accent-red/20 border border-accent-red/30 hover:bg-accent-red/30 text-red-400 rounded-lg text-xs font-semibold transition-all"
                     hx-patch="/cases/{{ case.id }}"
                     hx-vals='{"status": "closed"}'
                     hx-target="body"
-                    hx-swap="outerHTML">Close</button>
+                    hx-swap="outerHTML">
+                Close Case
+            </button>
+            {% endif %}
         </div>
     </div>
 
-    <!-- Notes -->
-    <div class="card mb-6">
-        <div class="card-header">Analyst Notes</div>
-
-        <div class="space-y-3 mb-4">
-            {% for note in case.notes or [] %}
-            <div class="bg-soc-700 p-3 rounded">
-                <div class="flex justify-between text-sm">
-                    <span class="font-semibold">{{ note.analyst }}</span>
-                    <span class="text-soc-400 text-xs">{{ note.created_at[:19] }}</span>
+    <!-- Case Workspace Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Left 2 Columns: Details & Playbook/Timeline -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Details Card -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="card-premium">
+                    <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-3 pb-1 border-b border-white/5">Incident Assessment</h3>
+                    <p class="text-xs text-secondary leading-relaxed">{{ case.description or 'No description provided.' }}</p>
+                    <div class="mt-4 pt-3 border-t border-white/5 space-y-2 text-xs">
+                        <div class="flex justify-between"><span class="text-muted">Category:</span> <span class="text-primary font-semibold">{{ case.category or 'N/A' }}</span></div>
+                        <div class="flex justify-between"><span class="text-muted">Risk Score:</span> <span class="text-accent-yellow font-mono font-bold">{{ '%.2f'|format(case.risk_score) if case.risk_score else 'N/A' }}</span></div>
+                    </div>
                 </div>
-                <div class="text-sm mt-1 text-soc-200">{{ note.note }}</div>
+
+                <div class="card-premium flex flex-col justify-between">
+                    <div>
+                        <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-3 pb-1 border-b border-white/5">Ownership</h3>
+                        <div class="text-xs space-y-2">
+                            <div class="flex justify-between"><span class="text-muted">Assignee:</span> <span class="text-white font-semibold">{{ case.assigned_to or 'Unassigned' }}</span></div>
+                            <div class="flex justify-between"><span class="text-muted">Escalation Required:</span> <span class="font-semibold" :class="'{{ case.escalation_required }}' === 'True' ? 'text-accent-red' : 'text-secondary'">{{ 'Yes' if case.escalation_required else 'No' }}</span></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Assign actions -->
+                    <div class="pt-4 border-t border-white/5 flex gap-2">
+                        <button @click="assign_modal = true" class="w-full py-1.5 bg-elevated hover:bg-white/5 border border-white/5 hover:border-white/10 text-white rounded text-[10px] font-bold transition-all">
+                            Assign Analyst
+                        </button>
+                        <button hx-patch="/cases/{{ case.id }}"
+                                hx-vals='{"escalation_required": {{ 'false' if case.escalation_required else 'true' }}}'
+                                hx-target="body"
+                                hx-swap="outerHTML"
+                                class="w-full py-1.5 border rounded text-[10px] font-bold transition-all"
+                                :class="'{{ case.escalation_required }}' === 'True' ? 'border-white/10 hover:bg-white/5 text-white' : 'border-accent-red/20 hover:bg-accent-red/10 text-accent-red'">
+                            {{ 'De-escalate' if case.escalation_required else 'Escalate Case' }}
+                        </button>
+                    </div>
+                </div>
             </div>
-            {% endfor %}
-            {% if not case.notes %}
-            <div class="text-soc-500 text-sm">No notes yet.</div>
-            {% endif %}
+
+            <!-- Investigation Timeline -->
+            <div class="card-premium">
+                <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-6 pb-2 border-b border-white/5 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Investigation Timeline
+                </h3>
+                
+                <div class="relative pl-6 border-l-2 border-white/5 space-y-6 text-xs">
+                    <!-- Event 1: Creation -->
+                    <div class="relative">
+                        <span class="absolute -left-[31px] top-0 w-4 h-4 bg-accent-blue rounded-full border-4 border-surface shadow-[0_0_8px_#3b82f6]"></span>
+                        <div class="flex justify-between items-start">
+                            <span class="font-bold text-white">Case Opened</span>
+                            <span class="text-[10px] text-muted font-mono">{{ case.created_at[:16].replace('T', ' ') }}</span>
+                        </div>
+                        <p class="text-secondary mt-1">Incident record initialized in SOC database.</p>
+                    </div>
+
+                    <!-- Event 2..N: Notes -->
+                    {% for n in case.notes %}
+                    <div class="relative">
+                        <span class="absolute -left-[31px] top-0 w-4 h-4 rounded-full border-4 border-surface shadow-[0_0_8px_#cbd5e1]"
+                              :class="{
+                                  'bg-accent-yellow shadow-[0_0_8px_#eab308]': '{{ n.note_type }}' === 'investigation',
+                                  'bg-accent-green shadow-[0_0_8px_#22c55e]': '{{ n.note_type }}' === 'resolution',
+                                  'bg-accent-red shadow-[0_0_8px_#dc2626]': '{{ n.note_type }}' === 'escalation',
+                                  'bg-secondary': '{{ n.note_type }}' === 'general'
+                              }"></span>
+                        <div class="flex justify-between items-start">
+                            <span class="font-bold text-white">
+                                {% if n.note_type == 'investigation' %}🕵️ Investigation Logged
+                                {% elif n.note_type == 'resolution' %}✅ Resolution Steps Logged
+                                {% elif n.note_type == 'escalation' %}🚨 Escalation Details Added
+                                {% else %}📝 Note by {{ n.analyst }}
+                                {% endif %}
+                            </span>
+                            <span class="text-[10px] text-muted font-mono">{{ n.created_at[:16].replace('T', ' ') }}</span>
+                        </div>
+                        <p class="text-secondary mt-1 italic">"{{ n.note }}"</p>
+                    </div>
+                    {% endfor %}
+
+                    <!-- Event N+1: Closure -->
+                    {% if case.closed_at %}
+                    <div class="relative">
+                        <span class="absolute -left-[31px] top-0 w-4 h-4 bg-accent-green rounded-full border-4 border-surface shadow-[0_0_8px_#22c55e]"></span>
+                        <div class="flex justify-between items-start">
+                            <span class="font-bold text-white">Case Resolved / Closed</span>
+                            <span class="text-[10px] text-muted font-mono">{{ case.closed_at[:16].replace('T', ' ') }}</span>
+                        </div>
+                        <p class="text-secondary mt-1">Incident ticket flagged completed. Event containment successful.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
         </div>
 
-        <div class="flex gap-2">
-            <input type="text" placeholder="Your name" x-model="analyst" class="w-32">
-            <input type="text" placeholder="Add a note..." x-model="note" class="flex-1">
-            <button class="bg-soc-600 hover:bg-soc-500 text-white px-4 py-2 rounded"
-                    hx-post="/cases/{{ case.id }}/notes"
-                    hx-vals='{"analyst": analyst, "note": note}'
-                    hx-target="body"
-                    hx-swap="outerHTML"
-                    :disabled="!note || !analyst">Add Note</button>
+        <!-- Right 1 Column: Notes log and submission -->
+        <div class="space-y-6">
+            <!-- Notes log -->
+            <div class="card-premium flex flex-col justify-between h-full min-h-[500px]">
+                <div>
+                    <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-4 pb-2 border-b border-white/5 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"/></svg>
+                        Analyst Action Board
+                    </h3>
+                    
+                    <div class="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                        {% for note in case.notes or [] %}
+                        <div class="p-3 bg-deep/50 border border-white/5 rounded-lg text-xs space-y-1">
+                            <div class="flex justify-between items-center text-[10px]">
+                                <span class="font-bold text-white">{{ note.analyst }}</span>
+                                <span class="text-muted font-mono">{{ note.created_at[:16].replace('T', ' ') }}</span>
+                            </div>
+                            <p class="text-secondary leading-relaxed mt-1">{{ note.note }}</p>
+                            <span class="inline-block text-[9px] px-1 bg-white/5 text-muted font-mono rounded border border-white/5 uppercase">{{ note.note_type }}</span>
+                        </div>
+                        {% endfor %}
+                        {% if not case.notes %}
+                        <div class="py-12 text-center text-xs text-muted">
+                            No analyst logs submitted yet.
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Add Note Form -->
+                <div class="pt-4 border-t border-white/5 mt-4 space-y-3">
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="text" placeholder="Analyst Name" x-model="analyst" class="w-full bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-2.5 py-1.5 rounded outline-none">
+                        <select x-model="note_type" class="w-full bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-2.5 py-1.5 rounded outline-none">
+                            <option value="general">General Note</option>
+                            <option value="investigation">Investigation Log</option>
+                            <option value="resolution">Resolution Steps</option>
+                            <option value="feedback">Feedback</option>
+                        </select>
+                    </div>
+                    <textarea placeholder="Write log entry..." x-model="note" rows="2" class="w-full bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-2.5 py-1.5 rounded outline-none resize-none"></textarea>
+                    <button hx-post="/cases/{{ case.id }}/notes"
+                            hx-vals='js:{"analyst": analyst, "note": note, "note_type": note_type}'
+                            hx-target="body"
+                            hx-swap="outerHTML"
+                            :disabled="!note || !analyst"
+                            class="w-full py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded text-xs font-bold disabled:opacity-50 transition-all shadow-[0_0_10px_rgba(59,130,246,0.15)]">
+                        Log Entry
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analyst Assignment Modal -->
+    <div x-show="assign_modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center" x-transition>
+        <div class="w-[400px] bg-surface border border-white/10 rounded-2xl shadow-2xl p-6" @click.away="assign_modal = false">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-4 pb-2 border-b border-white/5">Assign SOC Analyst</h3>
+            
+            <form hx-patch="/cases/{{ case.id }}" @submit="assign_modal = false" hx-target="body" hx-swap="outerHTML" class="space-y-4">
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Select Owner</label>
+                    <select name="assigned_to" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                        <option value="">Unassigned</option>
+                        <option value="Shubham Landge" {% if case.assigned_to == 'Shubham Landge' %}selected{% endif %}>Shubham Landge</option>
+                        <option value="Antigravity AI" {% if case.assigned_to == 'Antigravity AI' %}selected{% endif %}>Antigravity AI</option>
+                        <option value="SOC Team Alpha" {% if case.assigned_to == 'SOC Team Alpha' %}selected{% endif %}>SOC Team Alpha</option>
+                    </select>
+                </div>
+
+                <div class="flex justify-end gap-2 border-t border-white/5 pt-4">
+                    <button type="button" @click="assign_modal = false" class="px-3 py-1.5 border border-white/5 hover:bg-white/5 text-white rounded text-xs font-semibold">Cancel</button>
+                    <button type="submit" class="px-3 py-1.5 bg-accent-blue hover:bg-accent-blue/90 text-white rounded text-xs font-bold">Save Assignment</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
