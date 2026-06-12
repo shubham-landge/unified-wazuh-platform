@@ -339,3 +339,12 @@ async def save_settings(request: Request):
         "page": "settings",
         "toast": {"type": "success", "message": "Settings updated successfully"}
     })
+
+
+@app.get("/landing", response_class=HTMLResponse)
+async def landing(request: Request):
+    return templates.TemplateResponse("landing.html", {
+        "request": request,
+        "page": "landing"
+    })
+

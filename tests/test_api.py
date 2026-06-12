@@ -91,7 +91,7 @@ async def test_wazuh_health_endpoint():
 async def test_rate_limit():
     async with httpx.AsyncClient(base_url="http://localhost:8000") as client:
         for _ in range(5):
-            resp = await client.get("/health", headers={"X-API-Key": "soc-rate-test"})
+            resp = await client.get("/health", headers={"X-API-Key": "soc-key-001"})
             assert resp.status_code in (200, 429)
 
 

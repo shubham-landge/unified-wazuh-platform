@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings
-from pydantic import SecretStr, Field
-from typing import List, Optional
+from pydantic import SecretStr, Field, field_validator
+from typing import List, Optional, Union
 
 
 class Settings(BaseSettings):
@@ -39,7 +39,21 @@ class Settings(BaseSettings):
     claude_api_key: Optional[SecretStr] = None
     claude_model: str = "claude-3-5-sonnet-20241022"
 
-    api_keys: List[str] = Field(default_factory=lambda: ["soc-key-001"])
+    api_keys: Union[List[str], str] = Field(default_factory=lambda: ["soc-key-001"])
+
+    @field_validator('api_keys', mode='before')
+    @classmethod
+    def parse_api_keys(cls, v):
+        if isinstance(v, str):
+            if v.startswith('[') and v.endswith(']'):
+                import json
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [x.strip() for x in v.split(',') if x.strip()]
+        return v
+
     api_rate_limit: int = 100
 
     dashboard_allowed_cidrs: str = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"

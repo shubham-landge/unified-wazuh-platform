@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Incident Case Investigation Report</title>
+  <style>
+    @page { margin: 2cm; }
+    body { font-family: 'Inter', Arial, sans-serif; color: #1a1a2e; font-size: 11pt; line-height: 1.5; }
+    h1 { font-size: 18pt; color: #0f1729; border-bottom: 2px solid #3b82f6; padding-bottom: 8px; margin-top: 0; }
+    h2 { font-size: 14pt; color: #1e293b; margin-top: 24px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+    th { background: #f1f5f9; text-align: left; padding: 10px 8px; font-size: 9pt; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; }
+    td { padding: 10px 8px; border-bottom: 1px solid #e2e8f0; font-size: 10pt; }
+    .header { display: flex; justify-content: space-between; margin-bottom: 24px; }
+    .footer { position: fixed; bottom: 0; width: 100%; text-align: center; font-size: 8pt; color: #94a3b8; }
+    .severity-critical { color: #dc2626; font-weight: 600; }
+    .severity-high { color: #ea580c; font-weight: 600; }
+    .severity-medium { color: #ca8a04; font-weight: 600; }
+    .severity-low { color: #3b82f6; font-weight: 600; }
+    .meta-table td { border-bottom: none; padding: 6px 0; }
+    
+    /* Timeline styles for print */
+    .timeline-item { margin-bottom: 15px; padding-left: 15px; border-left: 3px solid #3b82f6; }
+    .timeline-time { font-family: monospace; font-size: 9pt; color: #64748b; }
+    .timeline-title { font-weight: bold; font-size: 10pt; color: #0f1729; }
+    .timeline-desc { margin-top: 4px; font-size: 10pt; color: #334155; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Incident Investigation Report</h1>
+      <p style="color: #64748b; margin: 4px 0 0 0;">Case ID: {{ case.id }}</p>
+    </div>
+    <div>
+      {% if logo_url %}
+      <img src="{{ logo_url }}" alt="Logo" height="40">
+      {% endif %}
+    </div>
+  </div>
+
+  <h2>Case Identity & Metadata</h2>
+  <table class="meta-table">
+    <tr><td width="150" style="color: #64748b;">Case Title:</td><td><strong>{{ case.title }}</strong></td></tr>
+    <tr><td style="color: #64748b;">Description:</td><td>{{ case.description or 'No description provided' }}</td></tr>
+    <tr><td style="color: #64748b;">Severity:</td><td><span class="severity-{{ case.severity }}">{{ case.severity|upper }}</span></td></tr>
+    <tr><td style="color: #64748b;">Status:</td><td>{{ case.status|upper }}</td></tr>
+    <tr><td style="color: #64748b;">Assigned Owner:</td><td>{{ case.assigned_to or 'Unassigned' }}</td></tr>
+    <tr><td style="color: #64748b;">Risk Score:</td><td style="font-family: monospace; font-weight: bold;">{{ case.risk_score or 'N/A' }}</td></tr>
+    <tr><td style="color: #64748b;">Created Date:</td><td style="font-family: monospace;">{{ case.created_at[:19].replace('T', ' ') }}</td></tr>
+    {% if case.closed_at %}
+    <tr><td style="color: #64748b;">Closed Date:</td><td style="font-family: monospace;">{{ case.closed_at[:19].replace('T', ' ') }}</td></tr>
+    {% endif %}
+  </table>
+
+  <h2>Investigation Timeline</h2>
+  <div style="margin: 16px 0;">
+    <div class="timeline-item">
+      <div class="timeline-time">{{ case.created_at[:16].replace('T', ' ') }}</div>
+      <div class="timeline-title">Case Opened</div>
+      <div class="timeline-desc">Incident case was created and logged into active queue.</div>
+    </div>
+    
+    {% for note in case.notes %}
+    <div class="timeline-item" style="border-left-color: {% if note.note_type == 'investigation' %}#eab308{% elif note.note_type == 'resolution' %}#22c55e{% elif note.note_type == 'escalation' %}#dc2626{% else %}#94a3b8{% endif %};">
+      <div class="timeline-time">{{ note.created_at[:16].replace('T', ' ') }}</div>
+      <div class="timeline-title">Note Added by {{ note.analyst }} <span style="font-size: 8pt; color: #64748b; font-weight: normal; text-transform: uppercase;">({{ note.note_type }})</span></div>
+      <div class="timeline-desc">"{{ note.note }}"</div>
+    </div>
+    {% endfor %}
+
+    {% if case.closed_at %}
+    <div class="timeline-item" style="border-left-color: #22c55e;">
+      <div class="timeline-time">{{ case.closed_at[:16].replace('T', ' ') }}</div>
+      <div class="timeline-title">Case Resolved and Closed</div>
+      <div class="timeline-desc">Case marked complete. Investigation containment validated.</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <h2>Evidence Artifacts & Mappings</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Artifact Type</th>
+        <th>Value / Identifier</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Connected Wazuh Alert UUID</td>
+        <td style="font-family: monospace;">{{ case.alert_id or 'N/A' }}</td>
+        <td>Linked</td>
+      </tr>
+      <tr>
+        <td>Asset Under Escalation</td>
+        <td>{{ case.category or 'SOC Platform node' }}</td>
+        <td>Monitored</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <p>Confidential — Legal & SOC Incident Evidence | SOC Platform v1.0</p>
+  </div>
+</body>
+</html>

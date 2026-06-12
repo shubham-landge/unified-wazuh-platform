@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Vulnerability SLA Breach</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Inter,Arial,sans-serif;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;padding:20px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.05);overflow:hidden;border:1px solid #e2e8f0;">
+          <!-- Header -->
+          <tr>
+            <td style="background:#dc2626;padding:24px;text-align:left;">
+              <h1 style="color:#ffffff;margin:0;font-size:20px;font-weight:700;letter-spacing:-0.02em;">⚠️ Patch SLA Compliance Breach Warning</h1>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:30px;background:#ffffff;">
+              <p style="margin:0 0 20px 0;font-size:14px;color:#1e293b;line-height:1.6;">
+                The platform scheduler detected one or more prioritized vulnerabilities assigned to you that have breached their scheduled patching SLA.
+              </p>
+              
+              <table role="presentation" width="100%" cellpadding="10" cellspacing="0" border="0" style="background:#f8fafc;border-radius:6px;border:1px solid #f1f5f9;margin-bottom:24px;">
+                <tr>
+                  <td width="30%" style="color:#64748b;font-size:12px;font-weight:bold;text-transform:uppercase;padding:12px 10px;border-bottom:1px solid #e2e8f0;">Remediation Owner</td>
+                  <td style="font-weight:700;font-size:13px;color:#0f1729;padding:12px 10px;border-bottom:1px solid #e2e8f0;">{{ owner_name }}</td>
+                </tr>
+                <tr>
+                  <td style="color:#64748b;font-size:12px;font-weight:bold;text-transform:uppercase;padding:12px 10px;border-bottom:1px solid #e2e8f0;">Days Overdue</td>
+                  <td style="font-weight:700;font-size:13px;color:#dc2626;padding:12px 10px;border-bottom:1px solid #e2e8f0;">{{ days_overdue }} Days</td>
+                </tr>
+              </table>
+
+              <h3 style="font-size:14px;color:#0f1729;margin:20px 0 10px 0;font-weight:700;">Overdue CVE List</h3>
+              <table role="presentation" width="100%" cellpadding="8" cellspacing="0" border="0" style="border:1px solid #e2e8f0;border-radius:6px;margin-bottom:24px;font-size:12px;">
+                <thead>
+                  <tr style="background:#f1f5f9;">
+                    <th align="left" style="padding:8px;font-weight:bold;border-bottom:1px solid #e2e8f0;">CVE ID</th>
+                    <th align="left" style="padding:8px;font-weight:bold;border-bottom:1px solid #e2e8f0;">Severity</th>
+                    <th align="left" style="padding:8px;font-weight:bold;border-bottom:1px solid #e2e8f0;">CVSS</th>
+                    <th align="left" style="padding:8px;font-weight:bold;border-bottom:1px solid #e2e8f0;">Package</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for vuln in overdue_vulns %}
+                  <tr>
+                    <td style="padding:8px;border-bottom:1px solid #e2e8f0;font-family:monospace;font-weight:bold;color:#3b82f6;">{{ vuln.cve_id }}</td>
+                    <td style="padding:8px;border-bottom:1px solid #e2e8f0;color:#dc2626;font-weight:bold;">{{ vuln.severity | upper }}</td>
+                    <td style="padding:8px;border-bottom:1px solid #e2e8f0;font-family:monospace;">{{ vuln.cvss_score }}</td>
+                    <td style="padding:8px;border-bottom:1px solid #e2e8f0;color:#334155;">{{ vuln.package_name }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center" style="padding:10px 0;">
+                    <a href="{{ dashboard_url }}/vulnerabilities" target="_blank"
+                       style="background:#3b82f6;color:#ffffff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px;display:inline-block;box-shadow:0 2px 4px rgba(59,130,246,0.2);">
+                      Manage Vulnerabilities &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding:20px;border-top:1px solid #e2e8f0;text-align:center;color:#94a3b8;font-size:12px;background:#f8fafc;">
+              <p style="margin:0 0 4px 0;font-weight:bold;">Security Operations Center Platform</p>
+              <p style="margin:0;">This is an auto-generated notification. Please do not reply directly to this email.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

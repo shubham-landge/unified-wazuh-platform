@@ -98,7 +98,11 @@ class OllamaProvider(LLMProvider):
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if json_match:
             try:
-                return json.loads(json_match.group())
+                parsed = json.loads(json_match.group())
+                if isinstance(parsed, dict):
+                    if "success" not in parsed:
+                        parsed["success"] = True
+                    return parsed
             except json.JSONDecodeError:
                 pass
         return {"success": True, "summary": content, "raw_response": content}

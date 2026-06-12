@@ -1,5 +1,13 @@
 import pytest
+import uuid
 from datetime import datetime, timezone
+
+
+@pytest.fixture(autouse=True)
+async def cleanup_connections():
+    yield
+    from app.db import engine
+    await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -19,6 +27,7 @@ async def test_create_alert():
 
     async with async_session() as session:
         alert = Alert(
+            tenant_id=uuid.UUID('00000000-0000-0000-0000-000000000001'),
             rule_id=100001,
             rule_description="Test alert",
             rule_level=7,
@@ -41,6 +50,7 @@ async def test_create_case():
 
     async with async_session() as session:
         case = Case(
+            tenant_id=uuid.UUID('00000000-0000-0000-0000-000000000001'),
             title="Test case",
             severity="medium",
             status="open",
@@ -59,6 +69,7 @@ async def test_create_analyst_note():
 
     async with async_session() as session:
         note = AnalystNote(
+            tenant_id=uuid.UUID('00000000-0000-0000-0000-000000000001'),
             analyst="test-analyst",
             note="This is a test note",
             note_type="general",
@@ -77,6 +88,7 @@ async def test_create_vulnerability():
 
     async with async_session() as session:
         vuln = Vulnerability(
+            tenant_id=uuid.UUID('00000000-0000-0000-0000-000000000001'),
             cve_id="CVE-2024-TEST",
             cvss_score=7.5,
             severity="high",
@@ -97,6 +109,7 @@ async def test_create_audit_log():
 
     async with async_session() as session:
         log = AuditLog(
+            tenant_id=uuid.UUID('00000000-0000-0000-0000-000000000001'),
             action="test_action",
             resource_type="test",
             actor="test-user",
