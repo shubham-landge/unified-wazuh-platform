@@ -42,11 +42,11 @@
 
 | Field | Value |
 |---|---|
-| **Branch** | `tool/opencode` |
-| **PR** | — |
-| **Status** | 🔄 Ready |
-| **Task** | End-to-end testing, Docker build verification, EC2 deployment scripts |
-| **Blockers** | None — can proceed in parallel with Codex |
+| **Branch** | `tool/opencode-rebased` |
+| **PR** | Merged to `dev` |
+| **Status** | ✅ Complete |
+| **Changes** | Test suite fixed (40 passing, all mocked). Health endpoint no-auth for Docker healthchecks. /health exempt from CIDR. Worker unified entrypoint. EC2 scripts with validation, port checks, rollback. |
+| **Blockers** | None |
 
 ---
 
@@ -55,9 +55,9 @@
 ```
 1. ✅ tool/antigravity ──> dev  (PR #1 — merged)
 2. ✅ tool/claude      ──> dev  (merged)
-3. 🔄 tool/codex       ──> dev  (in progress — cloud LLM, EPSS/KEV, reports)
-4. 🔄 tool/opencode    ──> dev  (in progress — tests, Docker build, deploy prep)
-5. ⏳ dev ──> main              (after Codex + OpenCode complete, all tests pass)
+3. ✅ tool/opencode    ──> dev  (merged)
+4. ⏳ tool/codex       ──> dev  (pending — cloud LLM, EPSS/KEV, reports)
+5. ⏳ dev ──> main              (after Codex complete, all tests pass)
 ```
 
 ## Status Legend
