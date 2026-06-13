@@ -7,6 +7,7 @@ from shared.models.audit_log import AuditLog
 from shared.models.base import Base
 from shared.models.case import Case
 from shared.models.notification import NotificationChannel, NotificationRule, NotificationEvent
+from shared.models.osint import OsintTarget, OsintResult
 from shared.models.soar import SoarPlaybook, SoarTask, SoarExecution
 from shared.models.threat_intel import ThreatIntelFeed, ThreatIntelIndicator
 from shared.models.ueba import UebaBaseline, UebaAnomaly
@@ -34,6 +35,8 @@ def test_expected_tables_are_registered():
         "threat_intel_indicators",
         "ueba_baselines",
         "ueba_anomalies",
+        "osint_targets",
+        "osint_results",
     }.issubset(Base.metadata.tables)
 
 

@@ -275,6 +275,53 @@ async def reports_page(request: Request):
     })
 
 
+@app.get("/osint", response_class=HTMLResponse)
+async def osint_page(request: Request, target_type: str | None = None, target_value: str | None = None, target_id: str | None = None):
+    targets = await api_request("GET", "/osint/targets?limit=100")
+    selected = {"target": {}, "results": []}
+    if target_type and target_value:
+        queued = await api_request(
+            "POST",
+            "/osint/lookup",
+            json_data={"target_type": target_type, "target_value": target_value},
+        )
+        queued_target_id = queued.get("target_id")
+        if queued_target_id:
+            return RedirectResponse(url=f"/osint/history?target_id={queued_target_id}", status_code=303)
+    if target_id:
+        try:
+            selected = await api_request("GET", f"/osint/results/{target_id}")
+        except Exception:
+            selected = {"target": {}, "results": []}
+    return templates.TemplateResponse("osint.html", {
+        "request": request,
+        "targets": targets.get("targets", []),
+        "selected_target": selected.get("target", {}),
+        "results": selected.get("results", []),
+        "selected_target_id": target_id,
+        "page": "OSINT",
+    })
+
+
+@app.get("/osint/history", response_class=HTMLResponse)
+async def osint_history_page(request: Request, target_id: str | None = None):
+    targets = await api_request("GET", "/osint/targets?limit=100")
+    selected = {"target": {}, "results": []}
+    if target_id:
+        try:
+            selected = await api_request("GET", f"/osint/results/{target_id}")
+        except Exception:
+            selected = {"target": {}, "results": []}
+    return templates.TemplateResponse("osint.html", {
+        "request": request,
+        "targets": targets.get("targets", []),
+        "selected_target": selected.get("target", {}),
+        "results": selected.get("results", []),
+        "selected_target_id": target_id,
+        "page": "OSINT",
+    })
+
+
 @app.post("/reports/generate")
 async def generate_report(request: Request):
     form_data = await request.form()
@@ -347,4 +394,3 @@ async def landing(request: Request):
         "request": request,
         "page": "landing"
     })
-

@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     triage_confidence_threshold: float = 0.5
     triage_enabled: bool = True
     mask_sensitive_data: bool = True
+    osint_maigret_url: str = "http://maigret:8080"
+    osint_sandbox_timeout: int = 120
+    osint_enabled: bool = False
 
     tenant_id: str = "default"
 

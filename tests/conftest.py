@@ -1,5 +1,17 @@
 import pytest
 import asyncio
+import os
+import sys
+from pathlib import Path
+
+
+os.environ.setdefault("SECRET_KEY", "test-secret-key")
+
+ROOT = Path(__file__).resolve().parents[1]
+for extra in (ROOT / "services" / "worker", ROOT / "services" / "api"):
+    extra_str = str(extra)
+    if extra_str not in sys.path:
+        sys.path.insert(0, extra_str)
 
 
 @pytest.fixture(scope="session")

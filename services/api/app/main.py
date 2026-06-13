@@ -21,6 +21,7 @@ from app.routers import (
     soar,
     threat_intel,
     ueba,
+    osint,
 )
 
 logging.basicConfig(
@@ -70,3 +71,4 @@ app.include_router(notifications.router)
 app.include_router(soar.router)
 app.include_router(threat_intel.router)
 app.include_router(ueba.router)
+app.include_router(osint.router)
