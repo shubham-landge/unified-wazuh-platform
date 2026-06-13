@@ -236,6 +236,23 @@
                         Settings
                     </a>
 
+                    <!-- Action Approvals -->
+                    <a href="/approvals" class="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all group {{ 'bg-accent-blue/10 text-accent-blue border border-accent-blue/15' if page == 'approvals' else 'text-secondary hover:text-white hover:bg-white/5 border border-transparent' }}"
+                       hx-get="/approvals" hx-target="body" hx-push-url="true">
+                        <div class="flex items-center gap-3">
+                            <svg class="w-5 h-5 shrink-0 group-hover:scale-105 transition-transform" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Approvals
+                        </div>
+                        {% if pending_approvals_count and pending_approvals_count > 0 %}
+                        <span class="px-1.5 py-0.5 text-[10px] font-bold bg-accent-red/20 text-accent-red border border-accent-red/30 rounded-full animate-pulse">
+                            {{ pending_approvals_count }}
+                        </span>
+                        {% endif %}
+                    </a>
+
+
                     {% if current_user and current_user.role == 'admin' %}
                     <!-- Users Directory (Admin Only) -->
                     <a href="/users" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group {{ 'bg-accent-blue/10 text-accent-blue border border-accent-blue/15' if page == 'users' else 'text-secondary hover:text-white hover:bg-white/5 border border-transparent' }}"

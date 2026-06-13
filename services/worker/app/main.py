@@ -29,6 +29,7 @@ async def main():
         ("app.rag_worker", "RAGWorker"),
         ("app.agent_worker", "AgentWorker"),
         ("app.ticketing_worker", "TicketingWorker"),
+        ("app.approval_worker", "ApprovalWorker"),
     ]:
         try:
             import importlib

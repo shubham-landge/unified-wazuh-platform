@@ -28,6 +28,7 @@ from app.routers import (
     rag,
     agents,
     ticketing,
+    approvals,
 )
 
 logging.basicConfig(
@@ -84,3 +85,4 @@ app.include_router(compliance.router)
 app.include_router(rag.router)
 app.include_router(agents.router)
 app.include_router(ticketing.router)
+app.include_router(approvals.router)

@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6" x-data="{
+    activeTab: 'pending',
+    showReviewModal: false,
+    selectedId: '',
+    selectedAction: '',
+    reviewStatus: '',
+    reviewComment: '',
+    openReview(id, action, type) {
+        this.selectedId = id;
+        this.selectedAction = action;
+        this.reviewStatus = type;
+        this.reviewComment = '';
+        this.showReviewModal = true;
+    }
+}">
+    <div class="flex justify-between items-center mb-2">
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">Response Action Approvals</h1>
+            <p class="text-xs text-secondary mt-0.5">Review and authorize automated response actions proposed by AI triage and playbook engines.</p>
+        </div>
+    </div>
+
+    <div class="flex border-b border-white/5 gap-6 text-sm">
+        <button @click="activeTab = 'pending'" :class="activeTab === 'pending' ? 'text-accent-blue border-b-2 border-accent-blue pb-3 font-semibold' : 'text-secondary pb-3 hover:text-white'" class="transition-all">
+            Pending Actions
+        </button>
+        <button @click="activeTab = 'approved'" :class="activeTab === 'approved' ? 'text-accent-blue border-b-2 border-accent-blue pb-3 font-semibold' : 'text-secondary pb-3 hover:text-white'" class="transition-all">
+            Approved Logs
+        </button>
+        <button @click="activeTab = 'rejected'" :class="activeTab === 'rejected' ? 'text-accent-blue border-b-2 border-accent-blue pb-3 font-semibold' : 'text-secondary pb-3 hover:text-white'" class="transition-all">
+            Rejected Logs
+        </button>
+    </div>
+
+    <div class="space-y-4">
+        {% for a in approvals %}
+        <div x-show="activeTab === '{{ a.status }}'" class="card-premium p-5 space-y-4" x-data="{
+            expired: false,
+            timeLeft: '',
+            initTimer() {
+                const exp = new Date('{{ a.expires_at }}').getTime();
+                const update = () => {
+                    const diff = exp - Date.now();
+                    if (diff <= 0) {
+                        this.expired = true;
+                        this.timeLeft = 'Expired';
+                    } else {
+                        const mins = Math.floor(diff / 60000);
+                        const secs = Math.floor((diff % 60000) / 1000);
+                        this.timeLeft = `${mins}m ${secs}s`;
+                    }
+                };
+                update();
+                if (!this.expired) setInterval(update, 1000);
+            }
+        }" x-init="initTimer()">
+            <div class="flex justify-between items-start">
+                <div class="space-y-1">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 bg-accent-blue/10 border border-accent-blue/20 text-accent-blue rounded text-[10px] font-mono uppercase font-bold">
+                            {{ a.action_type }}
+                        </span>
+                        {% if a.target_ref %}
+                        <span class="text-xs text-muted font-mono">{{ a.target_ref }}</span>
+                        {% endif %}
+                        <span class="px-1.5 py-0.2 text-[9px] font-bold uppercase rounded
+                            {% if a.risk_level == 'critical' %}bg-accent-red/20 text-accent-red border border-accent-red/30
+                            {% elif a.risk_level == 'high' %}bg-accent-yellow/20 text-accent-yellow border border-accent-yellow/30
+                            {% else %}bg-white/5 text-secondary border border-white/10{% endif %}">
+                            {{ a.risk_level }} Risk
+                        </span>
+                    </div>
+                    <div class="text-[10px] text-muted">Proposed by <span class="text-secondary font-mono">{{ a.requested_by }}</span> &bull; {{ a.created_at[:16].replace('T', ' ') }}</div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    {% if a.status == 'pending' %}
+                    <template x-if="!expired">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] font-bold font-mono text-accent-yellow bg-accent-yellow/5 border border-accent-yellow/10 px-2 py-0.5 rounded" x-text="'Expires: ' + timeLeft"></span>
+                            <button @click="openReview('{{ a.id }}', '{{ a.action_type }}', 'approved')" class="px-2.5 py-1 bg-accent-green hover:bg-accent-green/90 text-white rounded text-[10px] font-bold transition-all">Approve</button>
+                            <button @click="openReview('{{ a.id }}', '{{ a.action_type }}', 'rejected')" class="px-2.5 py-1 bg-accent-red hover:bg-accent-red/90 text-white rounded text-[10px] font-bold transition-all">Reject</button>
+                        </div>
+                    </template>
+                    <template x-if="expired">
+                        <span class="text-[10px] font-bold font-mono text-muted bg-white/5 border border-white/10 px-2 py-0.5 rounded">Expired</span>
+                    </template>
+                    {% else %}
+                    <div class="text-right space-y-1">
+                        <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider
+                            {% if a.status == 'approved' %}bg-accent-green/20 text-accent-green{% else %}bg-accent-red/20 text-accent-red{% endif %}">
+                            {{ a.status }}
+                        </span>
+                        <div class="text-[9px] text-muted">Reviewed by {{ a.reviewed_by or 'System' }}</div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="text-xs text-primary leading-relaxed bg-deep/40 p-3 rounded-lg border border-white/5">
+                <div class="font-bold text-white uppercase tracking-wider text-[9px] mb-1">AI Rationale</div>
+                {{ a.rationale }}
+            </div>
+
+            {% if a.action_params %}
+            <div class="text-xs font-mono bg-deep/80 p-3 rounded-lg border border-white/5 text-secondary overflow-x-auto">
+                <div class="font-bold text-white uppercase tracking-wider text-[9px] mb-1">Action Parameters</div>
+                {{ a.action_params | tojson(indent=2) }}
+            </div>
+            {% endif %}
+
+            {% if a.review_comment %}
+            <div class="text-xs text-muted italic bg-deep/20 p-2.5 rounded-lg border-l-2 border-white/20 pl-4">
+                &ldquo;{{ a.review_comment }}&rdquo;
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        <div x-show="activeTab === 'pending' && {{ approvals | selectattr('status', 'equalto', 'pending') | list | length == 0 }}" class="text-center py-8 text-secondary text-xs card-premium">
+            No pending response action approvals.
+        </div>
+        <div x-show="activeTab === 'approved' && {{ approvals | selectattr('status', 'equalto', 'approved') | list | length == 0 }}" class="text-center py-8 text-secondary text-xs card-premium">
+            No approved response actions logged.
+        </div>
+        <div x-show="activeTab === 'rejected' && {{ approvals | selectattr('status', 'equalto', 'rejected') | list | length == 0 }}" class="text-center py-8 text-secondary text-xs card-premium">
+            No rejected response actions logged.
+        </div>
+    </div>
+
+    <div x-show="showReviewModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" x-cloak>
+        <div class="w-full max-w-md bg-deep border border-white/10 rounded-2xl p-6 space-y-4 shadow-2xl" @click.away="showReviewModal = false">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h3 class="text-sm font-bold text-white uppercase tracking-wider" x-text="reviewStatus === 'approved' ? 'Approve Response Action' : 'Reject Response Action'"></h3>
+                    <p class="text-xs text-secondary mt-1" x-text="'Confirm action for: ' + selectedAction"></p>
+                </div>
+                <button @click="showReviewModal = false" class="text-muted hover:text-white">&times;</button>
+            </div>
+
+            <form :action="'/approvals/' + selectedId + '/review'" method="POST" class="space-y-4">
+                <input type="hidden" name="status" :value="reviewStatus" />
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[9px] text-muted font-bold uppercase tracking-wider">Comments / Justification</label>
+                    <textarea name="comment" rows="3" required placeholder="Provide explanation or context for this approval/rejection decision..." class="w-full bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none"></textarea>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" @click="showReviewModal = false" class="px-3 py-1.5 bg-white/5 border border-white/10 hover:border-white/20 text-white rounded text-xs">Cancel</button>
+                    <button type="submit" :class="reviewStatus === 'approved' ? 'bg-accent-green hover:bg-accent-green/90 shadow-[0_0_8px_rgba(34,197,94,0.15)]' : 'bg-accent-red hover:bg-accent-red/90 shadow-[0_0_8px_rgba(239,68,68,0.15)]'" class="px-3 py-1.5 text-white rounded text-xs font-bold" x-text="reviewStatus === 'approved' ? 'Confirm Approval' : 'Confirm Rejection'"></button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

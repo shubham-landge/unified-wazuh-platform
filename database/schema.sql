@@ -852,6 +852,25 @@ CREATE INDEX idx_agent_tasks_run ON agent_tasks(run_id);
 CREATE INDEX idx_agent_tasks_status ON agent_tasks(status);
 
 -- ─── Triggers ───
+CREATE TABLE approval_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    requested_by VARCHAR(255) NOT NULL,
+    action_type VARCHAR(64) NOT NULL,
+    action_params JSONB NOT NULL,
+    target_ref VARCHAR(255),
+    rationale TEXT NOT NULL,
+    risk_level VARCHAR(16) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    reviewed_by VARCHAR(255),
+    review_comment TEXT,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_approval_requests_tenant ON approval_requests(tenant_id);
+CREATE INDEX idx_approval_requests_status ON approval_requests(status);
+
 CREATE TRIGGER trg_users_updated_at
     BEFORE UPDATE ON users FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
@@ -891,4 +910,8 @@ CREATE INDEX idx_ticket_links_provider ON ticket_links(provider);
 
 CREATE TRIGGER trg_ticketing_configs_updated_at
     BEFORE UPDATE ON ticketing_configs FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_approval_requests_updated_at
+    BEFORE UPDATE ON approval_requests FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
