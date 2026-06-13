@@ -54,7 +54,7 @@ async def test_health_endpoint(client):
 @pytest.mark.asyncio
 async def test_health_endpoint_no_auth(client):
     response = await client.get("/health")
-    assert response.status_code == 401
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -105,12 +105,12 @@ async def test_repeated_requests(client):
 @pytest.mark.asyncio
 async def test_invalid_api_key(client):
     response = await client.get(
-        "/health", headers={"X-API-Key": "invalid-key-12345"}
+        "/alerts/recent", headers={"X-API-Key": "invalid-key-12345"}
     )
     assert response.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_missing_api_key(client):
-    response = await client.get("/health")
+    response = await client.get("/alerts/recent")
     assert response.status_code == 401
