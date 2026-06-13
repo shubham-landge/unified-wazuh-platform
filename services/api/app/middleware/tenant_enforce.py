@@ -49,13 +49,13 @@ class TenantEnforcementMiddleware(BaseHTTPMiddleware):
                 request.state.user = token_data
                 request.state.tenant_id = tenant_id
 
-        # Legacy: derive from API key (for backward compatibility)
+        # Legacy API keys have no per-key tenant mapping — do not synthesise a
+        # fake tenant_id here. Tenant-scoped filters in routers skip when
+        # tenant_id is None, so API-key callers see all tenants (admin access).
         if not tenant_id:
             api_key = request.headers.get("X-API-Key", "")
             if api_key:
-                import hashlib
-                tenant_id = hashlib.sha256(api_key.encode()).hexdigest()[:16]
-                request.state.tenant_id = tenant_id
+                request.state.tenant_id = None
 
         # For authenticated requests, tenant_id is now mandatory
         if not tenant_id and auth_header.startswith("Bearer "):

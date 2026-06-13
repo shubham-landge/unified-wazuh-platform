@@ -49,8 +49,10 @@ async def test_list_reports_with_dependency_overrides():
 
 @pytest.mark.asyncio
 async def test_get_report_returns_404():
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
     db = MagicMock()
-    db.get = AsyncMock(return_value=None)
+    db.execute = AsyncMock(return_value=result)
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_db] = lambda: db

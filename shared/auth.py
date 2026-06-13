@@ -82,12 +82,9 @@ def verify_token(token: str) -> TokenData | None:
 
 
 def has_permission(user_permissions: list[str], required: str) -> bool:
-    """Check if user has a permission. Supports wildcards."""
-    if "read:*" in user_permissions or "write:*" in user_permissions or "delete:*" in user_permissions:
-        return True
+    """Check if user has a permission. Wildcards are verb-scoped: read:* only grants read:anything."""
     if required in user_permissions:
         return True
-    # Check wildcards: "read:*" covers "read:alerts", etc
     perm_parts = required.split(":")
     if len(perm_parts) == 2:
         wildcard = f"{perm_parts[0]}:*"

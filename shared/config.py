@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import SecretStr, Field, field_validator
+from pydantic import SecretStr, Field, field_validator, model_validator
 from typing import List, Optional, Union
 
 
@@ -114,6 +114,16 @@ class Settings(BaseSettings):
     jwt_secret_key: SecretStr = SecretStr("change-me-in-production-minimum-32-chars")
     jwt_expiration_hours: int = 24
     jwt_algorithm: str = "HS256"
+
+    @model_validator(mode="after")
+    def _reject_default_secret(self) -> "Settings":
+        _default = "change-me-in-production-minimum-32-chars"
+        if self.jwt_secret_key.get_secret_value() == _default and not self.debug:
+            raise ValueError(
+                "JWT_SECRET_KEY must be overridden in production. "
+                "Set the JWT_SECRET_KEY environment variable."
+            )
+        return self
 
     # OIDC configuration (optional SSO)
     oidc_enabled: bool = False

@@ -32,6 +32,3 @@ def validate_api_key(api_key: str = Depends(api_key_header)) -> str:
     )
 
 
-async def get_tenant_id(request: Request) -> str:
-    api_key = request.headers.get("X-API-Key", "")
-    return _hash_key(api_key)[:16]
