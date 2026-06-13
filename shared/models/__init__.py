@@ -31,3 +31,5 @@ from shared.models.user import User
 from shared.models.feedback import UserFeedback
 from shared.models.case_event import CaseEvent
 from shared.models.case_investigation_step import CaseInvestigationStep
+from shared.models.approval import ApprovalRequest
+

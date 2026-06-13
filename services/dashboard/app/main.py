@@ -46,6 +46,16 @@ async def add_user_to_template_context(request: Request, call_next):
         }
     request.state.current_user = current_user
     templates.env.globals["current_user"] = current_user
+    
+    pending_count = 0
+    if token:
+        try:
+            res = await api_request("GET", "/approvals/pending")
+            pending_count = res.get("count", 0)
+        except Exception:
+            pass
+    templates.env.globals["pending_approvals_count"] = pending_count
+
     response = await call_next(request)
     return response
 
@@ -55,8 +65,15 @@ static_dir = "static" if os.path.exists("static") else "services/dashboard/stati
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
-async def api_request(method: str, path: str, json_data: dict = None, data: dict = None):
+async def api_request(method: str, path: str, json_data: dict = None, data: dict = None, request: Request = None):
     headers = {"X-API-Key": os.getenv("API_KEYS", "soc-key-001").split(",")[0]}
+    if request:
+        token = request.cookies.get("session_token")
+        if token:
+            from shared.auth import create_access_token
+            role = "admin" if "admin" in token else "analyst"
+            jwt_token = create_access_token(user_id=token, email=token, role=role)
+            headers["Authorization"] = f"Bearer {jwt_token}"
     async with httpx.AsyncClient(timeout=10.0) as client:
         url = f"{API_BASE}{path}"
         if method.upper() == "GET":
@@ -79,6 +96,7 @@ async def api_request(method: str, path: str, json_data: dict = None, data: dict
             return resp.json()
         except Exception:
             return {"status": "success", "text": resp.text}
+
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -1201,5 +1219,38 @@ async def feedback_analytics(request: Request):
         "corrected_count": corrected_count,
         "top_corrected_category": top_corrected
     })
+
+
+@app.get("/approvals", response_class=HTMLResponse)
+async def approvals_dashboard(request: Request):
+    token = request.cookies.get("session_token")
+    if not token:
+        return RedirectResponse("/login", status_code=303)
+    current_user = {
+        "email": token,
+        "display_name": token.split("@")[0].title(),
+        "role": "admin" if "admin" in token else "analyst"
+    }
+    res = await api_request("GET", "/approvals", request=request)
+    approvals_list = res.get("approvals", [])
+    return templates.TemplateResponse("approvals.html", {
+        "request": request,
+        "current_user": current_user,
+        "approvals": approvals_list,
+        "page": "approvals"
+    })
+
+
+@app.post("/approvals/{approval_id}/review")
+async def review_approval_dashboard(approval_id: str, request: Request):
+    token = request.cookies.get("session_token")
+    if not token:
+        return RedirectResponse("/login", status_code=303)
+    form = await request.form()
+    status = form.get("status")
+    comment = form.get("comment")
+    await api_request("PUT", f"/approvals/{approval_id}/review", json_data={"status": status, "comment": comment}, request=request)
+    return RedirectResponse("/approvals", status_code=303)
+
 
 

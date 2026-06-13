@@ -26,6 +26,7 @@ async def main():
         ("app.threat_intel_worker", "ThreatIntelWorker"),
         ("app.ueba_worker", "UEBAWorker"),
         ("app.feedback_worker", "FeedbackWorker"),
+        ("app.approval_worker", "ApprovalWorker"),
     ]:
         try:
             import importlib
