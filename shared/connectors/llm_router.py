@@ -27,6 +27,16 @@ def asset_criticality(agent_id: str | None) -> int:
 def is_burst_alert(alert) -> bool:
     if alert.rule_firedtimes and alert.rule_firedtimes > 5:
         return True
+    from shared.config import settings
+    window = getattr(settings, 'llm_tier_burst_window_minutes', 10)
+    if hasattr(alert, 'created_at') and alert.created_at:
+        from datetime import datetime, timezone, timedelta
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=window)
+        ts = alert.created_at
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        if ts >= cutoff and (alert.rule_firedtimes or 0) > 3:
+            return True
     return False
 
 
@@ -34,12 +44,35 @@ def tenant_tier(tenant_id: str | None) -> str:
     return "standard"
 
 
-def user_feedback_negative_rate(rule_id: int | None) -> float:
-    return 0.0
+async def user_feedback_negative_rate(rule_id: int | None, db_session=None) -> float:
+    if db_session is None or rule_id is None:
+        return 0.0
+    try:
+        from shared.models.feedback import UserFeedback
+        from shared.models.ai_triage_result import AiTriageResult
+        from sqlalchemy import select, func
+
+        total = await db_session.execute(
+            select(func.count(UserFeedback.id))
+            .join(AiTriageResult, UserFeedback.triage_result_id == AiTriageResult.id)
+            .where(AiTriageResult.category == str(rule_id))
+        )
+        negative = await db_session.execute(
+            select(func.count(UserFeedback.id))
+            .join(AiTriageResult, UserFeedback.triage_result_id == AiTriageResult.id)
+            .where(AiTriageResult.category == str(rule_id), UserFeedback.rating <= 2)
+        )
+        total_count = total.scalar() or 0
+        if total_count == 0:
+            return 0.0
+        return (negative.scalar() or 0) / total_count
+    except Exception as e:
+        logger.warning("Failed to compute user_feedback_negative_rate: %s", e)
+        return 0.0
 
 
 class TieredRouter:
-    def get_provider(self, alert=None, tenant_id: str | None = None) -> LLMProvider:
+    async def get_provider(self, alert=None, tenant_id: str | None = None, db_session=None) -> LLMProvider:
         strategy = settings.llm_tier_strategy
 
         if strategy == "fast":
@@ -47,7 +80,7 @@ class TieredRouter:
         if strategy == "full":
             return self._build_full_provider()
 
-        score = self._compute_score(alert, tenant_id)
+        score = await self._compute_score(alert, tenant_id, db_session)
         logger.debug("TieredRouter score=%d for alert %s", score, getattr(alert, "id", None))
 
         if score >= settings.llm_tier_score_threshold:
@@ -57,7 +90,7 @@ class TieredRouter:
         logger.debug("Routing to FAST tier (score=%d)", score)
         return self._build_fast_provider()
 
-    def _compute_score(self, alert, tenant_id: str | None) -> int:
+    async def _compute_score(self, alert, tenant_id: str | None, db_session=None) -> int:
         score = 0
 
         if alert is None:
@@ -89,7 +122,7 @@ class TieredRouter:
         if tenant_tier(tenant_id) == "premium":
             score += 2
 
-        neg_rate = user_feedback_negative_rate(alert.rule_id)
+        neg_rate = await user_feedback_negative_rate(alert.rule_id, db_session=db_session)
         if neg_rate > 0.3:
             score += 2
 

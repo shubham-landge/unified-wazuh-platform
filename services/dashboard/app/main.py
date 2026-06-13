@@ -1099,6 +1099,34 @@ async def delete_report_schedule(sch_id: str, request: Request):
     return RedirectResponse("/reports", status_code=303)
 
 
+# --- Phase 4B: MTTR Dashboard + ATT&CK Heatmap ---
+
+@app.get("/mttr-dashboard", response_class=HTMLResponse)
+async def mttr_dashboard(request: Request):
+    stats = await api_request("GET", "/cases/stats/mttr?days=30")
+    cases = await api_request("GET", "/cases?limit=100")
+    mitre = await api_request("GET", "/cases/stats/mitre-heatmap")
+    return templates.TemplateResponse("mttr_dashboard.html", {
+        "request": request,
+        "stats": stats,
+        "cases": cases.get("cases", []),
+        "mitre": mitre,
+        "page": "mttr-dashboard",
+    })
+
+
+@app.get("/attack-heatmap", response_class=HTMLResponse)
+async def attack_heatmap(request: Request):
+    mitre = await api_request("GET", "/cases/stats/mitre-heatmap")
+    cases = await api_request("GET", "/cases?limit=100")
+    return templates.TemplateResponse("attack_heatmap.html", {
+        "request": request,
+        "mitre": mitre,
+        "cases": cases.get("cases", []),
+        "page": "attack-heatmap",
+    })
+
+
 # --- AI Triage Feedback Console Routes ---
 
 @app.post("/feedback/{triage_id}")

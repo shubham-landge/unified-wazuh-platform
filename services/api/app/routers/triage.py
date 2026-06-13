@@ -1,12 +1,13 @@
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pydantic import BaseModel, Field
-from starlette.status import HTTP_202_ACCEPTED, HTTP_404_NOT_FOUND, HTTP_503_SERVICE_UNAVAILABLE, HTTP_400_BAD_REQUEST
+from starlette.status import HTTP_202_ACCEPTED, HTTP_404_NOT_FOUND, HTTP_503_SERVICE_UNAVAILABLE, HTTP_400_BAD_REQUEST, HTTP_429_TOO_MANY_REQUESTS
 
 from app.db import get_db
 from shared.models.alert import Alert
@@ -18,6 +19,8 @@ from shared.auth import TokenData
 from shared.config import settings
 
 router = APIRouter(prefix="/triage", tags=["triage"])
+
+_feedback_rate_limit = defaultdict(list)
 
 
 class TriageRequest(BaseModel):
@@ -50,10 +53,9 @@ async def run_triage(
     if not alert:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Alert not found")
 
-    from shared.connectors.llm_provider import get_provider
-    from shared.config import settings
+    from shared.connectors.llm_router import TieredRouter
 
-    provider = get_provider()
+    provider = await TieredRouter().get_provider(alert=alert, tenant_id=str(alert.tenant_id), db_session=db)
 
     # Load system prompt from file
     from pathlib import Path
@@ -126,6 +128,20 @@ async def run_triage(
         error_message=result_data.get("error"),
     )
     db.add(triage_result)
+
+    from shared.models.model_run import ModelRun
+    from hashlib import sha256
+    model_run = ModelRun(
+        tenant_id=alert.tenant_id,
+        model_name=provider.name(),
+        prompt_hash=sha256(user_prompt.encode()).hexdigest()[:16],
+        input_tokens=result_data.get("tokens_input"),
+        output_tokens=result_data.get("tokens_output"),
+        latency_ms=result_data.get("latency_ms"),
+        success=result_data.get("success", True),
+    )
+    db.add(model_run)
+
     await db.commit()
 
     return {
@@ -191,6 +207,14 @@ async def submit_feedback(
     db: AsyncSession = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
+    now = datetime.now(timezone.utc)
+    user_id = current_user.user_id
+
+    _feedback_rate_limit[user_id] = [t for t in _feedback_rate_limit.get(user_id, []) if t > now - timedelta(minutes=1)]
+    if len(_feedback_rate_limit[user_id]) >= 10:
+        raise HTTPException(status_code=HTTP_429_TOO_MANY_REQUESTS, detail="Too many feedback submissions. Please wait.")
+    _feedback_rate_limit[user_id].append(now)
+
     try:
         triage_uid = uuid.UUID(triage_id)
     except ValueError:

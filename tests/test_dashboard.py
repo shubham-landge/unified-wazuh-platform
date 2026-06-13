@@ -231,6 +231,112 @@ def test_feedback_page_requires_admin(mock_get_store, client):
     assert "False positive test" in resp.text
 
 
+# --- Phase 4B: MTTR Dashboard + ATT&CK Heatmap tests ---
+
+@patch("services.dashboard.app.main.api_request")
+def test_mttr_dashboard_loads(mock_api, client):
+    mock_api.side_effect = lambda method, path, *args, **kwargs: {
+        "/cases/stats/mttr?days=30": {
+            "status": "success",
+            "total_cases": 78,
+            "open": 14,
+            "in_progress": 8,
+            "resolved": 32,
+            "closed": 18,
+            "false_positive": 6,
+            "avg_mttr_hours": 4.75,
+            "closed_within_24h": 28,
+            "closed_within_7d": 42,
+            "total_resolved": 50,
+            "trend": [
+                {"date": "2026-06-01", "avg_hours": 5.2},
+                {"date": "2026-06-02", "avg_hours": 4.8},
+                {"date": "2026-06-03", "avg_hours": 4.1},
+            ]
+        },
+        "/cases?limit=100": {
+            "status": "success",
+            "cases": [
+                {"id": "c1", "status": "open", "severity": "critical"},
+                {"id": "c2", "status": "resolved", "severity": "high"},
+            ]
+        },
+        "/cases/stats/mitre-heatmap": {
+            "status": "success",
+            "tactics": ["TA0001", "TA0002"],
+            "techniques_per_tactic": {
+                "TA0001": [{"tactic": "TA0001", "technique": "T1078", "name": "Valid Accounts", "count": 5}],
+                "TA0002": [{"tactic": "TA0002", "technique": "T1059", "name": "Command and Scripting Interpreter", "count": 3}]
+            },
+            "total_techniques": 8,
+            "unique_techniques": 2
+        }
+    }
+
+    client.cookies.set("session_token", "admin@company.com")
+    resp = client.get("/mttr-dashboard")
+    assert resp.status_code == 200
+    assert "MTTR Analytics Dashboard" in resp.text
+    assert "4.8" in resp.text  # avg_mttr_hours value appears
+    assert "mttrTrendChart" in resp.text
+    assert "caseStatusChart" in resp.text
+
+
+@patch("services.dashboard.app.main.api_request")
+def test_attack_heatmap_loads(mock_api, client):
+    mock_api.side_effect = lambda method, path, *args, **kwargs: {
+        "/cases/stats/mitre-heatmap": {
+            "status": "success",
+            "tactics": ["TA0001", "TA0002", "TA0003"],
+            "techniques_per_tactic": {
+                "TA0001": [{"tactic": "TA0001", "technique": "T1078", "name": "Valid Accounts", "count": 5}],
+                "TA0002": [{"tactic": "TA0002", "technique": "T1059", "name": "Command and Scripting Interpreter", "count": 3}],
+                "TA0003": [{"tactic": "TA0003", "technique": "T1505", "name": "Server Software Component", "count": 1}]
+            },
+            "total_techniques": 9,
+            "unique_techniques": 3
+        },
+        "/cases?limit=100": {
+            "status": "success",
+            "cases": []
+        }
+    }
+
+    client.cookies.set("session_token", "admin@company.com")
+    resp = client.get("/attack-heatmap")
+    assert resp.status_code == 200
+    assert "ATT&CK Heatmap" in resp.text
+    assert "attackHeatmapMatrix" in resp.text
+    assert "T1078" in resp.text
+    assert "T1059" in resp.text
+
+
+@patch("services.dashboard.app.main.api_request")
+def test_mttr_stats_api(mock_api, client):
+    mock_api.return_value = {
+        "status": "success",
+        "total_cases": 10,
+        "avg_mttr_hours": 3.5,
+        "open": 3,
+        "in_progress": 2,
+        "resolved": 4,
+        "closed": 1,
+        "false_positive": 0,
+        "closed_within_24h": 3,
+        "closed_within_7d": 5,
+        "total_resolved": 5,
+        "trend": []
+    }
+
+    client.cookies.set("session_token", "admin@company.com")
+    resp = client.get("/mttr-dashboard")
+    assert resp.status_code == 200
+    assert "3.5" in resp.text
+
+
+# --- End Phase 4B tests ---
+
+
 @patch("services.dashboard.app.main.save_store")
 @patch("services.dashboard.app.main.get_store")
 def test_submit_feedback(mock_get_store, mock_save_store, client):
