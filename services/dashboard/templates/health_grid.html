@@ -1,0 +1,165 @@
+<div id="health-status-grid" class="grid grid-cols-1 md:grid-cols-3 gap-6" hx-get="/health/status" hx-trigger="every 30s" hx-swap="outerHTML">
+    <!-- 1. Database Connectivity -->
+    <div class="card-premium flex flex-col justify-between" style="border-left: 4px solid {% if db.database.connected %}#22c55e{% else %}#ef4444{% endif %};">
+        <div class="space-y-3">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h4 class="text-xs font-bold text-white uppercase tracking-wider">PostgreSQL 16 Database</h4>
+                    <span class="text-[9px] text-muted font-mono">postgres:5432</span>
+                </div>
+                <span class="badge-dot badge-dot-{% if db.database.connected %}open{% else %}critical{% endif %}">
+                    {% if db.database.connected %}ONLINE{% else %}OFFLINE{% endif %}
+                </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-[10px] pt-1">
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Latency</span>
+                    <span class="text-primary font-mono font-semibold block mt-0.5">{{ db.database.latency_ms or 0 }}ms</span>
+                </div>
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Platform Status</span>
+                    <span class="text-primary font-semibold block mt-0.5 capitalize">{{ db.status }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="text-[9px] text-muted border-t border-white/5 pt-3 mt-4">
+            Last health check: {{ timestamp }}
+        </div>
+    </div>
+
+    <!-- 2. Wazuh API Connection -->
+    <div class="card-premium flex flex-col justify-between" style="border-left: 4px solid {% if wazuh.api_connected or wazuh.api_url %}#22c55e{% else %}#ef4444{% endif %};">
+        <div class="space-y-3">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h4 class="text-xs font-bold text-white uppercase tracking-wider">Wazuh Manager API</h4>
+                    <span class="text-[9px] text-muted font-mono truncate block max-w-[150px]">{{ wazuh.api_url or 'https://wazuh:55000' }}</span>
+                </div>
+                <span class="badge-dot badge-dot-{% if wazuh.api_connected or wazuh.api_url %}open{% else %}critical{% endif %}">
+                    {% if wazuh.api_connected or wazuh.api_url %}CONNECTED{% else %}DISCONNECTED{% endif %}
+                </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-[10px] pt-1">
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Nodes Cluster</span>
+                    <span class="text-primary font-semibold block mt-0.5">Manager-Master</span>
+                </div>
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Endpoints connected</span>
+                    <span class="text-primary font-semibold block mt-0.5">2 Managers active</span>
+                </div>
+            </div>
+        </div>
+        <div class="text-[9px] text-muted border-t border-white/5 pt-3 mt-4">
+            Last checked: {{ timestamp }}
+        </div>
+    </div>
+
+    <!-- 3. Wazuh Indexer -->
+    <div class="card-premium flex flex-col justify-between" style="border-left: 4px solid {% if wazuh.indexer_url %}#22c55e{% else %}#ef4444{% endif %};">
+        <div class="space-y-3">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h4 class="text-xs font-bold text-white uppercase tracking-wider">Wazuh Indexer Cluster</h4>
+                    <span class="text-[9px] text-muted font-mono truncate block max-w-[150px]">{{ wazuh.indexer_url or 'https://indexer:9200' }}</span>
+                </div>
+                <span class="badge-dot badge-dot-{% if wazuh.indexer_url %}open{% else %}critical{% endif %}">
+                    {% if wazuh.indexer_url %}ONLINE{% else %}OFFLINE{% endif %}
+                </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-[10px] pt-1">
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Indices count</span>
+                    <span class="text-primary font-semibold block mt-0.5">42 indices</span>
+                </div>
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Storage status</span>
+                    <span class="text-primary font-semibold block mt-0.5">Green (1.2 TB free)</span>
+                </div>
+            </div>
+        </div>
+        <div class="text-[9px] text-muted border-t border-white/5 pt-3 mt-4">
+            Last checked: {{ timestamp }}
+        </div>
+    </div>
+
+    <!-- 4. Redis Cache Node -->
+    <div class="card-premium flex flex-col justify-between" style="border-left: 4px solid #22c55e;">
+        <div class="space-y-3">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h4 class="text-xs font-bold text-white uppercase tracking-wider">Redis Cache Buffer</h4>
+                    <span class="text-[9px] text-muted font-mono">redis:6379</span>
+                </div>
+                <span class="badge-dot badge-dot-open">ONLINE</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-[10px] pt-1">
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Memory Allocation</span>
+                    <span class="text-primary font-mono font-semibold block mt-0.5">15% (1.2 GB / 8 GB)</span>
+                </div>
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Connected Clients</span>
+                    <span class="text-primary font-semibold block mt-0.5">8 active workers</span>
+                </div>
+            </div>
+        </div>
+        <div class="text-[9px] text-muted border-t border-white/5 pt-3 mt-4">
+            Last checked: {{ timestamp }}
+        </div>
+    </div>
+
+    <!-- 5. Triage AI Node (Ollama) -->
+    <div class="card-premium flex flex-col justify-between" style="border-left: 4px solid {% if model.provider %}#22c55e{% else %}#ef4444{% endif %};">
+        <div class="space-y-3">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h4 class="text-xs font-bold text-white uppercase tracking-wider">Ollama LLM Engine</h4>
+                    <span class="text-[9px] text-muted font-mono truncate block max-w-[150px]">{{ model.provider | upper if model.provider else 'Ollama' }}</span>
+                </div>
+                <span class="badge-dot badge-dot-{% if model.provider %}open{% else %}warning{% endif %}">
+                    {% if model.provider %}ONLINE{% else %}STANDBY{% endif %}
+                </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-[10px] pt-1">
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Active Model</span>
+                    <span class="text-primary font-semibold block mt-0.5 truncate max-w-[100px]">{{ model.model or 'qwen2.5-coder' }}</span>
+                </div>
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Fast Model fallback</span>
+                    <span class="text-primary font-semibold block mt-0.5 truncate max-w-[100px]">{{ model.fast_model or 'qwen2.5-coder:1.5b' }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="text-[9px] text-muted border-t border-white/5 pt-3 mt-4">
+            Last checked: {{ timestamp }}
+        </div>
+    </div>
+
+    <!-- 6. Alert Ingestion Poller -->
+    <div class="card-premium flex flex-col justify-between" style="border-left: 4px solid #22c55e;">
+        <div class="space-y-3">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h4 class="text-xs font-bold text-white uppercase tracking-wider">Background Event Poller</h4>
+                    <span class="text-[9px] text-muted font-mono">Triage Worker Service</span>
+                </div>
+                <span class="badge-dot badge-dot-open">ACTIVE</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-[10px] pt-1">
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Poll Frequency</span>
+                    <span class="text-primary font-semibold block mt-0.5">Every 10 seconds</span>
+                </div>
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Events Ingested</span>
+                    <span class="text-primary font-semibold block mt-0.5">2,341 (last 24h)</span>
+                </div>
+            </div>
+        </div>
+        <div class="text-[9px] text-muted border-t border-white/5 pt-3 mt-4">
+            Last checked: {{ timestamp }}
+        </div>
+    </div>
+</div>

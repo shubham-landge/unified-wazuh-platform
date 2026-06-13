@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6" x-data="{
+    activeTab: 'builder',
+    playbookName: 'New Automation Playbook',
+    playbookDescription: 'Describe this playbook workflow...',
+    nodes: [
+        { id: 1, type: 'trigger', label: 'Trigger: Alert Ingested (Any Rule Level &ge; 10)' }
+    ],
+    showAddNodeModal: false,
+    viewRunLogs: null,
+    
+    addNode(type, label) {
+        const id = Date.now();
+        this.nodes.push({ id, type, label });
+        this.showAddNodeModal = false;
+        addGlobalToast('success', 'Added ' + type + ' node to playbook flow.');
+    },
+    removeNode(id) {
+        this.nodes = this.nodes.filter(n => n.id !== id);
+        addGlobalToast('info', 'Removed node from playbook flow.');
+    },
+    savePlaybook() {
+        const payload = {
+            name: this.playbookName,
+            description: this.playbookDescription,
+            nodes: this.nodes
+        };
+        // Trigger post manually or submit via form
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/playbooks';
+        
+        const inputNodes = document.createElement('input');
+        inputNodes.type = 'hidden';
+        inputNodes.name = 'nodes';
+        inputNodes.value = JSON.stringify(this.nodes);
+        form.appendChild(inputNodes);
+
+        const inputName = document.createElement('input');
+        inputName.type = 'hidden';
+        inputName.name = 'name';
+        inputName.value = this.playbookName;
+        form.appendChild(inputName);
+
+        const inputDesc = document.createElement('input');
+        inputDesc.type = 'hidden';
+        inputDesc.name = 'description';
+        inputDesc.value = this.playbookDescription;
+        form.appendChild(inputDesc);
+
+        document.body.appendChild(form);
+        form.submit();
+    }
+}">
+    <!-- Page Header -->
+    <div class="flex justify-between items-center mb-2">
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">SOC Automation Playbooks</h1>
+            <p class="text-xs text-secondary mt-0.5">Build automated response workflows and monitor active playbook execution timelines.</p>
+        </div>
+        <div class="flex items-center gap-2 bg-surface border border-white/5 rounded-lg p-1">
+            <button @click="activeTab = 'builder'" :class="activeTab === 'builder' ? 'bg-accent-blue text-white' : 'text-secondary hover:text-white'" class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">Visual Builder</button>
+            <button @click="activeTab = 'runs'" :class="activeTab === 'runs' ? 'bg-accent-blue text-white' : 'text-secondary hover:text-white'" class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">Execution Timeline</button>
+        </div>
+    </div>
+
+    <!-- 1. Builder Tab -->
+    <div x-show="activeTab === 'builder'" class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <!-- Playbook Config Sidebar -->
+        <div class="card-premium space-y-4 lg:col-span-1 h-fit">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider pb-2 border-b border-white/5 flex items-center gap-2">
+                <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.59 4.59A2 2 0 1111 8H2.5m9 11.5A2 2 0 1111 16h8.5M21 12H3"/></svg>
+                Metadata
+            </h3>
+            
+            <div class="space-y-3">
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[9px] text-muted font-bold uppercase tracking-wider">Playbook Name</label>
+                    <input type="text" x-model="playbookName" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none w-full">
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[9px] text-muted font-bold uppercase tracking-wider">Description</label>
+                    <textarea x-model="playbookDescription" rows="3" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none w-full resize-none"></textarea>
+                </div>
+            </div>
+
+            <!-- Active Playbooks List -->
+            <div class="pt-4 border-t border-white/5 space-y-3">
+                <span class="text-[9px] text-muted font-bold uppercase tracking-wider">Saved Playbooks</span>
+                <div class="space-y-2 max-h-48 overflow-y-auto">
+                    {% for play in playbooks %}
+                    <div class="p-2 bg-deep/40 border border-white/5 rounded-lg flex items-center justify-between text-xs hover:border-white/10 transition-all">
+                        <div class="truncate pr-2">
+                            <span class="text-primary font-bold block truncate">{{ play.name }}</span>
+                            <span class="text-[9px] text-muted font-mono">{{ play.id }}</span>
+                        </div>
+                        <div class="flex gap-1 shrink-0">
+                            <form action="/playbooks/{{ play.id }}/run" method="POST" hx-post="/playbooks/{{ play.id }}/run" hx-target="body">
+                                <button type="submit" class="px-2 py-0.5 bg-accent-blue/15 hover:bg-accent-blue/25 border border-accent-blue/30 text-accent-blue rounded text-[9px] font-semibold transition-all">Run</button>
+                            </form>
+                            <form action="/playbooks/{{ play.id }}/delete" method="POST" hx-post="/playbooks/{{ play.id }}/delete" hx-target="body">
+                                <button type="submit" class="px-2 py-0.5 bg-accent-red/15 hover:bg-accent-red/25 border border-accent-red/30 text-accent-red rounded text-[9px] font-semibold transition-all">Delete</button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <button @click="savePlaybook()" class="w-full py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold shadow-[0_0_12px_rgba(59,130,246,0.2)] transition-all flex items-center justify-center gap-1.5 mt-4">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
+                Save Playbook
+            </button>
+        </div>
+
+        <!-- Flowchart Builder Canvas -->
+        <div class="card-premium lg:col-span-3 space-y-6 flex flex-col min-h-[500px] relative bg-deep/20 border-dashed border-white/10 rounded-2xl">
+            <!-- Canvas Controls -->
+            <div class="flex justify-between items-center border-b border-white/5 pb-4">
+                <div>
+                    <h3 class="text-xs font-bold text-white uppercase tracking-wider">Execution Flow Canvas</h3>
+                    <p class="text-[10px] text-muted">Arrange conditions and response workflows chronologically.</p>
+                </div>
+                <button @click="showAddNodeModal = true" class="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-lg text-xs font-bold text-white transition-all flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                    Add Node
+                </button>
+            </div>
+
+            <!-- Visual Flowchart (Linked nodes) -->
+            <div class="flex-1 flex flex-col items-center justify-start space-y-4 py-8 overflow-y-auto max-h-[400px]">
+                <template x-for="(node, index) in nodes" :key="node.id">
+                    <div class="flex flex-col items-center w-full">
+                        <!-- Connector Arrow -->
+                        <div x-show="index > 0" class="flex flex-col items-center -mt-2 mb-2">
+                            <div class="w-0.5 h-6 bg-accent-blue/30"></div>
+                            <svg class="w-4 h-4 text-accent-blue/40 -mt-1.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                        </div>
+
+                        <!-- Node Card -->
+                        <div class="w-80 p-3 bg-surface border border-white/5 rounded-xl shadow-xl flex items-center justify-between group hover:border-white/15 transition-all"
+                             :class="{
+                                 'border-l-4 border-l-accent-green': node.type === 'trigger',
+                                 'border-l-4 border-l-accent-yellow': node.type === 'condition',
+                                 'border-l-4 border-l-accent-blue': node.type === 'action'
+                             }">
+                            <div class="flex items-center gap-3">
+                                <div class="w-2.5 h-2.5 rounded-full"
+                                     :class="{
+                                         'bg-accent-green': node.type === 'trigger',
+                                         'bg-accent-yellow': node.type === 'condition',
+                                         'bg-accent-blue': node.type === 'action'
+                                     }"></div>
+                                <span class="text-xs font-semibold text-white" x-text="node.label"></span>
+                            </div>
+                            <!-- Remove node button (Only if not first trigger node) -->
+                            <button x-show="index > 0" @click="removeNode(node.id)" class="text-muted hover:text-accent-red opacity-0 group-hover:opacity-100 transition-opacity">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-3.75-3.75m-3 0L1.5 12l.75.75 3-3"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </template>
+                
+                <div x-show="nodes.length === 1" class="text-[10px] text-muted text-center py-6">
+                    Click "Add Node" to chain conditions and actions to the trigger.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Execution History Tab -->
+    <div x-show="activeTab === 'runs'" class="space-y-6">
+        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Playbook Execution Logs</h3>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Runs Board -->
+            <div class="card-premium lg:col-span-2 space-y-4">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="border-b border-white/5 text-[10px] text-muted uppercase tracking-wider">
+                                <th class="py-2.5 font-semibold">Playbook</th>
+                                <th class="py-2.5 font-semibold">Trigger Event</th>
+                                <th class="py-2.5 font-semibold">Duration</th>
+                                <th class="py-2.5 font-semibold">Status</th>
+                                <th class="py-2.5 font-semibold text-right">Details</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-white/5">
+                            {% for run in runs %}
+                            <tr class="hover:bg-white/5 transition-all">
+                                <td class="py-3 font-semibold text-primary">{{ run.playbook_name }}</td>
+                                <td class="py-3 text-secondary">{{ run.trigger }}</td>
+                                <td class="py-3 font-mono text-secondary">{{ run.duration }}</td>
+                                <td class="py-3">
+                                    <span class="badge-dot badge-dot-{% if run.status == 'success' %}open{% else %}critical{% endif %}">
+                                        {{ run.status | capitalize }}
+                                    </span>
+                                </td>
+                                <td class="py-3 text-right">
+                                    <button @click="viewRunLogs = {{ run | tojson }}" class="px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[10px] font-semibold text-secondary hover:text-white transition-all">View Logs &rarr;</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Step by Step Execution Trace Drawer -->
+            <div class="card-premium h-fit space-y-4">
+                <h3 class="text-xs font-bold text-white uppercase tracking-wider pb-2 border-b border-white/5 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                    Execution Step Trace
+                </h3>
+
+                <div x-show="viewRunLogs" class="space-y-4">
+                    <div>
+                        <span class="text-[10px] text-muted block font-bold uppercase tracking-wider">Playbook Name:</span>
+                        <span class="text-xs font-bold text-white block mt-0.5" x-text="viewRunLogs ? viewRunLogs.playbook_name : ''"></span>
+                    </div>
+                    <div>
+                        <span class="text-[10px] text-muted block font-bold uppercase tracking-wider">Trigger Source:</span>
+                        <span class="text-xs text-secondary block mt-0.5" x-text="viewRunLogs ? viewRunLogs.trigger : ''"></span>
+                    </div>
+
+                    <div class="space-y-2 pt-2 border-t border-white/5">
+                        <span class="text-[10px] text-muted font-bold uppercase tracking-wider block mb-2">Step Log Execution Console</span>
+                        <div class="bg-deep/50 border border-white/5 rounded-lg p-3 font-mono text-[10px] text-accent-green space-y-2 h-48 overflow-y-auto leading-relaxed">
+                            <template x-for="log in (viewRunLogs ? viewRunLogs.logs : [])">
+                                <div class="border-b border-white/5 pb-1 last:border-0" x-text="log"></div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <div x-show="!viewRunLogs" class="text-xs text-muted text-center py-12 italic">
+                    Select a playbook execution run to view step-by-step telemetry logs.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Node Modal -->
+    <div x-show="showAddNodeModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center" x-transition>
+        <div class="w-[500px] bg-surface border border-white/10 rounded-2xl shadow-2xl p-6" @click.away="showAddNodeModal = false">
+            <div class="flex justify-between items-center border-b border-white/5 pb-4 mb-4">
+                <h3 class="text-md font-bold text-white">Select Flow Node Type</h3>
+                <button @click="showAddNodeModal = false" class="text-muted hover:text-white font-semibold text-lg">&times;</button>
+            </div>
+            
+            <div class="space-y-4">
+                <!-- Conditions category -->
+                <div>
+                    <span class="text-[9px] text-muted font-bold uppercase tracking-wider block mb-2">Filter Conditions</span>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button @click="addNode('condition', 'Condition: Severity Level &ge; 10')" class="p-2.5 bg-deep hover:bg-white/5 border border-white/5 text-left rounded-lg text-xs font-semibold text-secondary hover:text-white transition-all flex flex-col gap-1">
+                            <span class="text-white font-bold">Severity Threshold</span>
+                            <span class="text-[10px] text-muted">Filter based on alert severity.</span>
+                        </button>
+                        <button @click="addNode('condition', 'Condition: Host Tag == \'PCI-Scope\'')" class="p-2.5 bg-deep hover:bg-white/5 border border-white/5 text-left rounded-lg text-xs font-semibold text-secondary hover:text-white transition-all flex flex-col gap-1">
+                            <span class="text-white font-bold">Host In PCI Scope?</span>
+                            <span class="text-[10px] text-muted">Verify asset scope limits.</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Actions category -->
+                <div>
+                    <span class="text-[9px] text-muted font-bold uppercase tracking-wider block mb-2">Mitigation Actions</span>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button @click="addNode('action', 'Action: Dispatch Slack Notification')" class="p-2.5 bg-deep hover:bg-white/5 border border-white/5 text-left rounded-lg text-xs font-semibold text-secondary hover:text-white transition-all flex flex-col gap-1">
+                            <span class="text-white font-bold">Notify Slack Channel</span>
+                            <span class="text-[10px] text-muted">Send notification payload.</span>
+                        </button>
+                        <button @click="addNode('action', 'Action: Run Wazuh Host Isolation')" class="p-2.5 bg-deep hover:bg-white/5 border border-white/5 text-left rounded-lg text-xs font-semibold text-secondary hover:text-white transition-all flex flex-col gap-1">
+                            <span class="text-white font-bold">Isolate Compromised Host</span>
+                            <span class="text-[10px] text-muted">Isolate host network interface.</span>
+                        </button>
+                        <button @click="addNode('action', 'Action: Execute AI Triage Result Integration')" class="p-2.5 bg-deep hover:bg-white/5 border border-white/5 text-left rounded-lg text-xs font-semibold text-secondary hover:text-white transition-all flex flex-col gap-1">
+                            <span class="text-white font-bold">Invoke AI Incident Triage</span>
+                            <span class="text-[10px] text-muted">Run LLM response prediction.</span>
+                        </button>
+                        <button @click="addNode('action', 'Action: Dispatch JIRA Case Ticket')" class="p-2.5 bg-deep hover:bg-white/5 border border-white/5 text-left rounded-lg text-xs font-semibold text-secondary hover:text-white transition-all flex flex-col gap-1">
+                            <span class="text-white font-bold">Create Escalation Ticket</span>
+                            <span class="text-[10px] text-muted">Open a ticket in service desk.</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

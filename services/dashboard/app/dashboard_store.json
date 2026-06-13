@@ -1,0 +1,192 @@
+{
+    "channels": [
+        {
+            "id": "chan-001",
+            "name": "Slack Critical Alerts",
+            "type": "slack",
+            "config": "https://hooks.slack.com/services/T00/B00/X00",
+            "enabled": true,
+            "created_at": "2026-06-12T10:00:00Z"
+        },
+        {
+            "id": "chan-002",
+            "name": "Security Ops MS Teams",
+            "type": "teams",
+            "config": "https://outlook.office.com/webhook/abc-123",
+            "enabled": true,
+            "created_at": "2026-06-12T10:05:00Z"
+        },
+        {
+            "id": "chan-003",
+            "name": "SOC Level 1 Email",
+            "type": "email",
+            "config": "soc-alerts@company.local",
+            "enabled": true,
+            "created_at": "2026-06-11T08:00:00Z"
+        },
+        {
+            "id": "chan-004",
+            "name": "PagerDuty Escalations",
+            "type": "pagerduty",
+            "config": "integration-key-pd-xyz",
+            "enabled": false,
+            "created_at": "2026-06-10T12:00:00Z"
+        }
+    ],
+    "rules": [
+        {
+            "id": "rule-001",
+            "name": "Critical Severity Notifications",
+            "severity_threshold": 12,
+            "channels": ["chan-001", "chan-004"],
+            "enabled": true
+        },
+        {
+            "id": "rule-002",
+            "name": "Ransomware Alert Trigger",
+            "severity_threshold": 10,
+            "channels": ["chan-001", "chan-002"],
+            "enabled": true
+        },
+        {
+            "id": "rule-003",
+            "name": "Compliance Drift Alerts",
+            "severity_threshold": 8,
+            "channels": ["chan-003"],
+            "enabled": false
+        }
+    ],
+    "events": [
+        {
+            "id": "evt-001",
+            "rule_name": "Critical Severity Notifications",
+            "channel_name": "Slack Critical Alerts",
+            "alert_description": "Multiple SSH failed logins (brute force)",
+            "status": "success",
+            "timestamp": "2026-06-13T05:30:00Z"
+        },
+        {
+            "id": "evt-002",
+            "rule_name": "Critical Severity Notifications",
+            "channel_name": "PagerDuty Escalations",
+            "alert_description": "Multiple SSH failed logins (brute force)",
+            "status": "skipped",
+            "timestamp": "2026-06-13T05:30:01Z"
+        },
+        {
+            "id": "evt-003",
+            "rule_name": "Ransomware Alert Trigger",
+            "channel_name": "Security Ops MS Teams",
+            "alert_description": "Known malicious file hash detected on finance-workstation-09",
+            "status": "success",
+            "timestamp": "2026-06-13T04:15:00Z"
+        },
+        {
+            "id": "evt-004",
+            "rule_name": "Critical Severity Notifications",
+            "channel_name": "Slack Critical Alerts",
+            "alert_description": "CVE-2026-9999 Vulnerability Detected",
+            "status": "failed",
+            "timestamp": "2026-06-13T02:00:00Z"
+        }
+    ],
+    "playbooks": [
+        {
+            "id": "play-001",
+            "name": "Brute Force Containment",
+            "description": "Triggered on multiple login failures. Runs AI triage, notifies Slack, and blocks source IP.",
+            "nodes": [
+                {"id": "node-1", "type": "trigger", "label": "Trigger: Alert Level >= 12 (Authentication Failed)", "x": 100, "y": 50},
+                {"id": "node-2", "type": "action", "label": "Action: Run AI Triage check", "x": 100, "y": 150},
+                {"id": "node-3", "type": "condition", "label": "Condition: AI Verdict == 'True Positive'?", "x": 100, "y": 250},
+                {"id": "node-4", "type": "action", "label": "Action: Notify channel Slack Critical Alerts", "x": 50, "y": 350},
+                {"id": "node-5", "type": "action", "label": "Action: Block source IP using local firewall", "x": 250, "y": 350}
+            ],
+            "enabled": true
+        },
+        {
+            "id": "play-002",
+            "name": "Critical CVE Auto-Remediation",
+            "description": "Triggered when a critical vulnerability is scanned. Matches SLA, opens a ticket, and schedules auto-patching.",
+            "nodes": [
+                {"id": "node-1", "type": "trigger", "label": "Trigger: Vulnerability Found (Severity == 'critical')", "x": 100, "y": 50},
+                {"id": "node-2", "type": "action", "label": "Action: Calculate SLA Resolution Date (14 days)", "x": 100, "y": 150},
+                {"id": "node-3", "type": "action", "label": "Action: Create JIRA Ticket", "x": 100, "y": 250},
+                {"id": "node-4", "type": "action", "label": "Action: Trigger WSUS / Ansible Patch Execution", "x": 100, "y": 350}
+            ],
+            "enabled": true
+        }
+    ],
+    "playbook_runs": [
+        {
+            "id": "run-001",
+            "playbook_name": "Brute Force Containment",
+            "trigger": "SSH Brute Force Alert (Level 12)",
+            "started_at": "2026-06-13T05:30:00Z",
+            "duration": "14.2s",
+            "status": "success",
+            "logs": [
+                "05:30:00 - Playbook 'Brute Force Containment' initiated by Alert #alt-8371",
+                "05:30:02 - Executing AI Triage check...",
+                "05:30:08 - AI Triage complete. Verdict: 'True Positive' (Confidence 94%)",
+                "05:30:09 - Condition matched. Proceeding with block and notify branches.",
+                "05:30:11 - Dispatched Slack notification to Channel 'Slack Critical Alerts' - Status: Success",
+                "05:30:14 - Executed local host isolation command on agent web-prod-01 - Status: Success",
+                "05:30:14 - Playbook completed successfully."
+            ]
+        },
+        {
+            "id": "run-002",
+            "playbook_name": "Critical CVE Auto-Remediation",
+            "trigger": "Vulnerability Ingested (CVE-2026-9999)",
+            "started_at": "2026-06-13T02:00:00Z",
+            "duration": "5.7s",
+            "status": "failed",
+            "logs": [
+                "02:00:00 - Playbook 'Critical CVE Auto-Remediation' initiated by CVE-2026-9999 ingestion",
+                "02:00:02 - Calculated SLA resolution date: 2026-06-27T02:00:00Z (High Priority)",
+                "02:00:03 - Dispatched JIRA API request to create ticket...",
+                "02:00:05 - JIRA API returned 502 Bad Gateway. Retrying...",
+                "02:00:07 - JIRA API failed after retry. Playbook execution aborted."
+            ]
+        }
+    ],
+    "feeds": [
+        {
+            "id": "feed-001",
+            "name": "AlienVault OTX (Open Threat Exchange)",
+            "type": "OTX",
+            "url": "https://otx.alienvault.com/api/v1",
+            "indicators_count": 14205,
+            "last_synced": "2026-06-13T05:00:00Z",
+            "enabled": true
+        },
+        {
+            "id": "feed-002",
+            "name": "AbuseIPDB Blacklist",
+            "type": "AbuseIPDB",
+            "url": "https://api.abuseipdb.com/v2/blacklist",
+            "indicators_count": 8940,
+            "last_synced": "2026-06-13T05:15:00Z",
+            "enabled": true
+        },
+        {
+            "id": "feed-003",
+            "name": "MISP Server Local Feed",
+            "type": "MISP",
+            "url": "https://misp.company.local/attributes",
+            "indicators_count": 210,
+            "last_synced": "2026-06-13T04:30:00Z",
+            "enabled": false
+        },
+        {
+            "id": "feed-004",
+            "name": "URLhaus Malicious URLs",
+            "type": "URLhaus",
+            "url": "https://urlhaus-api.abuse.ch/v1/urls",
+            "indicators_count": 23410,
+            "last_synced": "2026-06-13T05:20:00Z",
+            "enabled": true
+        }
+    ]
+}

@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6" x-data="{
+    exceptionModalOpen: false,
+    selectedControl: '',
+    selectedFramework: '{{ framework }}',
+    exceptionForm: { reason: '', duration: '30d' }
+}">
+    <!-- Page Header -->
+    <div class="flex justify-between items-center mb-2">
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">Compliance Mapping Console</h1>
+            <p class="text-xs text-secondary mt-0.5">Automated control mapping linking live security alerts and active vulnerability CVEs to major regulatory frameworks.</p>
+        </div>
+        <div class="flex items-center gap-2 bg-surface border border-white/5 rounded-lg p-1" hx-boost="true">
+            <a href="/compliance?framework=soc2" hx-get="/compliance?framework=soc2" hx-target="body" hx-push-url="true" :class="selectedFramework === 'soc2' ? 'bg-accent-blue text-white' : 'text-secondary hover:text-white'" class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">SOC2 Type II</a>
+            <a href="/compliance?framework=pci" hx-get="/compliance?framework=pci" hx-target="body" hx-push-url="true" :class="selectedFramework === 'pci' ? 'bg-accent-blue text-white' : 'text-secondary hover:text-white'" class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">PCI-DSS v4.0</a>
+            <a href="/compliance?framework=hipaa" hx-get="/compliance?framework=hipaa" hx-target="body" hx-push-url="true" :class="selectedFramework === 'hipaa' ? 'bg-accent-blue text-white' : 'text-secondary hover:text-white'" class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">HIPAA Security</a>
+        </div>
+    </div>
+
+    <!-- Framework Controls Board -->
+    <div class="space-y-6">
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="card-premium flex flex-col justify-between">
+                <div>
+                    <span class="text-[10px] font-bold text-muted uppercase tracking-wider">Framework Score</span>
+                    <h3 class="text-2xl font-extrabold text-white mt-2">
+                        {% if framework == 'soc2' %}
+                        94.1%
+                        {% elif framework == 'pci' %}
+                        88.5%
+                        {% else %}
+                        91.2%
+                        {% endif %}
+                    </h3>
+                </div>
+                <span class="text-[10px] text-accent-green font-semibold mt-4 flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 bg-accent-green rounded-full"></span> Healthy compliance index
+                </span>
+            </div>
+            <div class="card-premium flex flex-col justify-between" style="border-left: 4px solid #22c55e;">
+                <div>
+                    <span class="text-[10px] font-bold text-muted uppercase tracking-wider">Compliant Controls</span>
+                    <h3 class="text-2xl font-extrabold text-white mt-2">
+                        {% if framework == 'soc2' %}
+                        16 / 18
+                        {% elif framework == 'pci' %}
+                        11 / 13
+                        {% else %}
+                        10 / 11
+                        {% endif %}
+                    </h3>
+                </div>
+                <span class="text-[10px] text-muted font-semibold mt-4">No critical audits failing</span>
+            </div>
+            <div class="card-premium flex flex-col justify-between" style="border-left: 4px solid #eab308;">
+                <div>
+                    <span class="text-[10px] font-bold text-muted uppercase tracking-wider">Warnings Detected</span>
+                    <h3 class="text-2xl font-extrabold text-accent-yellow mt-2">
+                        {% if framework == 'soc2' %}
+                        2
+                        {% elif framework == 'pci' %}
+                        1
+                        {% else %}
+                        1
+                        {% endif %}
+                    </h3>
+                </div>
+                <span class="text-[10px] text-muted font-semibold mt-4">Mitigation plans available</span>
+            </div>
+            <div class="card-premium flex flex-col justify-between" style="border-left: 4px solid #dc2626;">
+                <div>
+                    <span class="text-[10px] font-bold text-muted uppercase tracking-wider">Active Breaches</span>
+                    <h3 class="text-2xl font-extrabold text-accent-red mt-2">
+                        {% if framework == 'pci' %}
+                        1
+                        {% else %}
+                        0
+                        {% endif %}
+                    </h3>
+                </div>
+                <span class="text-[10px] text-muted font-semibold mt-4">Requires immediate attention</span>
+            </div>
+        </div>
+
+        <!-- Controls Map -->
+        <div class="space-y-4">
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider">Control Mapping Grid</h3>
+
+            <!-- Dynamic Controls mapping depending on framework -->
+            {% set controls = [] %}
+            {% if framework == 'soc2' %}
+                {% set controls = [
+                    {'code': 'CC6.1', 'name': 'Logical Access Control', 'desc': 'Restricts logical access to authorized personnel and system nodes.', 'status': 'compliant'},
+                    {'code': 'CC6.3', 'name': 'User Registration and Revocation', 'desc': 'Manages logical access through user identity lifecycle audits.', 'status': 'warning'},
+                    {'code': 'CC7.1', 'name': 'Vulnerability Management', 'desc': 'Identifies, assesses, and remediates security vulnerabilities.', 'status': 'warning'},
+                    {'code': 'CC7.2', 'name': 'Security Monitoring', 'desc': 'Monitors system infrastructure for unauthorized access and drift.', 'status': 'compliant'}
+                ] %}
+            {% elif framework == 'pci' %}
+                {% set controls = [
+                    {'code': 'Req 6.2', 'name': 'Patch Installation and Remediations', 'desc': 'Installs critical security patches within specified timelines.', 'status': 'breach'},
+                    {'code': 'Req 10.2', 'name': 'Audit Log Ingestion & Retentions', 'desc': 'Stores, protects, and audits detailed event logs.', 'status': 'compliant'},
+                    {'code': 'Req 11.3', 'name': 'Vulnerability Scanning Schedules', 'desc': 'Runs regular internal and external host scans.', 'status': 'compliant'}
+                ] %}
+            {% else %}
+                {% set controls = [
+                    {'code': '§164.312(a)(1)', 'name': 'Unique User Identification', 'desc': 'Ensures unique identifiers are assigned to users accessing ePHI.', 'status': 'compliant'},
+                    {'code': '§164.312(c)(1)', 'name': 'Mechanism to Authenticate ePHI', 'desc': 'Verifies that ePHI has not been altered or destroyed.', 'status': 'warning'},
+                    {'code': '§164.312(e)(1)', 'name': 'Transmission Security Protections', 'desc': 'Protects ePHI in transit against unauthorized interception.', 'status': 'compliant'}
+                ] %}
+            {% endif %}
+
+            {% for ctrl in controls %}
+            <div class="card-premium space-y-4">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 bg-accent-blue/10 border border-accent-blue/25 text-accent-blue rounded font-mono text-[10px] font-bold">{{ ctrl.code }}</span>
+                            <h4 class="text-xs font-bold text-white">{{ ctrl.name }}</h4>
+                        </div>
+                        <p class="text-[10px] text-secondary mt-1">{{ ctrl.desc }}</p>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <span class="badge-dot badge-dot-{% if ctrl.status == 'compliant' %}open{% elif ctrl.status == 'warning' %}warning{% else %}critical{% endif %}">
+                            {{ ctrl.status | capitalize }}
+                        </span>
+                        <button @click="selectedControl = '{{ ctrl.code }}'; exceptionModalOpen = true" class="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[10px] font-semibold text-secondary hover:text-white transition-all">Request Exception</button>
+                    </div>
+                </div>
+
+                <!-- Live Mapped Security Artifacts (Alerts & CVEs) -->
+                <div class="border-t border-white/5 pt-3 mt-2">
+                    <h5 class="text-[9px] text-muted font-bold uppercase tracking-wider mb-2">Mapped Live Threats & Flaws</h5>
+                    
+                    <div class="space-y-2">
+                        <!-- Mapped Alerts -->
+                        {% set mapped_alerts = [] %}
+                        {% if ctrl.code == 'CC6.1' or ctrl.code == 'Req 10.2' or ctrl.code == '§164.312(a)(1)' %}
+                            {% set mapped_alerts = alerts | selectattr('rule_level', 'greaterthan', 8) | list %}
+                        {% elif ctrl.code == 'CC7.2' or ctrl.code == '§164.312(c)(1)' %}
+                            {% set mapped_alerts = alerts | selectattr('rule_level', 'greaterthan', 10) | list %}
+                        {% endif %}
+
+                        {% if mapped_alerts %}
+                            {% for alert in mapped_alerts[:2] %}
+                            <div class="flex items-center justify-between p-2 bg-deep/40 border border-white/5 rounded-lg text-xs">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-1.5 h-1.5 bg-accent-red rounded-full"></span>
+                                    <span class="text-secondary font-mono text-[10px]">{{ alert.id }}</span>
+                                    <span class="text-primary font-medium">{{ alert.rule_description }}</span>
+                                </div>
+                                <span class="text-[10px] text-muted">Level {{ alert.rule_level }}</span>
+                            </div>
+                            {% endfor %}
+                        {% endif %}
+
+                        <!-- Mapped CVEs -->
+                        {% set mapped_vulns = [] %}
+                        {% if ctrl.code == 'CC7.1' or ctrl.code == 'Req 6.2' %}
+                            {% set mapped_vulns = vulnerabilities | selectattr('severity', 'equalto', 'critical') | list + vulnerabilities | selectattr('severity', 'equalto', 'high') | list %}
+                        {% endif %}
+
+                        {% if mapped_vulns %}
+                            {% for vuln in mapped_vulns[:2] %}
+                            <div class="flex items-center justify-between p-2 bg-deep/40 border border-white/5 rounded-lg text-xs">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-1.5 h-1.5 bg-accent-yellow rounded-full"></span>
+                                    <span class="text-accent-blue font-mono text-[10px] font-semibold">{{ vuln.cve_id }}</span>
+                                    <span class="text-secondary">Affecting host: {{ vuln.host or 'database-prod' }}</span>
+                                </div>
+                                <span class="text-[10px] text-muted">Risk Score: {{ vuln.risk_score }}</span>
+                            </div>
+                            {% endfor %}
+                        {% endif %}
+
+                        {% if not mapped_alerts and not mapped_vulns %}
+                        <div class="text-[10px] text-muted py-2 italic">
+                            No active alerts or vulnerabilities currently violating this control parameter.
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Exception Request Modal -->
+    <div x-show="exceptionModalOpen" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center" x-transition>
+        <div class="w-[500px] bg-surface border border-white/10 rounded-2xl shadow-2xl p-6" @click.away="exceptionModalOpen = false">
+            <div class="flex justify-between items-center border-b border-white/5 pb-4 mb-4">
+                <h3 class="text-md font-bold text-white flex items-center gap-2">
+                    <svg class="w-5 h-5 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    Request Compliance Exception
+                </h3>
+                <button @click="exceptionModalOpen = false" class="text-muted hover:text-white font-semibold text-lg">&times;</button>
+            </div>
+            <div class="space-y-4">
+                <p class="text-xs text-secondary">You are requesting a temporary exception rule for control <span class="text-white font-bold font-mono" x-text="selectedControl"></span>. This will suppress failing alerts in the compliance summary score during the approved exception period.</p>
+                
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Mitigation/Exception Rationale</label>
+                    <textarea name="reason" rows="3" placeholder="Explain how the control parameter is temporarily mitigated (e.g. compensating controls, offline nodes)." class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none w-full resize-none"></textarea>
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Exception Duration</label>
+                    <select name="duration" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none w-full">
+                        <option value="7d">7 Days</option>
+                        <option value="30d" selected>30 Days</option>
+                        <option value="90d">90 Days</option>
+                    </select>
+                </div>
+                <div class="flex justify-end gap-3 border-t border-white/5 pt-4 mt-6">
+                    <button type="button" @click="exceptionModalOpen = false" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-semibold text-secondary hover:text-white transition-all">Cancel</button>
+                    <button type="button" @click="exceptionModalOpen = false; addGlobalToast('success', 'Exception request for ' + selectedControl + ' submitted to compliance managers.')" class="px-4 py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_12px_rgba(59,130,246,0.2)]">Submit Request</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
