@@ -19,12 +19,12 @@
 
 | Phase | Tool | What was built | Status |
 |---|---|---|---|
-| Dashboard UI v2 | Antigravity | 7 dashboard screens (compliance, notifications, playbooks, threat intel, health), chart visualizations, dashboard store | 🔄 merging |
-| Workers & Connectors v2 | Claude | 4 notification connectors, notification worker, SOAR engine + actions, 3 TI connectors, TI worker, UEBA baseline + anomaly detector, health registry, 4 test files | 🔄 merging |
+| Dashboard UI v2 | Antigravity | 7 dashboard screens (compliance, notifications, playbooks, threat intel, health), chart visualizations, dashboard store | ✅ main |
+| Workers & Connectors v2 | Claude | 4 notification connectors, notification worker, SOAR engine + actions, 3 TI connectors, TI worker, UEBA baseline + anomaly detector, health registry, 4 test files | ✅ main |
 
 ---
 
-## What already works (tests expected to grow from 56 → 80+)
+## What already works (111 tests passing)
 
 - `/health` — no auth required (Docker HEALTHCHECK)
 - `/vulnerabilities` — list/filter by status/severity/CVE/asset
