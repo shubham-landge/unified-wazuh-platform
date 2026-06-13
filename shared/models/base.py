@@ -18,3 +18,13 @@ class TenantMixin:
             nullable=False,
             index=True
         )
+
+
+class NullableTenantMixin:
+    @declared_attr
+    def tenant_id(cls) -> Mapped[uuid.UUID | None]:
+        return mapped_column(
+            UUID(as_uuid=True),
+            nullable=True,
+            index=True
+        )

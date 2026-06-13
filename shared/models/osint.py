@@ -5,16 +5,15 @@ from sqlalchemy import DateTime, ForeignKey, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from shared.models.base import Base
+from shared.models.base import Base, TenantMixin, NullableTenantMixin
 
 
-class OsintTarget(Base):
+class OsintTarget(Base, TenantMixin):
     __tablename__ = "osint_targets"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     target_type: Mapped[str] = mapped_column(String(32))
     target_value: Mapped[str] = mapped_column(String(512))
     created_at: Mapped[datetime] = mapped_column(
@@ -22,7 +21,7 @@ class OsintTarget(Base):
     )
 
 
-class OsintResult(Base):
+class OsintResult(Base, NullableTenantMixin):
     __tablename__ = "osint_results"
 
     id: Mapped[uuid.UUID] = mapped_column(

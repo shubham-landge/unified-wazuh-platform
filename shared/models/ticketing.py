@@ -3,14 +3,13 @@ from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, JSON, Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
-from shared.models.base import Base
+from shared.models.base import Base, NullableTenantMixin
 
 
-class TicketingConfig(Base):
+class TicketingConfig(Base, NullableTenantMixin):
     __tablename__ = "ticketing_configs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     provider: Mapped[str] = mapped_column(String(64))
     config: Mapped[dict] = mapped_column(JSON, default=dict)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -19,7 +18,7 @@ class TicketingConfig(Base):
     __table_args__ = {"extend_existing": True}
 
 
-class TicketLink(Base):
+class TicketLink(Base, NullableTenantMixin):
     __tablename__ = "ticket_links"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

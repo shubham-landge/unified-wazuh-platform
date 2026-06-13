@@ -3,15 +3,14 @@ from datetime import datetime, timezone
 from sqlalchemy import String, Integer, DateTime, Text, JSON, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
-from shared.models.base import Base
+from shared.models.base import Base, NullableTenantMixin
 
 
-class CaseEvent(Base):
+class CaseEvent(Base, NullableTenantMixin):
     __tablename__ = "case_events"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("cases.id"), index=True)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
 
     event_type: Mapped[str] = mapped_column(String(32))  # case_created, status_changed, note_added, triage_run, assigned, step_completed, resolved, closed
     actor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

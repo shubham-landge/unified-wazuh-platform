@@ -3,15 +3,14 @@ from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
-from shared.models.base import Base
+from shared.models.base import Base, NullableTenantMixin
 
 
-class AlertIncident(Base):
+class AlertIncident(Base, NullableTenantMixin):
     """Deduplicated incident grouping related alerts."""
     __tablename__ = "alert_incidents"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
 
     # Grouping key: deterministic hash of (rule_id, agent_id, source_ip)
     # Used to detect duplicates within the correlation window

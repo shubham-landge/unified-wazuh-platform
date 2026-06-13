@@ -3,13 +3,12 @@ from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, Text, JSON, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
-from shared.models.base import Base
+from shared.models.base import Base, TenantMixin
 
-class ApprovalRequest(Base):
+class ApprovalRequest(Base, TenantMixin):
     __tablename__ = "approval_requests"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
     requested_by: Mapped[str] = mapped_column(String(255))
     action_type: Mapped[str] = mapped_column(String(64))
     action_params: Mapped[dict] = mapped_column(JSON)

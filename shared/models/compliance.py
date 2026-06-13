@@ -3,14 +3,13 @@ from datetime import datetime, timezone
 from sqlalchemy import String, Integer, DateTime, Text, Boolean, DECIMAL, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
-from shared.models.base import Base
+from shared.models.base import Base, NullableTenantMixin
 
 
-class ComplianceFramework(Base):
+class ComplianceFramework(Base, NullableTenantMixin):
     __tablename__ = "compliance_frameworks"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     version: Mapped[str] = mapped_column(String(32), default="1.0")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -23,7 +22,7 @@ class ComplianceFramework(Base):
     controls: Mapped[list["ComplianceControl"]] = relationship(back_populates="framework", cascade="all, delete-orphan")
 
 
-class ComplianceControl(Base):
+class ComplianceControl(Base, NullableTenantMixin):
     __tablename__ = "compliance_controls"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -42,7 +41,7 @@ class ComplianceControl(Base):
     exceptions: Mapped[list["ComplianceException"]] = relationship(back_populates="control", cascade="all, delete-orphan")
 
 
-class ComplianceMapping(Base):
+class ComplianceMapping(Base, NullableTenantMixin):
     __tablename__ = "compliance_mappings"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -57,12 +56,11 @@ class ComplianceMapping(Base):
     control: Mapped["ComplianceControl"] = relationship(back_populates="mappings")
 
 
-class ComplianceException(Base):
+class ComplianceException(Base, NullableTenantMixin):
     __tablename__ = "compliance_exceptions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     control_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("compliance_controls.id"))
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     reason: Mapped[str] = mapped_column(Text)
     requested_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     approved_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

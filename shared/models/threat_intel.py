@@ -5,7 +5,7 @@ from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from shared.models.base import Base, TenantMixin
+from shared.models.base import Base, TenantMixin, NullableTenantMixin
 
 
 class ThreatIntelFeed(Base, TenantMixin):
@@ -67,14 +67,11 @@ class ThreatIntelIndicator(Base, TenantMixin):
     )
 
 
-class ThreatIntelIoc(Base):
+class ThreatIntelIoc(Base, NullableTenantMixin):
     __tablename__ = "threat_intel_iocs"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), index=True, nullable=True
     )
     ioc_type: Mapped[str] = mapped_column(String(32))
     ioc_value: Mapped[str] = mapped_column(String(512), index=True)
@@ -102,7 +99,7 @@ class ThreatIntelIoc(Base):
     )
 
 
-class AlertIocMatch(Base):
+class AlertIocMatch(Base, NullableTenantMixin):
     __tablename__ = "alert_ioc_matches"
 
     id: Mapped[uuid.UUID] = mapped_column(

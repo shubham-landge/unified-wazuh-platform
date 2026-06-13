@@ -3,14 +3,13 @@ from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, Boolean, JSON, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
-from shared.models.base import Base
+from shared.models.base import Base, NullableTenantMixin
 
 
-class User(Base):
+class User(Base, NullableTenantMixin):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
 
     # Login identity
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)

@@ -3,15 +3,14 @@ from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, Boolean, JSON, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
-from shared.models.base import Base
+from shared.models.base import Base, NullableTenantMixin
 
 
-class ReportSchedule(Base):
+class ReportSchedule(Base, NullableTenantMixin):
     """Scheduled report delivery configuration."""
     __tablename__ = "report_schedules"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     name: Mapped[str] = mapped_column(String(255))
@@ -41,7 +40,7 @@ class ReportSchedule(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
-class ReportDelivery(Base):
+class ReportDelivery(Base, NullableTenantMixin):
     """Log of each report delivery."""
     __tablename__ = "report_deliveries"
 

@@ -5,16 +5,15 @@ from sqlalchemy import BigInteger, DateTime, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from shared.models.base import Base
+from shared.models.base import Base, TenantMixin
 
 
-class Report(Base):
+class Report(Base, TenantMixin):
     __tablename__ = "reports"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     name: Mapped[str] = mapped_column(String(255))
     report_type: Mapped[str] = mapped_column(String(32))
     format: Mapped[str] = mapped_column(String(16))
