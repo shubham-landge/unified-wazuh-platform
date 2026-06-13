@@ -6,38 +6,71 @@
 
 ---
 
-## Phase 1 — Complete (merged to main)
+## Phase 1 — Core Infrastructure
 
-| Phase | Tool | What was built | Status |
+| Tool | What was built | Status |
+|---|---|---|
+| Claude | Architecture review, P0-P2 fixes: triage worker crash, dead-letter queue, prompt loading, real LLM wiring, SHA-256 auth, CIDR whitelist, bracket-depth JSON parser | ✅ main |
+| Antigravity | 5 architecture diagrams, SOC playbook guide, deployment guide, report/email templates, settings/landing pages | ✅ main |
+| OpenCode | All-mocked tests, /health no-auth, unified worker entrypoint, EC2 scripts with validation, healthcheck, rollback | ✅ main |
+| Codex | OpenAI/Gemini/Claude connectors, EPSS/KEV enrichment, report generator, notification/SOAR/TI/UEBA models+routers, schema | ✅ main |
+
+## Phase 2 — Dashboard UI v2 + Workers v2
+
+| Tool | What was built | Status |
+|---|---|---|
+| Antigravity | 7 dashboard screens (compliance, notifications, playbooks, threat intel, health), chart visualizations, dashboard store | ✅ main |
+| Claude | 4 notification connectors, notification worker, SOAR engine + actions, 3 TI connectors, TI worker, UEBA baseline + anomaly detector, health registry | ✅ main |
+
+## Phase 3A — Authentication & RBAC
+
+| Tool | What was built | Status |
+|---|---|---|
+| Claude | RBAC, User model, JWT auth, OIDC support, tenant enforcement, alert dedup, report scheduler | ✅ main |
+| Antigravity | Login, profile, user management, report scheduler dashboard UI | ✅ main |
+
+## Phase 3B — Feedback Loop & Tiered Routing
+
+| Tool | What was built | Status |
+|---|---|---|
+| Claude | UserFeedback model, feedback worker, auto-calibration, tiered LLM router (fast/full), burst detection | ✅ main |
+| Antigravity | Dashboard feedback UI — thumbs up/down, correction form, admin feedback analytics page | ✅ main |
+
+## Phase 4A — Case Timeline & Investigation
+
+| Tool | What was built | Status |
+|---|---|---|
+| Claude | CaseEvent, CaseInvestigationStep models, timeline/steps endpoints, risk scoring in triage worker | ✅ main |
+| Antigravity | Timeline UI, investigation checklist with HTMX, bulk status fix | ✅ main |
+| Codex | Model tests, timeline endpoint tests, risk score tests, dashboard rendering tests | ✅ main |
+
+## Phase 4B — MTTR Dashboard & ATT&CK Heatmap
+
+| Tool | What was built | Status |
+|---|---|---|
+| Antigravity | MTTR Analytics Dashboard, MITRE ATT&CK Heatmap matrix, case status breakdown charts | ✅ main |
+
+## Phase 5A — RAG & Compliance Dashboard
+
+| Tool | What was built | Status |
+|---|---|---|
+| OpenCode | KnowledgeChunk model, embedding/cosine-similarity, vector store (search/ingest/chunk), RAG API (query/list/ingest/delete), RAG worker (Redis queue, KB seed), Compliance framework/control/mapping/exception models, compliance checker, compliance API, compliance dashboard UI | ✅ main |
+
+## Phase 6 — Remaining Features (Parallel Tracks)
+
+| Track | Tool | What was built | Status |
 |---|---|---|---|
-| Architecture Review | Claude | P0-P2 fixes: triage worker crash, dead-letter queue, prompt loading, real LLM wiring, 202 response, SHA-256 auth, CIDR whitelist, bracket-depth JSON parser, dateutil timestamps, offset pagination | ✅ main |
-| Dashboard & Docs | Antigravity | 5 architecture diagrams, SOC playbook guide, deployment guide, report/email templates, settings/landing pages | ✅ main |
-| Integration & Tests | OpenCode | Tests passing (all mocked, no Docker/DB), /health no-auth, unified worker entrypoint, EC2 scripts with validation, healthcheck, port checks, rollback | ✅ main |
-| Cloud LLM + EPSS/KEV + Reports + Models/Routers | Codex | OpenAI/Gemini/Claude connectors with cost tracking, EPSS/KEV enrichment worker, report generator (Jinja2→PDF) with CRUD API, notification/SOAR/threat-intel/UEBA models+routers, database schema | ✅ main |
-
-## Phase 2 — In Progress (merging desktop app builds)
-
-| Phase | Tool | What was built | Status |
-|---|---|---|---|
-| Dashboard UI v2 | Antigravity | 7 dashboard screens (compliance, notifications, playbooks, threat intel, health), chart visualizations, dashboard store | ✅ main |
-| Workers & Connectors v2 | Claude | 4 notification connectors, notification worker, SOAR engine + actions, 3 TI connectors, TI worker, UEBA baseline + anomaly detector, health registry, 4 test files | ✅ main |
+| OSINT Integration | Codex | Maigret connector, OSINT lookup API, OSINT worker, OSINT dashboard page | ✅ main |
+| Multi-Agent Orchestration | Claude | Agent definition/run/task models, orchestration engine, agent worker, agents dashboard | ✅ main |
+| Human-Approved Actions | Antigravity | ApprovalRequest model, approvals API, approval worker with expiry, approvals dashboard UI | ✅ main |
+| Ticketing Integrations | OpenCode | ServiceNow + Jira connectors, ticketing config/model API, ticketing sync worker, ticketing settings dashboard | ✅ main |
+| RAG Fixes & Dashboard | OpenCode | Model/schema consistency fixes, Knowledge Base dashboard UI, integration tests | ✅ main |
 
 ---
 
-## What already works (111 tests passing)
+## Test Suite: 223 passing, 0 failing
 
-- `/health` — no auth required (Docker HEALTHCHECK)
-- `/vulnerabilities` — list/filter by status/severity/CVE/asset
-- `/reports` — generate, list, download (HTML/PDF with WeasyPrint)
-- `/notifications/channels`, `/notifications/rules` — CRUD
-- `/playbooks` — CRUD with tasks
-- `/threat-intel/indicators`, `/threat-intel/feeds` — CRUD + lookup
-- `/ueba/baselines`, `/ueba/anomalies` — list + status update
-- `/wazuh/health`, `/model/status` — enhanced health endpoints
-- AI triage via OpenAI/Gemini/Claude/Ollama with cost tracking
-- EPSS (FIRST.org) + CISA KEV daily enrichment with risk scoring
-- Alert polling from Wazuh Indexer → Redis → triage worker
-- All mocked tests — no Docker/DB/Redis required for test suite
+All tests run fully mocked — no Docker, no DB, no Redis required.
 
 ## Status Legend
 
