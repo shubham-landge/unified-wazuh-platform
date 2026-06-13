@@ -155,6 +155,20 @@
                         ATT&CK Heatmap
                     </a>
 
+                    <!-- Tenant Context (shown for admins) -->
+                    {% if current_user and current_user.role == 'admin' and current_user.tenant_name %}
+                    <div class="px-3 py-2.5 rounded-lg text-sm font-medium text-muted flex items-center gap-2">
+                        <div class="w-4 h-4 rounded-full bg-accent-green/20 border border-accent-green/40 flex items-center justify-center">
+                            <svg class="w-2.5 h-2.5 text-accent-green" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M3 6.75C3 5.504 4.504 4.5 6.375 4.5h11.25c1.871 0 3.375.996 3.375 2.25v8.25a2.25 2.25 0 01-2.25 2.25H6.375a2.25 2.25 0 01-2.25-2.25V6.75zM8.25 9h7.5M8.25 12h7.5m0 3h-7.5"/>
+                            </svg>
+                        </div>
+                        <span class="text-[10px] font-mono truncate max-w-[120px]" title="{{ current_user.tenant_name }}">
+                            {{ current_user.tenant_name[:30] }}{% if current_user.tenant_name|length > 30 %}...{% endif %}
+                        </span>
+                    </div>
+                    {% endif %}
+
                     <!-- Threat Intel -->
                     <a href="/threat-intel" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group {{ 'bg-accent-blue/10 text-accent-blue border border-accent-blue/15' if page == 'threat-intel' else 'text-secondary hover:text-white hover:bg-white/5 border border-transparent' }}"
                        hx-get="/threat-intel" hx-target="body" hx-push-url="true">
