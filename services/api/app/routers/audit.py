@@ -5,6 +5,7 @@ from sqlalchemy import select, desc
 from app.db import get_db
 from shared.models.audit_log import AuditLog
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -16,8 +17,14 @@ async def list_audit_logs(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
+    import uuid
     query = select(AuditLog).order_by(desc(AuditLog.created_at))
+
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(AuditLog.tenant_id == tenant_uuid)
 
     if action:
         query = query.where(AuditLog.action == action)

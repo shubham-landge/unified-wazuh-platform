@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 from shared.models.threat_intel import ThreatIntelFeed, ThreatIntelIndicator
 
 router = APIRouter(prefix="/threat-intel", tags=["threat-intel"])
@@ -46,10 +47,14 @@ async def list_feeds(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    rows = (
-        await db.execute(select(ThreatIntelFeed).order_by(desc(ThreatIntelFeed.created_at)).limit(limit))
-    ).scalars().all()
+    stmt = select(ThreatIntelFeed).order_by(desc(ThreatIntelFeed.created_at)).limit(limit)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        stmt = stmt.where(ThreatIntelFeed.tenant_id == tenant_uuid)
+    
+    rows = (await db.execute(stmt)).scalars().all()
     return {"status": "success", "count": len(rows), "feeds": [_row(row) for row in rows]}
 
 
@@ -58,10 +63,16 @@ async def create_feed(
     body: FeedCreate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+    else:
+        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
     feed = ThreatIntelFeed(
         **body.model_dump(),
-        tenant_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        tenant_id=tenant_uuid,
     )
     db.add(feed)
     await db.commit()
@@ -74,10 +85,14 @@ async def list_indicators(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    rows = (
-        await db.execute(select(ThreatIntelIndicator).order_by(desc(ThreatIntelIndicator.created_at)).limit(limit))
-    ).scalars().all()
+    stmt = select(ThreatIntelIndicator).order_by(desc(ThreatIntelIndicator.created_at)).limit(limit)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        stmt = stmt.where(ThreatIntelIndicator.tenant_id == tenant_uuid)
+    
+    rows = (await db.execute(stmt)).scalars().all()
     return {"status": "success", "count": len(rows), "indicators": [_row(row) for row in rows]}
 
 
@@ -86,10 +101,16 @@ async def create_indicator(
     body: IndicatorCreate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+    else:
+        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
     indicator = ThreatIntelIndicator(
         **body.model_dump(),
-        tenant_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        tenant_id=tenant_uuid,
     )
     db.add(indicator)
     await db.commit()

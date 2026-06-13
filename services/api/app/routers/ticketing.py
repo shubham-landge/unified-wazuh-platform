@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 from shared.models.ticketing import TicketingConfig, TicketLink
 from shared.connectors.ticket_servicenow import ServiceNowConnector
 from shared.connectors.ticket_jira import JiraConnector
@@ -27,8 +28,15 @@ class TestConnectionBody(BaseModel):
 async def list_configs(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    result = await db.execute(select(TicketingConfig))
+    query = select(TicketingConfig)
+    if tenant_id:
+        import uuid
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(TicketingConfig.tenant_id == tenant_uuid)
+    
+    result = await db.execute(query)
     configs = result.scalars().all()
     return {
         "status": "success",
@@ -83,14 +91,20 @@ async def get_case_links(
     case_id: str,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     try:
         uid = uuid.UUID(case_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="Invalid case ID")
-    result = await db.execute(
-        select(TicketLink).where(TicketLink.case_id == uid)
-    )
+    
+    query = select(TicketLink).where(TicketLink.case_id == uid)
+    if tenant_id:
+        import uuid
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(TicketLink.tenant_id == tenant_uuid)
+    
+    result = await db.execute(query)
     links = result.scalars().all()
     return {
         "status": "success",

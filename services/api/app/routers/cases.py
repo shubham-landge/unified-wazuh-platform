@@ -13,6 +13,7 @@ from shared.models.case_event import CaseEvent
 from shared.models.case_investigation_step import CaseInvestigationStep
 from shared.models.ai_triage_result import AiTriageResult
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -56,8 +57,12 @@ async def list_cases(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     query = select(Case).order_by(desc(Case.created_at))
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(Case.tenant_id == tenant_uuid)
     if status:
         query = query.where(Case.status == status)
     if severity:
@@ -92,6 +97,7 @@ async def get_case(
     case_id: str,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     try:
         uid = uuid.UUID(case_id)
@@ -99,6 +105,10 @@ async def get_case(
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Invalid case ID")
 
     query = select(Case).where(Case.id == uid)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(Case.tenant_id == tenant_uuid)
+    
     result = await db.execute(query)
     case = result.scalar_one_or_none()
     if not case:
@@ -147,6 +157,7 @@ async def get_case_timeline(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     try:
         uid = uuid.UUID(case_id)
@@ -154,10 +165,18 @@ async def get_case_timeline(
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Invalid case ID")
 
     query = select(CaseEvent).where(CaseEvent.case_id == uid).order_by(desc(CaseEvent.created_at))
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(CaseEvent.tenant_id == tenant_uuid)
+    
     if event_type:
         query = query.where(CaseEvent.event_type == event_type)
 
     count_query = select(CaseEvent.id).where(CaseEvent.case_id == uid)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        count_query = count_query.where(CaseEvent.tenant_id == tenant_uuid)
+    
     if event_type:
         count_query = count_query.where(CaseEvent.event_type == event_type)
     count_result = await db.execute(count_query)
@@ -193,6 +212,7 @@ async def list_steps(
     case_id: str,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     try:
         uid = uuid.UUID(case_id)
@@ -200,6 +220,10 @@ async def list_steps(
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Invalid case ID")
 
     query = select(CaseInvestigationStep).where(CaseInvestigationStep.case_id == uid).order_by(CaseInvestigationStep.order)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(CaseInvestigationStep.tenant_id == tenant_uuid)
+    
     result = await db.execute(query)
     steps = result.scalars().all()
 
@@ -226,20 +250,27 @@ async def create_case(
     body: CaseCreate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+    else:
+        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
     case = Case(
         alert_id=uuid.UUID(body.alert_id) if body.alert_id else None,
         title=body.title,
         description=body.description,
         severity=body.severity,
         category=body.category,
+        tenant_id=tenant_uuid,
     )
     db.add(case)
     await db.flush()
 
     event = CaseEvent(
         case_id=case.id,
-        tenant_id=case.tenant_id,
+        tenant_id=tenant_uuid,
         event_type="case_created",
         description=f"Case opened: {case.title}",
     )
@@ -260,6 +291,7 @@ async def update_case(
     body: CaseUpdate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     try:
         uid = uuid.UUID(case_id)
@@ -267,6 +299,10 @@ async def update_case(
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Invalid case ID")
 
     query = select(Case).where(Case.id == uid)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(Case.tenant_id == tenant_uuid)
+    
     result = await db.execute(query)
     case = result.scalar_one_or_none()
     if not case:
@@ -532,6 +568,7 @@ async def bulk_update_status(
     body: BulkStatusUpdate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     updated = 0
     for case_id_str in body.case_ids:
@@ -540,7 +577,12 @@ async def bulk_update_status(
         except ValueError:
             continue
 
-        result = await db.execute(select(Case).where(Case.id == uid))
+        query = select(Case).where(Case.id == uid)
+        if tenant_id:
+            tenant_uuid = uuid.UUID(tenant_id)
+            query = query.where(Case.tenant_id == tenant_uuid)
+        
+        result = await db.execute(query)
         case = result.scalar_one_or_none()
         if not case:
             continue

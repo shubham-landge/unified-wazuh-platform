@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 from shared.models.soar import SoarPlaybook, SoarTask, SoarExecution
 
 router = APIRouter(prefix="/soar", tags=["soar"])
@@ -52,10 +53,14 @@ async def list_playbooks(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    rows = (
-        await db.execute(select(SoarPlaybook).order_by(desc(SoarPlaybook.created_at)).limit(limit))
-    ).scalars().all()
+    stmt = select(SoarPlaybook).order_by(desc(SoarPlaybook.created_at)).limit(limit)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        stmt = stmt.where(SoarPlaybook.tenant_id == tenant_uuid)
+    
+    rows = (await db.execute(stmt)).scalars().all()
     return {"status": "success", "count": len(rows), "playbooks": [_row(row) for row in rows]}
 
 
@@ -64,10 +69,16 @@ async def create_playbook(
     body: PlaybookCreate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+    else:
+        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
     playbook = SoarPlaybook(
         **body.model_dump(),
-        tenant_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        tenant_id=tenant_uuid,
     )
     db.add(playbook)
     await db.commit()
@@ -80,10 +91,14 @@ async def list_tasks(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    rows = (
-        await db.execute(select(SoarTask).order_by(desc(SoarTask.created_at)).limit(limit))
-    ).scalars().all()
+    stmt = select(SoarTask).order_by(desc(SoarTask.created_at)).limit(limit)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        stmt = stmt.where(SoarTask.tenant_id == tenant_uuid)
+    
+    rows = (await db.execute(stmt)).scalars().all()
     return {"status": "success", "count": len(rows), "tasks": [_row(row) for row in rows]}
 
 
@@ -92,10 +107,16 @@ async def create_task(
     body: TaskCreate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+    else:
+        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
     task = SoarTask(
         **body.model_dump(),
-        tenant_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        tenant_id=tenant_uuid,
     )
     db.add(task)
     await db.commit()
@@ -108,10 +129,14 @@ async def list_executions(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    rows = (
-        await db.execute(select(SoarExecution).order_by(desc(SoarExecution.created_at)).limit(limit))
-    ).scalars().all()
+    stmt = select(SoarExecution).order_by(desc(SoarExecution.created_at)).limit(limit)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        stmt = stmt.where(SoarExecution.tenant_id == tenant_uuid)
+    
+    rows = (await db.execute(stmt)).scalars().all()
     return {"status": "success", "count": len(rows), "executions": [_row(row) for row in rows]}
 
 
@@ -120,10 +145,16 @@ async def create_execution(
     body: ExecutionCreate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+    else:
+        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
     execution = SoarExecution(
         **body.model_dump(),
-        tenant_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        tenant_id=tenant_uuid,
     )
     db.add(execution)
     await db.commit()

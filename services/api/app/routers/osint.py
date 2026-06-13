@@ -9,11 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 from shared.config import settings
 from shared.models.osint import OsintTarget, OsintResult
 
 router = APIRouter(prefix="/osint", tags=["osint"])
-TENANT_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 ALLOWED_TARGET_TYPES = {"username", "email", "domain"}
 
 
@@ -40,13 +40,19 @@ async def create_lookup(
     body: LookupRequest,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     target_type = body.target_type.strip().lower()
     if target_type not in ALLOWED_TARGET_TYPES:
         raise HTTPException(status_code=400, detail="Invalid target_type")
 
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+    else:
+        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
     target = OsintTarget(
-        tenant_id=TENANT_ID,
+        tenant_id=tenant_uuid,
         target_type=target_type,
         target_value=body.target_value.strip(),
     )
@@ -79,15 +85,15 @@ async def list_targets(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
+    stmt = select(OsintTarget)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        stmt = stmt.where(OsintTarget.tenant_id == tenant_uuid)
+    
     rows = (
-        await db.execute(
-            select(OsintTarget)
-            .where(OsintTarget.tenant_id == TENANT_ID)
-            .order_by(desc(OsintTarget.created_at))
-            .offset(offset)
-            .limit(limit)
-        )
+        await db.execute(stmt.order_by(desc(OsintTarget.created_at)).offset(offset).limit(limit))
     ).scalars().all()
     return {"status": "success", "count": len(rows), "targets": [_row(row) for row in rows]}
 
@@ -97,14 +103,14 @@ async def list_results(
     target_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    target = (
-        await db.execute(
-            select(OsintTarget)
-            .where(OsintTarget.id == target_id)
-            .where(OsintTarget.tenant_id == TENANT_ID)
-        )
-    ).scalar_one_or_none()
+    stmt = select(OsintTarget).where(OsintTarget.id == target_id)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        stmt = stmt.where(OsintTarget.tenant_id == tenant_uuid)
+    
+    target = (await db.execute(stmt)).scalar_one_or_none()
     if not target:
         raise HTTPException(status_code=404, detail="Target not found")
 

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 from shared.models.ueba import UebaBaseline, UebaAnomaly
 
 router = APIRouter(prefix="/ueba", tags=["ueba"])
@@ -49,10 +50,14 @@ async def list_baselines(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    rows = (
-        await db.execute(select(UebaBaseline).order_by(desc(UebaBaseline.created_at)).limit(limit))
-    ).scalars().all()
+    stmt = select(UebaBaseline).order_by(desc(UebaBaseline.created_at)).limit(limit)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        stmt = stmt.where(UebaBaseline.tenant_id == tenant_uuid)
+    
+    rows = (await db.execute(stmt)).scalars().all()
     return {"status": "success", "count": len(rows), "baselines": [_row(row) for row in rows]}
 
 
@@ -61,10 +66,16 @@ async def create_baseline(
     body: BaselineCreate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+    else:
+        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
     baseline = UebaBaseline(
         **body.model_dump(),
-        tenant_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        tenant_id=tenant_uuid,
     )
     db.add(baseline)
     await db.commit()
@@ -77,10 +88,14 @@ async def list_anomalies(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    rows = (
-        await db.execute(select(UebaAnomaly).order_by(desc(UebaAnomaly.created_at)).limit(limit))
-    ).scalars().all()
+    stmt = select(UebaAnomaly).order_by(desc(UebaAnomaly.created_at)).limit(limit)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        stmt = stmt.where(UebaAnomaly.tenant_id == tenant_uuid)
+    
+    rows = (await db.execute(stmt)).scalars().all()
     return {"status": "success", "count": len(rows), "anomalies": [_row(row) for row in rows]}
 
 
@@ -89,10 +104,16 @@ async def create_anomaly(
     body: AnomalyCreate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+    else:
+        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
     anomaly = UebaAnomaly(
         **body.model_dump(),
-        tenant_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        tenant_id=tenant_uuid,
     )
     db.add(anomaly)
     await db.commit()

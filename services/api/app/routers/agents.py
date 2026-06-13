@@ -7,6 +7,7 @@ from starlette.status import HTTP_202_ACCEPTED, HTTP_404_NOT_FOUND
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 from shared.models.agent import AgentDefinition, AgentRun, AgentTask
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -14,7 +15,6 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 
 class RunCreate(BaseModel):
     definition_id: uuid.UUID
-    tenant_id: uuid.UUID | None = None
     trigger_type: str = Field(default="manual")
     trigger_ref: str | None = None
 
@@ -37,15 +37,14 @@ async def list_definitions(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    rows = (
-        await db.execute(
-            select(AgentDefinition)
-            .where(AgentDefinition.is_active == True)
-            .order_by(desc(AgentDefinition.created_at))
-            .limit(limit)
-        )
-    ).scalars().all()
+    query = select(AgentDefinition).where(AgentDefinition.is_active == True).order_by(desc(AgentDefinition.created_at)).limit(limit)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(AgentDefinition.tenant_id == tenant_uuid)
+    
+    rows = (await db.execute(query)).scalars().all()
     return {"status": "success", "count": len(rows), "definitions": [_row(r) for r in rows]}
 
 
@@ -54,6 +53,7 @@ async def create_run(
     body: RunCreate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     defn = (await db.execute(
         select(AgentDefinition).where(AgentDefinition.id == body.definition_id)
@@ -61,9 +61,14 @@ async def create_run(
     if not defn:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Agent definition not found")
 
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+    else:
+        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
     run = AgentRun(
         definition_id=body.definition_id,
-        tenant_id=body.tenant_id,
+        tenant_id=tenant_uuid,
         trigger_type=body.trigger_type,
         trigger_ref=body.trigger_ref,
         status="pending",
@@ -87,14 +92,15 @@ async def create_run(
 
 @router.get("/runs")
 async def list_runs(
-    tenant_id: uuid.UUID | None = None,
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     q = select(AgentRun).order_by(desc(AgentRun.created_at)).limit(limit)
     if tenant_id:
-        q = q.where(AgentRun.tenant_id == tenant_id)
+        tenant_uuid = uuid.UUID(tenant_id)
+        q = q.where(AgentRun.tenant_id == tenant_uuid)
     rows = (await db.execute(q)).scalars().all()
     return {"status": "success", "count": len(rows), "runs": [_row(r) for r in rows]}
 
@@ -104,8 +110,14 @@ async def get_run(
     run_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    run = (await db.execute(select(AgentRun).where(AgentRun.id == run_id))).scalar_one_or_none()
+    query = select(AgentRun).where(AgentRun.id == run_id)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(AgentRun.tenant_id == tenant_uuid)
+    
+    run = (await db.execute(query)).scalar_one_or_none()
     if not run:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Run not found")
 

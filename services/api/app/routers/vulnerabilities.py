@@ -7,6 +7,7 @@ from starlette.status import HTTP_404_NOT_FOUND
 from app.db import get_db
 from shared.models.vulnerability import Vulnerability
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 
 router = APIRouter(prefix="/vulnerabilities", tags=["vulnerabilities"])
 
@@ -20,8 +21,14 @@ async def list_vulnerabilities(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     query = select(Vulnerability).order_by(desc(Vulnerability.risk_score))
+
+    if tenant_id:
+        import uuid
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(Vulnerability.tenant_id == tenant_uuid)
 
     if status:
         query = query.where(Vulnerability.status == status)
@@ -71,6 +78,7 @@ async def get_vulnerability(
     vuln_id: str,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     try:
         uid = uuid.UUID(vuln_id)
@@ -78,6 +86,11 @@ async def get_vulnerability(
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Invalid vulnerability ID")
 
     query = select(Vulnerability).where(Vulnerability.id == uid)
+    if tenant_id:
+        import uuid
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(Vulnerability.tenant_id == tenant_uuid)
+
     result = await db.execute(query)
     vuln = result.scalar_one_or_none()
 

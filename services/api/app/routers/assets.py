@@ -5,6 +5,7 @@ from sqlalchemy import select, desc
 from app.db import get_db
 from shared.models.asset import Asset
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -16,8 +17,14 @@ async def list_assets(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     query = select(Asset).order_by(desc(Asset.last_seen))
+
+    if tenant_id:
+        import uuid
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(Asset.tenant_id == tenant_uuid)
 
     if status:
         query = query.where(Asset.status == status)

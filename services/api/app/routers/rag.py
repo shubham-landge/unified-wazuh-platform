@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 from shared.models.knowledge_base import KnowledgeChunk
 from shared.rag.vector_store import search_knowledge, ingest_knowledge, chunk_and_ingest
 from shared.rag.embeddings import embed_text
@@ -45,8 +46,14 @@ async def list_knowledge(
     limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     query = select(KnowledgeChunk).order_by(KnowledgeChunk.created_at.desc()).limit(limit)
+    if tenant_id:
+        import uuid
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(KnowledgeChunk.tenant_id == tenant_uuid)
+    
     if source:
         query = query.where(KnowledgeChunk.source == source)
     result = await db.execute(query)
@@ -84,13 +91,20 @@ async def delete_knowledge(
     chunk_id: str,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     try:
         uid = uuid.UUID(chunk_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="Invalid chunk ID")
-    result = await db.execute(select(KnowledgeChunk).where(KnowledgeChunk.id == uid))
-    chunk = result.scalar_one_or_none()
+    
+    query = select(KnowledgeChunk).where(KnowledgeChunk.id == uid)
+    if tenant_id:
+        import uuid
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(KnowledgeChunk.tenant_id == tenant_uuid)
+    
+    chunk = (await db.execute(query)).scalar_one_or_none()
     if not chunk:
         raise HTTPException(status_code=404, detail="Knowledge chunk not found")
     await db.delete(chunk)

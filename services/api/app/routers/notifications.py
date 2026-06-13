@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 from shared.models.notification import (
     NotificationChannel,
     NotificationRule,
@@ -49,10 +50,13 @@ async def list_channels(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    rows = (
-        await db.execute(select(NotificationChannel).order_by(desc(NotificationChannel.created_at)).limit(limit))
-    ).scalars().all()
+    stmt = select(NotificationChannel).order_by(desc(NotificationChannel.created_at)).limit(limit)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        stmt = stmt.where(NotificationChannel.tenant_id == tenant_uuid)
+    rows = (await db.execute(stmt)).scalars().all()
     return {"status": "success", "count": len(rows), "channels": [_row(row) for row in rows]}
 
 
@@ -61,8 +65,14 @@ async def create_channel(
     body: ChannelCreate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    channel = NotificationChannel(**body.model_dump(), tenant_id=uuid.UUID("00000000-0000-0000-0000-000000000001"))
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+    else:
+        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    
+    channel = NotificationChannel(**body.model_dump(), tenant_id=tenant_uuid)
     db.add(channel)
     await db.commit()
     await db.refresh(channel)
@@ -74,10 +84,13 @@ async def list_rules(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    rows = (
-        await db.execute(select(NotificationRule).order_by(desc(NotificationRule.created_at)).limit(limit))
-    ).scalars().all()
+    stmt = select(NotificationRule).order_by(desc(NotificationRule.created_at)).limit(limit)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        stmt = stmt.where(NotificationRule.tenant_id == tenant_uuid)
+    rows = (await db.execute(stmt)).scalars().all()
     return {"status": "success", "count": len(rows), "rules": [_row(row) for row in rows]}
 
 
@@ -86,8 +99,14 @@ async def create_rule(
     body: RuleCreate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    rule = NotificationRule(**body.model_dump(), tenant_id=uuid.UUID("00000000-0000-0000-0000-000000000001"))
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+    else:
+        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    
+    rule = NotificationRule(**body.model_dump(), tenant_id=tenant_uuid)
     db.add(rule)
     await db.commit()
     await db.refresh(rule)
@@ -99,8 +118,11 @@ async def list_events(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    rows = (
-        await db.execute(select(NotificationEvent).order_by(desc(NotificationEvent.created_at)).limit(limit))
-    ).scalars().all()
+    stmt = select(NotificationEvent).order_by(desc(NotificationEvent.created_at)).limit(limit)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        stmt = stmt.where(NotificationEvent.tenant_id == tenant_uuid)
+    rows = (await db.execute(stmt)).scalars().all()
     return {"status": "success", "count": len(rows), "events": [_row(row) for row in rows]}

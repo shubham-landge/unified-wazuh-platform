@@ -11,12 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 from shared.config import settings
 from shared.models.report import Report
 from shared.report_generator import ReportGenerator
 
 router = APIRouter(prefix="/reports", tags=["reports"])
-DEFAULT_TENANT_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
 class ReportRequest(BaseModel):
@@ -54,8 +54,12 @@ async def list_reports(
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     query = select(Report).order_by(desc(Report.created_at))
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(Report.tenant_id == tenant_uuid)
     if report_type:
         query = query.where(Report.report_type == report_type)
     if status:
@@ -69,6 +73,7 @@ async def create_report(
     payload: ReportRequest,
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     report_type = payload.type.lower()
     report_format = payload.format.upper()
@@ -78,8 +83,13 @@ async def create_report(
         raise HTTPException(status_code=400, detail="Unsupported report format")
 
     now = datetime.now(timezone.utc)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+    else:
+        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
     report = Report(
-        tenant_id=DEFAULT_TENANT_ID,
+        tenant_id=tenant_uuid,
         name=f"{report_type.title()} Report",
         report_type=report_type,
         format=report_format,
@@ -137,8 +147,13 @@ async def get_report(
     report_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    report = await db.get(Report, report_id)
+    query = select(Report).where(Report.id == report_id)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(Report.tenant_id == tenant_uuid)
+    report = (await db.execute(query)).scalar_one_or_none()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     return _metadata(report)
@@ -149,8 +164,14 @@ async def download_report(
     report_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    report = await db.get(Report, report_id)
+    query = select(Report).where(Report.id == report_id)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(Report.tenant_id == tenant_uuid)
+    
+    report = (await db.execute(query)).scalar_one_or_none()
     if not report or not report.file_path or not Path(report.file_path).is_file():
         raise HTTPException(status_code=404, detail="Report file not found")
     media_types = {
@@ -170,8 +191,14 @@ async def delete_report(
     report_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    report = await db.get(Report, report_id)
+    query = select(Report).where(Report.id == report_id)
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(Report.tenant_id == tenant_uuid)
+    
+    report = (await db.execute(query)).scalar_one_or_none()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     if report.file_path:

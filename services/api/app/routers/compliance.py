@@ -9,6 +9,7 @@ from starlette.status import HTTP_404_NOT_FOUND, HTTP_400_BAD_REQUEST
 from app.db import get_db
 from app.middleware.auth import validate_api_key
 from app.middleware.auth_jwt import get_current_user
+from app.middleware.tenant_enforce import get_tenant_id
 from shared.auth import TokenData
 from shared.models.compliance import ComplianceFramework, ComplianceControl, ComplianceMapping, ComplianceException
 from shared.compliance_checker import ComplianceChecker
@@ -20,10 +21,15 @@ router = APIRouter(prefix="/compliance", tags=["compliance"])
 async def list_frameworks(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    result = await db.execute(
-        select(ComplianceFramework).order_by(ComplianceFramework.name)
-    )
+    query = select(ComplianceFramework).order_by(ComplianceFramework.name)
+    if tenant_id:
+        import uuid
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(ComplianceFramework.tenant_id == tenant_uuid)
+    
+    result = await db.execute(query)
     frameworks = result.scalars().all()
     return {
         "status": "success",
@@ -47,13 +53,20 @@ async def framework_score(
     framework_id: str,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     try:
         uid = uuid.UUID(framework_id)
     except ValueError:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Invalid framework ID")
 
-    result = await db.execute(select(ComplianceFramework).where(ComplianceFramework.id == uid))
+    query = select(ComplianceFramework).where(ComplianceFramework.id == uid)
+    if tenant_id:
+        import uuid
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(ComplianceFramework.tenant_id == tenant_uuid)
+    
+    result = await db.execute(query)
     framework = result.scalar_one_or_none()
     if not framework:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Framework not found")
@@ -114,8 +127,14 @@ async def list_exceptions(
     status: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     query = select(ComplianceException).order_by(ComplianceException.created_at.desc())
+    if tenant_id:
+        import uuid
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(ComplianceException.tenant_id == tenant_uuid)
+    
     if status:
         query = query.where(ComplianceException.status == status)
     result = await db.execute(query)
@@ -144,13 +163,20 @@ async def update_exception(
     body: dict,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     try:
         uid = uuid.UUID(exc_id)
     except ValueError:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Invalid exception ID")
 
-    result = await db.execute(select(ComplianceException).where(ComplianceException.id == uid))
+    query = select(ComplianceException).where(ComplianceException.id == uid)
+    if tenant_id:
+        import uuid
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(ComplianceException.tenant_id == tenant_uuid)
+    
+    result = await db.execute(query)
     exc = result.scalar_one_or_none()
     if not exc:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Exception not found")
@@ -173,13 +199,20 @@ async def seed_framework(
     framework_id: str,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     try:
         uid = uuid.UUID(framework_id)
     except ValueError:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Invalid framework ID")
 
-    result = await db.execute(select(ComplianceFramework).where(ComplianceFramework.id == uid))
+    query = select(ComplianceFramework).where(ComplianceFramework.id == uid)
+    if tenant_id:
+        import uuid
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(ComplianceFramework.tenant_id == tenant_uuid)
+    
+    result = await db.execute(query)
     framework = result.scalar_one_or_none()
     if not framework:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Framework not found")
