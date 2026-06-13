@@ -6,15 +6,16 @@
 
 ---
 
-## Claude — Architecture Review
+## Claude — Architecture Review + Connectors + Workers
 
 | Field | Value |
 |---|---|
 | **Branch** | `tool/claude` |
 | **PR** | — |
-| **Status** | 📝 Not Started |
-| **Task** | Review architecture, security hardening, prompt templates, database schema |
-| **Files to review** | `shared/`, `database/schema.sql`, `services/api/app/routers/*`, `services/api/app/middleware/*`, `docker-compose.yml` |
+| **Status** | ✅ Complete |
+| **Task** | Security/architecture review (P0-P2 fixes), 4 notification connectors, notification worker, SOAR engine, 3 TI connectors, TI worker, UEBA engine, health registry |
+| **Files created** | `shared/connectors/notify_{email,slack,teams,pagerduty}.py`, `shared/connectors/ti_{alienvault,misp,virustotal}.py`, `shared/soar/engine.py`, `shared/soar/actions.py`, `shared/ueba/baseline.py`, `shared/ueba/detector.py`, `shared/health_registry.py`, `services/worker/app/{notification_worker,threat_intel_worker}.py`, `shared/models/{threat_intel,ueba,playbook}.py`, `tests/test_{notification_connectors,threat_intel,soar_engine,ueba}.py` |
+| **Files modified** | `shared/config.py`, `shared/connectors/llm_provider.py`, `services/api/app/main.py`, `services/api/app/middleware/{auth,audit,dashboard_access}.py`, `services/api/app/routers/{triage,health}.py`, `services/worker/app/{triage_worker,poller}.py`, `database/schema.sql`, `.env.example` |
 | **Blockers** | None |
 
 ## Codex — Backend Builder

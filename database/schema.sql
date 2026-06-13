@@ -304,3 +304,117 @@ CREATE TRIGGER trg_cases_updated_at
 CREATE TRIGGER trg_vulnerabilities_updated_at
     BEFORE UPDATE ON vulnerabilities FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- ─── Threat Intelligence IOCs ───
+CREATE TABLE threat_intel_iocs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    ioc_type TEXT NOT NULL,
+    ioc_value TEXT NOT NULL,
+    source TEXT NOT NULL,
+    threat_score DECIMAL(5,2),
+    confidence DECIMAL(3,2),
+    malware_families JSONB DEFAULT '[]',
+    tags JSONB DEFAULT '[]',
+    raw_data JSONB,
+    is_active BOOLEAN DEFAULT TRUE,
+    first_seen TIMESTAMPTZ,
+    last_seen TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX idx_ti_iocs_source_value ON threat_intel_iocs(source, ioc_value);
+CREATE INDEX idx_ti_iocs_type_value ON threat_intel_iocs(ioc_type, ioc_value);
+CREATE INDEX idx_ti_iocs_active ON threat_intel_iocs(is_active) WHERE is_active = TRUE;
+
+-- ─── Alert IOC Matches ───
+CREATE TABLE alert_ioc_matches (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    alert_id UUID NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
+    ioc_id UUID NOT NULL REFERENCES threat_intel_iocs(id) ON DELETE CASCADE,
+    matched_field TEXT NOT NULL,
+    matched_value TEXT NOT NULL,
+    threat_score DECIMAL(5,2),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_alert_ioc_matches_alert ON alert_ioc_matches(alert_id);
+
+-- ─── UEBA Baselines ───
+CREATE TABLE ueba_baselines (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    entity_type TEXT NOT NULL,
+    entity_value TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    window_hours INTEGER DEFAULT 24,
+    n INTEGER DEFAULT 0,
+    mean DOUBLE PRECISION DEFAULT 0.0,
+    m2 DOUBLE PRECISION DEFAULT 0.0,
+    last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(entity_type, entity_value, metric)
+);
+CREATE INDEX idx_ueba_baselines_entity ON ueba_baselines(entity_type, entity_value);
+
+-- ─── UEBA Anomalies ───
+CREATE TABLE ueba_anomalies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    alert_id UUID REFERENCES alerts(id) ON DELETE SET NULL,
+    entity_type TEXT NOT NULL,
+    entity_value TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    observed_value DOUBLE PRECISION NOT NULL,
+    baseline_mean DOUBLE PRECISION NOT NULL,
+    baseline_stddev DOUBLE PRECISION NOT NULL,
+    z_score DOUBLE PRECISION NOT NULL,
+    severity TEXT DEFAULT 'medium',
+    suppressed BOOLEAN DEFAULT FALSE,
+    details JSONB,
+    detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_ueba_anomalies_entity ON ueba_anomalies(entity_type, entity_value);
+CREATE INDEX idx_ueba_anomalies_alert ON ueba_anomalies(alert_id);
+
+-- ─── SOAR Playbooks ───
+CREATE TABLE playbooks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    trigger JSONB NOT NULL DEFAULT '{}',
+    actions JSONB NOT NULL DEFAULT '[]',
+    priority INTEGER DEFAULT 100,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_playbooks_active ON playbooks(is_active) WHERE is_active = TRUE;
+
+-- ─── SOAR Playbook Runs ───
+CREATE TABLE playbook_runs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    playbook_id UUID NOT NULL REFERENCES playbooks(id) ON DELETE CASCADE,
+    alert_id UUID REFERENCES alerts(id) ON DELETE SET NULL,
+    case_id UUID REFERENCES cases(id) ON DELETE SET NULL,
+    status TEXT DEFAULT 'pending',
+    actions_completed INTEGER DEFAULT 0,
+    actions_total INTEGER DEFAULT 0,
+    error TEXT,
+    result JSONB,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_playbook_runs_playbook ON playbook_runs(playbook_id);
+CREATE INDEX idx_playbook_runs_alert ON playbook_runs(alert_id);
+
+CREATE TRIGGER trg_threat_intel_iocs_updated_at
+    BEFORE UPDATE ON threat_intel_iocs FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_playbooks_updated_at
+    BEFORE UPDATE ON playbooks FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
