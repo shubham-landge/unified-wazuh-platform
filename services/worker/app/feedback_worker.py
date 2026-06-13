@@ -82,16 +82,30 @@ class FeedbackWorker:
                     feedback_id, model_name or "N/A", rating, feedback.category_correct,
                 )
 
-            self._log_metrics()
+            await self._log_metrics()
 
         except Exception as e:
             logger.error("Failed to process feedback %s: %s", feedback_id, e, exc_info=True)
 
-    def _log_metrics(self):
-        if self.model_accuracy:
-            for model, ratings in self.model_accuracy.items():
-                avg = sum(ratings) / len(ratings)
-                logger.info("Model accuracy [%s]: avg_rating=%.2f count=%d", model, avg, len(ratings))
+    async def _log_metrics(self):
+        if not self.model_accuracy:
+            return
+        async with self.session_factory() as session:
+            try:
+                from shared.models.model_run import ModelRun
+                for model, ratings in self.model_accuracy.items():
+                    avg = sum(ratings) / len(ratings)
+                    logger.info("Persisting accuracy for [%s]: avg=%.2f count=%d", model, avg, len(ratings))
+                    model_run = ModelRun(
+                        model_name=model,
+                        accuracy=round(avg, 2),
+                        total_feedback=len(ratings),
+                        success=True,
+                    )
+                    session.add(model_run)
+                await session.commit()
+            except Exception as e:
+                logger.error("Failed to persist model metrics: %s", e, exc_info=True)
 
     async def stop(self):
         if self.redis_client:

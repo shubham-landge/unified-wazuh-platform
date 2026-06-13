@@ -136,6 +136,8 @@ CREATE TABLE ai_triage_results (
     error_message TEXT,
     raw_request JSONB,
     raw_response JSONB,
+    feedback_count INTEGER DEFAULT 0,
+    avg_rating DECIMAL(3,2),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_triage_alert ON ai_triage_results(alert_id);
@@ -530,6 +532,8 @@ CREATE TABLE model_runs (
     success BOOLEAN DEFAULT TRUE,
     error TEXT,
     cost DECIMAL(10,6),
+    accuracy DECIMAL(3,2),
+    total_feedback INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_model_runs_tenant ON model_runs(tenant_id);
@@ -706,6 +710,26 @@ CREATE TABLE report_deliveries (
     completed_at TIMESTAMPTZ
 );
 CREATE INDEX idx_report_deliveries_schedule ON report_deliveries(schedule_id);
+
+-- ─── User Feedback (analyst verdicts on AI triage) ───
+CREATE TABLE user_feedback (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    triage_result_id UUID NOT NULL REFERENCES ai_triage_results(id) ON DELETE CASCADE,
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+    category_correct BOOLEAN,
+    severity_correct BOOLEAN,
+    correction_text TEXT,
+    corrected_category VARCHAR(255),
+    corrected_severity VARCHAR(16),
+    corrected_confidence DECIMAL(3,2),
+    reviewed_by UUID,
+    reviewed_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_feedback_triage ON user_feedback(triage_result_id);
+CREATE INDEX idx_feedback_tenant ON user_feedback(tenant_id);
+CREATE INDEX idx_feedback_created ON user_feedback(created_at DESC);
 
 -- ─── Triggers ───
 CREATE TRIGGER trg_users_updated_at
