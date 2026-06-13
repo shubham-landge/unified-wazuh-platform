@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
+from dateutil import parser as dateutil_parser
 import redis.asyncio as redis
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
@@ -101,10 +102,21 @@ class AlertPoller:
             file_name=data.get("file") or data.get("win", {}).get("event", {}).get("fileName"),
             file_hash=data.get("hash") or data.get("win", {}).get("event", {}).get("hash"),
             event_id=raw.get("id"),
-            alert_timestamp=raw.get("timestamp"),
+            alert_timestamp=self._parse_timestamp(raw.get("timestamp")),
             raw_alert_redacted=self._redact_alert(raw),
         )
         return alert
+
+    @staticmethod
+    def _parse_timestamp(ts) -> datetime | None:
+        if ts is None:
+            return None
+        if isinstance(ts, datetime):
+            return ts
+        try:
+            return dateutil_parser.parse(str(ts))
+        except Exception:
+            return None
 
     def _redact_alert(self, raw: dict) -> dict:
         redacted = json.loads(json.dumps(raw))

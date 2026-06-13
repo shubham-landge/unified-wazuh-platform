@@ -24,6 +24,8 @@ async def lifespan(app: FastAPI):
     logger.info(f"Shutting down {settings.app_name}")
 
 
+_cors_origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()] if settings.cors_allowed_origins else []
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
@@ -34,10 +36,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_cors_origins or ["*"],
+    allow_credentials=bool(_cors_origins),  # credentials only when origins are explicit
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["X-API-Key", "Content-Type", "Authorization"],
 )
 app.add_middleware(AuditMiddleware)
 app.add_middleware(RateLimitMiddleware)

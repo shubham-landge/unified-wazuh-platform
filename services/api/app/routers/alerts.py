@@ -15,6 +15,7 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 @router.get("/recent")
 async def get_recent_alerts(
     limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     min_level: int = Query(default=0, ge=0, le=15),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
@@ -23,6 +24,7 @@ async def get_recent_alerts(
         select(Alert)
         .where(Alert.rule_level >= min_level)
         .order_by(desc(Alert.ingested_at))
+        .offset(offset)
         .limit(limit)
     )
     result = await db.execute(query)

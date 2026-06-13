@@ -11,12 +11,13 @@ from shared.config import settings
 logger = logging.getLogger(__name__)
 
 SENSITIVE_PATTERNS = [
-    (re.compile(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'), '[IP_REDACTED]'),
-    (re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'), '[EMAIL_REDACTED]'),
     (re.compile(r'(?i)(password|secret|token|api_key|apikey|auth|credential)\s*[:=]\s*\S+'), r'\1: [REDACTED]'),
+    # GitHub tokens
     (re.compile(r'\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,}\b'), '[TOKEN_REDACTED]'),
-    (re.compile(r'\b(?:sk-[A-Za-z0-9]{20,}|pk-[A-Za-z0-9]{20,})\b'), '[API_KEY_REDACTED]'),
-    (re.compile(r'\b[A-Za-z0-9+/=]{40,}\b'), '[CREDENTIAL_REDACTED]'),
+    # OpenAI/Anthropic-style API keys (specific prefixes only — avoids false positives on base64)
+    (re.compile(r'\b(?:sk-ant-[A-Za-z0-9\-_]{20,}|sk-[A-Za-z0-9]{20,}|pk-[A-Za-z0-9]{20,})\b'), '[API_KEY_REDACTED]'),
+    # Emails
+    (re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'), '[EMAIL_REDACTED]'),
 ]
 
 
@@ -95,16 +96,35 @@ class OllamaProvider(LLMProvider):
         return f"ollama/{self.model}"
 
     def _parse_response(self, content: str) -> dict:
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            try:
-                parsed = json.loads(json_match.group())
-                if isinstance(parsed, dict):
-                    if "success" not in parsed:
-                        parsed["success"] = True
-                    return parsed
-            except json.JSONDecodeError:
-                pass
+        # Try parsing the full content first (handles clean JSON responses)
+        try:
+            parsed = json.loads(content.strip())
+            if isinstance(parsed, dict):
+                parsed.setdefault("success", True)
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+        # Fall back to extracting the first complete JSON object
+        depth = 0
+        start = None
+        for i, ch in enumerate(content):
+            if ch == '{':
+                if depth == 0:
+                    start = i
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0 and start is not None:
+                    try:
+                        parsed = json.loads(content[start:i + 1])
+                        if isinstance(parsed, dict):
+                            parsed.setdefault("success", True)
+                            return parsed
+                    except json.JSONDecodeError:
+                        pass
+                    start = None
+
         return {"success": True, "summary": content, "raw_response": content}
 
 
