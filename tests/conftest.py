@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
+os.environ.setdefault("API_KEYS", "soc-key-001")
 
 ROOT = Path(__file__).resolve().parents[1]
 for extra in (ROOT / "services" / "worker", ROOT / "services" / "api"):
