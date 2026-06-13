@@ -192,7 +192,7 @@ CREATE TABLE vulnerabilities (
     cvss_score DECIMAL(3,1),
     severity TEXT CHECK (severity IN ('none','low','medium','high','critical')),
     epss_score DECIMAL(5,4),
-    cisa_kev BOOLEAN DEFAULT FALSE,
+    cisa_kev BOOLEAN,
     exploitability TEXT,
     package_name TEXT,
     package_version TEXT,
@@ -221,6 +221,28 @@ CREATE INDEX idx_vuln_status ON vulnerabilities(status);
 CREATE INDEX idx_vuln_risk ON vulnerabilities(risk_score DESC);
 CREATE INDEX idx_vuln_sla ON vulnerabilities(patch_sla) WHERE status NOT IN ('patched','verified','false_positive');
 CREATE INDEX idx_vuln_tenant ON vulnerabilities(tenant_id);
+
+-- ─── Generated Reports ───
+CREATE TABLE reports (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    report_type TEXT NOT NULL CHECK (report_type IN ('executive','vulnerability','case','compliance')),
+    format TEXT NOT NULL CHECK (format IN ('PDF','HTML','JSON')),
+    parameters JSONB NOT NULL DEFAULT '{}',
+    file_path TEXT,
+    file_size BIGINT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','generating','completed','failed')),
+    error_message TEXT,
+    created_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ
+);
+CREATE INDEX idx_reports_tenant ON reports(tenant_id);
+CREATE INDEX idx_reports_type ON reports(report_type);
+CREATE INDEX idx_reports_status ON reports(status);
+CREATE INDEX idx_reports_created_at ON reports(created_at DESC);
 
 -- ─── Audit Log ───
 CREATE TABLE audit_log (

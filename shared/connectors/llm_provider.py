@@ -18,6 +18,8 @@ SENSITIVE_PATTERNS = [
     (re.compile(r'\b(?:sk-ant-[A-Za-z0-9\-_]{20,}|sk-[A-Za-z0-9]{20,}|pk-[A-Za-z0-9]{20,})\b'), '[API_KEY_REDACTED]'),
     # Emails
     (re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'), '[EMAIL_REDACTED]'),
+    # IPv4 addresses
+    (re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b'), '[IP_REDACTED]'),
 ]
 
 
@@ -25,6 +27,58 @@ def mask_sensitive_data(text: str) -> str:
     for pattern, replacement in SENSITIVE_PATTERNS:
         text = pattern.sub(replacement, text)
     return text
+
+
+def parse_llm_response(content: str) -> dict:
+    try:
+        parsed = json.loads(content.strip())
+        if isinstance(parsed, dict):
+            parsed.setdefault("success", True)
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    depth = 0
+    start = None
+    for i, ch in enumerate(content):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start is not None:
+                try:
+                    parsed = json.loads(content[start:i + 1])
+                    if isinstance(parsed, dict):
+                        parsed.setdefault("success", True)
+                        return parsed
+                except json.JSONDecodeError:
+                    pass
+                start = None
+
+    return {"success": True, "summary": content, "raw_response": content}
+
+
+def normalize_llm_result(content: str) -> dict:
+    result = parse_llm_response(content)
+    result.setdefault("summary", content)
+    result.setdefault("category", "unknown")
+    result.setdefault("severity", "medium")
+    result.setdefault("confidence", 0.0)
+    result.setdefault("false_positive_likelihood", 0.0)
+    result.setdefault("mitre_mapping", [])
+    result.setdefault(
+        "investigation_steps",
+        result.get("recommended_investigation_steps", []),
+    )
+    result.setdefault("do_not_do", [])
+    result.setdefault("escalation_required", False)
+    result.setdefault(
+        "recommended_soc_action",
+        result.get("suggested_soc_action"),
+    )
+    return result
 
 
 class LLMProvider(ABC):
@@ -65,7 +119,7 @@ class OllamaProvider(LLMProvider):
                 data = resp.json()
 
             content = data.get("message", {}).get("content", "")
-            result = self._parse_response(content)
+            result = parse_llm_response(content)
             result["model"] = self.model
             result["tokens_input"] = data.get("prompt_eval_count", 0)
             result["tokens_output"] = data.get("eval_count", 0)
@@ -96,36 +150,7 @@ class OllamaProvider(LLMProvider):
         return f"ollama/{self.model}"
 
     def _parse_response(self, content: str) -> dict:
-        # Try parsing the full content first (handles clean JSON responses)
-        try:
-            parsed = json.loads(content.strip())
-            if isinstance(parsed, dict):
-                parsed.setdefault("success", True)
-                return parsed
-        except json.JSONDecodeError:
-            pass
-
-        # Fall back to extracting the first complete JSON object
-        depth = 0
-        start = None
-        for i, ch in enumerate(content):
-            if ch == '{':
-                if depth == 0:
-                    start = i
-                depth += 1
-            elif ch == '}':
-                depth -= 1
-                if depth == 0 and start is not None:
-                    try:
-                        parsed = json.loads(content[start:i + 1])
-                        if isinstance(parsed, dict):
-                            parsed.setdefault("success", True)
-                            return parsed
-                    except json.JSONDecodeError:
-                        pass
-                    start = None
-
-        return {"success": True, "summary": content, "raw_response": content}
+        return parse_llm_response(content)
 
 
 def get_provider() -> LLMProvider:

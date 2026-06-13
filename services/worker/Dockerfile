@@ -25,4 +25,4 @@ COPY services/worker/app/ app/
 
 ENV PYTHONPATH=/app
 
-CMD ["python", "-m", "app.poller"]
+CMD ["python", "-m", "app.main"]

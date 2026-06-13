@@ -1,9 +1,15 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import SecretStr, Field, field_validator
 from typing import List, Optional, Union
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     app_name: str = "Unified Wazuh SOC Platform"
     app_version: str = "1.0.0"
     debug: bool = False
@@ -63,6 +69,9 @@ class Settings(BaseSettings):
     dashboard_allowed_cidrs: str = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
     poll_interval_seconds: int = 60
+    vuln_poll_interval_hours: int = 6
+    report_retention_days: int = 90
+    reports_storage_path: str = "/app/reports"
     alert_lookback_hours: int = 24
     max_alerts_per_poll: int = 100
 
@@ -71,10 +80,5 @@ class Settings(BaseSettings):
     mask_sensitive_data: bool = True
 
     tenant_id: str = "default"
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-
 
 settings = Settings()

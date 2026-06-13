@@ -10,3 +10,4 @@ from shared.models.vulnerability import Vulnerability
 from shared.models.audit_log import AuditLog
 from shared.models.model_run import ModelRun
 from shared.models.system_health import SystemHealth
+from shared.models.report import Report
