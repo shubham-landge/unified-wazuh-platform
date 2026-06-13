@@ -1,0 +1,123 @@
+import logging
+from shared.config import settings
+from shared.connectors.llm_provider import LLMProvider, OllamaProvider, get_provider
+
+logger = logging.getLogger(__name__)
+
+
+def _get_complex_techniques() -> set[str]:
+    raw = settings.llm_tier_complex_techniques
+    return set(t.strip() for t in raw.split(",") if t.strip())
+
+
+def _get_known_bad_ips() -> set[str]:
+    raw = settings.llm_tier_known_bad_ips
+    return set(t.strip() for t in raw.split(",") if t.strip())
+
+def rule_historical_accuracy(rule_id: int | None) -> float | None:
+    if rule_id is None:
+        return None
+    return None
+
+
+def asset_criticality(agent_id: str | None) -> int:
+    return 0
+
+
+def is_burst_alert(alert) -> bool:
+    if alert.rule_firedtimes and alert.rule_firedtimes > 5:
+        return True
+    return False
+
+
+def tenant_tier(tenant_id: str | None) -> str:
+    return "standard"
+
+
+def user_feedback_negative_rate(rule_id: int | None) -> float:
+    return 0.0
+
+
+class TieredRouter:
+    def get_provider(self, alert=None, tenant_id: str | None = None) -> LLMProvider:
+        strategy = settings.llm_tier_strategy
+
+        if strategy == "fast":
+            return self._build_fast_provider()
+        if strategy == "full":
+            return self._build_full_provider()
+
+        score = self._compute_score(alert, tenant_id)
+        logger.debug("TieredRouter score=%d for alert %s", score, getattr(alert, "id", None))
+
+        if score >= settings.llm_tier_score_threshold:
+            logger.info("Routing to FULL tier (score=%d)", score)
+            return self._build_full_provider()
+
+        logger.debug("Routing to FAST tier (score=%d)", score)
+        return self._build_fast_provider()
+
+    def _compute_score(self, alert, tenant_id: str | None) -> int:
+        score = 0
+
+        if alert is None:
+            return score
+
+        if alert.rule_level is not None and alert.rule_level >= settings.llm_tier_level_threshold:
+            score += 3
+
+        if alert.source_ip:
+            known_bad = _get_known_bad_ips()
+            if alert.source_ip in known_bad:
+                score += 2
+
+        if asset_criticality(alert.agent_id) >= 4:
+            score += 2
+
+        hist_acc = rule_historical_accuracy(alert.rule_id)
+        if hist_acc is not None and hist_acc < 0.7:
+            score += 2
+
+        if alert.mitre_technique:
+            complex_techs = _get_complex_techniques()
+            if alert.mitre_technique in complex_techs:
+                score += 1
+
+        if is_burst_alert(alert):
+            score -= 2
+
+        if tenant_tier(tenant_id) == "premium":
+            score += 2
+
+        neg_rate = user_feedback_negative_rate(alert.rule_id)
+        if neg_rate > 0.3:
+            score += 2
+
+        return score
+
+    def _build_fast_provider(self) -> LLMProvider:
+        prov = settings.llm_tier_fast_provider
+        model = settings.llm_tier_fast_model
+        return self._resolve_provider(prov, model)
+
+    def _build_full_provider(self) -> LLMProvider:
+        prov = settings.llm_tier_full_provider
+        model = settings.llm_tier_full_model
+        return self._resolve_provider(prov, model)
+
+    def _resolve_provider(self, provider_name: str, model: str | None = None) -> LLMProvider:
+        name = provider_name.lower()
+        if name == "ollama":
+            return OllamaProvider(model=model)
+        elif name == "openai":
+            from shared.connectors.llm_openai import OpenAIProvider
+            return OpenAIProvider()
+        elif name == "gemini":
+            from shared.connectors.llm_gemini import GeminiProvider
+            return GeminiProvider()
+        elif name == "claude":
+            from shared.connectors.llm_claude import ClaudeProvider
+            return ClaudeProvider()
+        else:
+            logger.warning("Unknown provider %s, falling back to Ollama", provider_name)
+            return OllamaProvider(model=model)

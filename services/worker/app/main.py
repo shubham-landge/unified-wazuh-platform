@@ -25,6 +25,7 @@ async def main():
         ("app.playbook_worker", "PlaybookWorker"),
         ("app.threat_intel_worker", "ThreatIntelWorker"),
         ("app.ueba_worker", "UEBAWorker"),
+        ("app.feedback_worker", "FeedbackWorker"),
     ]:
         try:
             import importlib

@@ -37,9 +37,16 @@
                 <span class="px-1.5 py-0.2 text-[8px] font-bold uppercase rounded {% if 'coder' in (result.model or '').lower() or '7b' in (result.model or '').lower() or 'llama3' in (result.model or '').lower() %}bg-accent-yellow/20 text-yellow-400 border border-accent-yellow/30{% else %}bg-accent-blue/20 text-blue-400 border border-accent-blue/30{% endif %}">
                     {{ result.model or 'Ollama' }}
                 </span>
-                <span class="px-1 py-0.2 text-[8px] font-semibold text-muted bg-white/5 border border-white/10 rounded">
-                    {% if '1.5b' in (result.model or '').lower() or '3b' in (result.model or '').lower() or 'flash' in (result.model or '').lower() %}Fast Tier{% else %}Full Tier{% endif %}
+                {% if result.model %}
+                <span class="px-1.5 py-0.5 rounded text-[8px] font-bold
+                    {% if '7b' in result.model or 'gpt' in result.model or 'claude' in result.model or 'gemini' in result.model %}
+                    bg-purple-500/20 text-purple-300
+                    {% else %}
+                    bg-cyan-500/20 text-cyan-300
+                    {% endif %}">
+                    {{ 'Full' if ('7b' in result.model or 'gpt' in result.model or 'claude' in result.model or 'gemini' in result.model) else 'Fast' }}
                 </span>
+                {% endif %}
             </div>
         </div>
         <div class="flex gap-2">
@@ -84,25 +91,40 @@
             </div>
         </div>
 
-        <!-- Investigation Playbook -->
+        <!-- Dynamic Investigation Playbook -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <!-- Steps -->
             <div>
                 <span class="text-[10px] text-muted font-bold tracking-wide uppercase block mb-1">Recommended Actions</span>
-                <ul class="list-disc pl-4 text-xs text-secondary space-y-1">
-                    <li>Check alert details in Wazuh dashboard</li>
-                    <li>Review source IP reputation and related user logins</li>
-                    <li>Correlate with other alerts from the same agent/node</li>
+                {% if result.investigation_steps and result.investigation_steps|length > 0 %}
+                <ul class="space-y-1">
+                    {% for step in result.investigation_steps %}
+                    <li class="flex items-start gap-2 text-xs text-secondary">
+                        <span class="text-cyan-400 mt-0.5 shrink-0">→</span>
+                        <span>{{ step }}</span>
+                    </li>
+                    {% endfor %}
                 </ul>
+                {% else %}
+                <p class="text-xs text-muted">No specific steps recommended.</p>
+                {% endif %}
             </div>
             
             <!-- Do Not Do -->
             <div>
                 <span class="text-[10px] text-muted font-bold tracking-wide uppercase block mb-1 text-accent-red">Critical Restrictions</span>
-                <ul class="list-disc pl-4 text-xs text-secondary space-y-1">
-                    <li>Do not disable the agent without supervisor verification</li>
-                    <li>Do not block the source IP without confirmation</li>
+                {% if result.do_not_do and result.do_not_do|length > 0 %}
+                <ul class="space-y-1">
+                    {% for item in result.do_not_do %}
+                    <li class="flex items-start gap-2 text-xs text-secondary">
+                        <span class="text-red-400 mt-0.5 shrink-0">✕</span>
+                        <span>{{ item }}</span>
+                    </li>
+                    {% endfor %}
                 </ul>
+                {% else %}
+                <p class="text-xs text-muted">No restrictions specified.</p>
+                {% endif %}
             </div>
         </div>
 
@@ -186,7 +208,6 @@
     </div>
 </div>
 
-<!-- Send event-based toast trigger header via HTTP if wanted, but since we are within HTMX template, we can also inject a script -->
 <script>
     if (window.addGlobalToast) {
         window.addGlobalToast("success", "AI Triage analysis complete.");

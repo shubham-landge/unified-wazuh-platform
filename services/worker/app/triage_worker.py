@@ -10,7 +10,10 @@ from shared.config import settings
 from shared.models.alert import Alert
 from shared.models.ai_triage_result import AiTriageResult
 from shared.models.case import Case
+from shared.models.case_event import CaseEvent
+from shared.models.case_investigation_step import CaseInvestigationStep
 from shared.connectors.llm_provider import get_provider
+from shared.connectors.llm_router import TieredRouter
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +74,9 @@ class TriageWorker:
                     logger.warning("Alert %s not found", alert_id)
                     return
 
-                provider = get_provider()
+                provider = TieredRouter().get_provider(alert=alert, tenant_id=str(alert.tenant_id))
+                tier = "full" if provider.name().startswith(("openai", "gemini", "claude")) or "7b" in provider.name() else "fast"
+                logger.info("Triaging alert %s with %s (%s tier)", alert_id, provider.name(), tier)
 
                 user_prompt = (
                     f"Alert Rule: {alert.rule_description}\n"
@@ -115,14 +120,39 @@ class TriageWorker:
                 await session.flush()
 
                 if result_data.get("escalation_required", False):
+                    level = alert.rule_level or 5
+                    confidence = result_data.get("confidence", 0.5)
+                    fp_likelihood = result_data.get("false_positive_likelihood", 0.3)
+                    risk_score = round(confidence * (1 - fp_likelihood) * min(level / 15, 1) * 10, 2)
+
                     case = Case(
                         alert_id=alert.id,
                         title=result_data.get("summary", alert.rule_description or "Alert"),
                         severity=result_data.get("severity", "medium"),
                         category=result_data.get("category", "unknown"),
                         escalation_required=True,
+                        risk_score=risk_score,
                     )
                     session.add(case)
+                    await session.flush()
+
+                    # Create investigation steps from AI result
+                    for i, step_text in enumerate(result_data.get("investigation_steps", result_data.get("recommended_investigation_steps", []))):
+                        step = CaseInvestigationStep(
+                            case_id=case.id,
+                            description=step_text if isinstance(step_text, str) else str(step_text),
+                            order=i,
+                        )
+                        session.add(step)
+
+                    # Auto-log case_created event
+                    event = CaseEvent(
+                        case_id=case.id,
+                        event_type="case_created",
+                        description=f"AI triage escalated: {case.title}",
+                        event_meta={"model": provider.name(), "confidence": confidence},
+                    )
+                    session.add(event)
 
                 await session.commit()
 

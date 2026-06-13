@@ -609,3 +609,113 @@ CREATE TRIGGER trg_ueba_baselines_updated_at
 CREATE TRIGGER trg_ueba_anomalies_updated_at
     BEFORE UPDATE ON ueba_anomalies FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- ─── Phase 3A: Users & RBAC ───
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    email TEXT UNIQUE NOT NULL,
+    username TEXT UNIQUE,
+    password_hash TEXT,
+    oidc_provider TEXT,
+    oidc_subject TEXT UNIQUE,
+    full_name TEXT,
+    role TEXT NOT NULL DEFAULT 'viewer',
+    permissions JSONB DEFAULT '[]',
+    is_active BOOLEAN DEFAULT TRUE,
+    last_login_at TIMESTAMPTZ,
+    failed_login_attempts INTEGER DEFAULT 0,
+    locked_until TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_tenant ON users(tenant_id);
+CREATE INDEX idx_users_oidc_subject ON users(oidc_subject);
+
+-- ─── Legacy API Keys (Phase 1-2 backward compat) ───
+CREATE TABLE api_keys_phase3a (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    key_prefix TEXT UNIQUE NOT NULL,
+    key_hash TEXT UNIQUE NOT NULL,
+    label TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    last_used_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_api_keys_hash ON api_keys_phase3a(key_hash);
+
+-- ─── Alert Deduplication / Incident Grouping ───
+CREATE TABLE alert_incidents (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    group_key TEXT NOT NULL,
+    rule_id INTEGER,
+    rule_description TEXT,
+    agent_id TEXT,
+    source_ip TEXT,
+    alert_count INTEGER DEFAULT 1,
+    severity TEXT,
+    status TEXT DEFAULT 'open',
+    first_alert_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_alert_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    correlation_window_minutes INTEGER DEFAULT 120,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_alert_incidents_group_key ON alert_incidents(group_key);
+CREATE INDEX idx_alert_incidents_tenant ON alert_incidents(tenant_id);
+CREATE INDEX idx_alert_incidents_status ON alert_incidents(status);
+
+-- ─── Report Scheduling ───
+CREATE TABLE report_schedules (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    report_type TEXT NOT NULL,
+    cron_expression TEXT NOT NULL,
+    parameters JSONB DEFAULT '{}',
+    delivery_method TEXT DEFAULT 'email',
+    recipients JSONB DEFAULT '[]',
+    cc_recipients JSONB DEFAULT '[]',
+    last_run_at TIMESTAMPTZ,
+    last_run_status TEXT,
+    next_run_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_report_schedules_tenant ON report_schedules(tenant_id);
+CREATE INDEX idx_report_schedules_active ON report_schedules(is_active);
+
+CREATE TABLE report_deliveries (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    schedule_id UUID NOT NULL REFERENCES report_schedules(id) ON DELETE CASCADE,
+    report_id UUID,
+    status TEXT DEFAULT 'pending',
+    error_message TEXT,
+    recipient_count INTEGER DEFAULT 0,
+    delivery_method TEXT,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);
+CREATE INDEX idx_report_deliveries_schedule ON report_deliveries(schedule_id);
+
+-- ─── Triggers ───
+CREATE TRIGGER trg_users_updated_at
+    BEFORE UPDATE ON users FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_alert_incidents_updated_at
+    BEFORE UPDATE ON alert_incidents FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_report_schedules_updated_at
+    BEFORE UPDATE ON report_schedules FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();

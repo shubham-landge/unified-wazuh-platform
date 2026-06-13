@@ -35,4 +35,6 @@ class AiTriageResult(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_request: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     raw_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    feedback_count: Mapped[int] = mapped_column(Integer, default=0)
+    avg_rating: Mapped[float | None] = mapped_column(DECIMAL(3,2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

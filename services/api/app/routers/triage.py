@@ -4,20 +4,34 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from pydantic import BaseModel
-from starlette.status import HTTP_202_ACCEPTED, HTTP_404_NOT_FOUND, HTTP_503_SERVICE_UNAVAILABLE
+from sqlalchemy import select, func
+from pydantic import BaseModel, Field
+from starlette.status import HTTP_202_ACCEPTED, HTTP_404_NOT_FOUND, HTTP_503_SERVICE_UNAVAILABLE, HTTP_400_BAD_REQUEST
 
 from app.db import get_db
 from shared.models.alert import Alert
 from shared.models.ai_triage_result import AiTriageResult
+from shared.models.feedback import UserFeedback
 from app.middleware.auth import validate_api_key
+from app.middleware.auth_jwt import get_current_user
+from shared.auth import TokenData
+from shared.config import settings
 
 router = APIRouter(prefix="/triage", tags=["triage"])
 
 
 class TriageRequest(BaseModel):
     alert_id: str
+
+
+class FeedbackRequest(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    category_correct: bool | None = None
+    severity_correct: bool | None = None
+    correction_text: str | None = None
+    corrected_category: str | None = None
+    corrected_severity: str | None = None
+    corrected_confidence: float | None = Field(None, ge=0, le=1)
 
 
 @router.post("/run", status_code=HTTP_202_ACCEPTED)
@@ -164,5 +178,63 @@ async def get_triage_result(
         "escalation_required": triage.escalation_required,
         "suggested_soc_action": triage.suggested_soc_action,
         "success": triage.success,
+        "feedback_count": triage.feedback_count,
+        "avg_rating": float(triage.avg_rating) if triage.avg_rating else None,
         "created_at": triage.created_at.isoformat() if triage.created_at else None,
     }
+
+
+@router.post("/{triage_id}/feedback")
+async def submit_feedback(
+    triage_id: str,
+    body: FeedbackRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    try:
+        triage_uid = uuid.UUID(triage_id)
+    except ValueError:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Invalid triage ID")
+
+    result = await db.execute(select(AiTriageResult).where(AiTriageResult.id == triage_uid))
+    triage = result.scalar_one_or_none()
+    if not triage:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Triage result not found")
+
+    feedback = UserFeedback(
+        triage_result_id=triage_uid,
+        tenant_id=current_user.tenant_id,
+        rating=body.rating,
+        category_correct=body.category_correct,
+        severity_correct=body.severity_correct,
+        correction_text=body.correction_text,
+        corrected_category=body.corrected_category,
+        corrected_severity=body.corrected_severity,
+        corrected_confidence=body.corrected_confidence,
+        reviewed_by=current_user.user_id,
+    )
+    db.add(feedback)
+
+    triage.feedback_count = (triage.feedback_count or 0) + 1
+    avg_result = await db.execute(
+        select(func.avg(UserFeedback.rating)).where(UserFeedback.triage_result_id == triage_uid)
+    )
+    avg_val = avg_result.scalar()
+    triage.avg_rating = round(float(avg_val), 2) if avg_val else body.rating
+
+    await db.commit()
+
+    if settings.feedback_enabled:
+        try:
+            import redis.asyncio as redis_async
+            r = await redis_async.from_url(settings.redis_url, decode_responses=True)
+            await r.lpush("feedback_queue", json.dumps({
+                "feedback_id": str(feedback.id),
+                "triage_result_id": triage_id,
+                "rating": body.rating,
+            }))
+            await r.aclose()
+        except Exception:
+            pass
+
+    return {"status": "accepted", "feedback_id": str(feedback.id)}

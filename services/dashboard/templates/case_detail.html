@@ -101,59 +101,31 @@
                 </div>
             </div>
 
+            <!-- Investigation Steps Checklist -->
+            <div class="card-premium">
+                <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-6 pb-2 border-b border-white/5 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-accent-green" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Investigation Checklist
+                </h3>
+                <div id="investigation-steps"
+                     hx-get="/cases/{{ case.id }}/steps"
+                     hx-trigger="load"
+                     class="min-h-[60px]">
+                    <div class="text-center py-4 text-muted text-xs">Loading steps...</div>
+                </div>
+            </div>
+
             <!-- Investigation Timeline -->
             <div class="card-premium">
                 <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-6 pb-2 border-b border-white/5 flex items-center gap-2">
                     <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     Investigation Timeline
                 </h3>
-                
-                <div class="relative pl-6 border-l-2 border-white/5 space-y-6 text-xs">
-                    <!-- Event 1: Creation -->
-                    <div class="relative">
-                        <span class="absolute -left-[31px] top-0 w-4 h-4 bg-accent-blue rounded-full border-4 border-surface shadow-[0_0_8px_#3b82f6]"></span>
-                        <div class="flex justify-between items-start">
-                            <span class="font-bold text-white">Case Opened</span>
-                            <span class="text-[10px] text-muted font-mono">{{ case.created_at[:16].replace('T', ' ') }}</span>
-                        </div>
-                        <p class="text-secondary mt-1">Incident record initialized in SOC database.</p>
-                    </div>
-
-                    <!-- Event 2..N: Notes -->
-                    {% for n in case.notes %}
-                    <div class="relative">
-                        <span class="absolute -left-[31px] top-0 w-4 h-4 rounded-full border-4 border-surface shadow-[0_0_8px_#cbd5e1]"
-                              :class="{
-                                  'bg-accent-yellow shadow-[0_0_8px_#eab308]': '{{ n.note_type }}' === 'investigation',
-                                  'bg-accent-green shadow-[0_0_8px_#22c55e]': '{{ n.note_type }}' === 'resolution',
-                                  'bg-accent-red shadow-[0_0_8px_#dc2626]': '{{ n.note_type }}' === 'escalation',
-                                  'bg-secondary': '{{ n.note_type }}' === 'general'
-                              }"></span>
-                        <div class="flex justify-between items-start">
-                            <span class="font-bold text-white">
-                                {% if n.note_type == 'investigation' %}🕵️ Investigation Logged
-                                {% elif n.note_type == 'resolution' %}✅ Resolution Steps Logged
-                                {% elif n.note_type == 'escalation' %}🚨 Escalation Details Added
-                                {% else %}📝 Note by {{ n.analyst }}
-                                {% endif %}
-                            </span>
-                            <span class="text-[10px] text-muted font-mono">{{ n.created_at[:16].replace('T', ' ') }}</span>
-                        </div>
-                        <p class="text-secondary mt-1 italic">"{{ n.note }}"</p>
-                    </div>
-                    {% endfor %}
-
-                    <!-- Event N+1: Closure -->
-                    {% if case.closed_at %}
-                    <div class="relative">
-                        <span class="absolute -left-[31px] top-0 w-4 h-4 bg-accent-green rounded-full border-4 border-surface shadow-[0_0_8px_#22c55e]"></span>
-                        <div class="flex justify-between items-start">
-                            <span class="font-bold text-white">Case Resolved / Closed</span>
-                            <span class="text-[10px] text-muted font-mono">{{ case.closed_at[:16].replace('T', ' ') }}</span>
-                        </div>
-                        <p class="text-secondary mt-1">Incident ticket flagged completed. Event containment successful.</p>
-                    </div>
-                    {% endif %}
+                <div id="case-timeline"
+                     hx-get="/cases/{{ case.id }}/timeline"
+                     hx-trigger="load"
+                     class="min-h-[100px]">
+                    <div class="text-center py-8 text-muted text-xs">Loading timeline...</div>
                 </div>
             </div>
         </div>
