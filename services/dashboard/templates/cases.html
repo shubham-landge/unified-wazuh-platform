@@ -231,12 +231,8 @@
                 
                 window.addGlobalToast("info", `Updating ${this.selectedCases.length} cases status to ${status}...`);
                 
-                // Since we need to update multiple cases, we can run loop or write special endpoint.
-                // We'll update the first one via HTMX and add a toast to notify.
-                // In production, we'd call a bulk endpoint. Here we'll patch the first and reload to demonstrate.
-                const firstId = this.selectedCases[0];
-                htmx.ajax('PATCH', `/cases/${firstId}`, {
-                    values: { status: status },
+                htmx.ajax('POST', '/cases/bulk-status', {
+                    values: { case_ids: this.selectedCases.join(','), status: status },
                     target: 'body',
                     swap: 'outerHTML'
                 });

@@ -107,4 +107,41 @@ class Settings(BaseSettings):
 
     tenant_id: str = "default"
 
+    # ── Authentication & Authorization ──
+    jwt_secret_key: SecretStr = SecretStr("change-me-in-production-minimum-32-chars")
+    jwt_expiration_hours: int = 24
+    jwt_algorithm: str = "HS256"
+
+    # OIDC configuration (optional SSO)
+    oidc_enabled: bool = False
+    oidc_provider_url: str = ""  # e.g. https://accounts.google.com or https://okta.example.com
+    oidc_client_id: str = ""
+    oidc_client_secret: Optional[SecretStr] = None
+    oidc_redirect_uri: str = "http://localhost:8000/auth/callback"
+    oidc_scopes: str = "openid,profile,email"
+
+    # Alert deduplication
+    alert_dedup_enabled: bool = True
+    alert_correlation_window_minutes: int = 120
+
+    # Report scheduling
+    report_schedule_enabled: bool = True
+    schedule_check_interval_seconds: int = 60
+
+    # ── Feedback Loop (Phase 3B) ──
+    feedback_enabled: bool = True
+    feedback_queue_ttl_hours: int = 720  # 30 days
+
+    # ── Tiered LLM Routing (Phase 3B) ──
+    llm_tier_strategy: str = "auto"  # "fast" | "full" | "auto"
+    llm_tier_fast_provider: str = "ollama"
+    llm_tier_fast_model: str = "qwen2.5-coder:3b"
+    llm_tier_full_provider: str = "ollama"
+    llm_tier_full_model: str = "qwen2.5-coder:7b"
+    llm_tier_level_threshold: int = 10
+    llm_tier_score_threshold: int = 4
+    llm_tier_burst_window_minutes: int = 10
+    llm_tier_known_bad_ips: str = ""  # comma-separated
+    llm_tier_complex_techniques: str = "T1569.002,T1059.001,T1021.001,T1485,T1490"  # lateral movement, ransomware, etc.
+
 settings = Settings()
