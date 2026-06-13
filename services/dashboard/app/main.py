@@ -23,6 +23,40 @@ def get_store():
     except Exception:
         return {"channels": [], "rules": [], "events": [], "playbooks": [], "playbook_runs": [], "feeds": []}
 
+
+async def get_tenant_context(token: str):
+    """Fetch tenant context from the API based on session token."""
+    import httpx
+    
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        headers = {"X-API-Key": os.getenv("API_KEYS", "soc-key-001").split(",")[0]}
+        # Try to decode JWT token from session to get tenant_id
+        from shared.auth import verify_token
+        tenant_id = None
+        try:
+            # Decode the JWT token from session to get tenant_id
+            user_data = verify_token(token)
+            if user_data and hasattr(user_data, 'tenant_id'):
+                tenant_id = user_data.tenant_id
+        except Exception:
+            pass
+            
+        # If no tenant_id in token, try to get user profile from API
+        if not tenant_id:
+            url = f"{API_BASE}/auth/me"
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 200:
+                user_profile = resp.json()
+                tenant_id = user_profile.get('tenant_id')
+                
+        return {
+            "email": token,
+            "display_name": token.split("@")[0].title(),
+            "role": "admin" if "admin" in token else "analyst",
+            "tenant_id": tenant_id,
+            "tenant_name": None
+        }
+
 def save_store(store_data):
     try:
         with open(STORE_PATH, "w") as f:
@@ -38,19 +72,34 @@ async def add_user_to_template_context(request: Request, call_next):
     token = request.cookies.get("session_token")
     current_user = None
     if token:
-        current_user = {
-            "email": token,
-            "display_name": token.split("@")[0].title(),
-            "role": "admin" if "admin" in token else "analyst",
-            "last_login": datetime.now().isoformat()
-        }
+        # Get full user context including tenant_id from API
+        try:
+            import asyncio
+            current_user = await get_tenant_context(token)
+        except Exception:
+            # Fallback to basic user info
+            current_user = {
+                "email": token,
+                "display_name": token.split("@")[0].title(),
+                "role": "admin" if "admin" in token else "analyst",
+                "tenant_id": None,
+                "tenant_name": None,
+                "last_login": datetime.now().isoformat()
+            }
+    
     request.state.current_user = current_user
+    request.state.tenant_id = current_user.get("tenant_id") if current_user else None
     templates.env.globals["current_user"] = current_user
+    templates.env.globals["tenant_id"] = current_user.get("tenant_id") if current_user else None
     
     pending_count = 0
     if token:
         try:
-            res = await api_request("GET", "/approvals/pending")
+            # Use tenant-aware endpoint if tenant_id is available
+            if hasattr(request.state, 'tenant_id') and request.state.tenant_id:
+                res = await api_request("GET", f"/approvals/pending?tenant_id={request.state.tenant_id}")
+            else:
+                res = await api_request("GET", "/approvals/pending")
             pending_count = res.get("count", 0)
         except Exception:
             pass
@@ -70,10 +119,23 @@ async def api_request(method: str, path: str, json_data: dict = None, data: dict
     if request:
         token = request.cookies.get("session_token")
         if token:
+            # Extract tenant_id from JWT token if present in session
+            tenant_id = None
+            if hasattr(request.state, 'user') and request.state.user:
+                tenant_id = getattr(request.state.user, 'tenant_id', None)
+            
             from shared.auth import create_access_token
             role = "admin" if "admin" in token else "analyst"
-            jwt_token = create_access_token(user_id=token, email=token, role=role)
+            jwt_token = create_access_token(
+                user_id=token, 
+                email=token, 
+                role=role,
+                tenant_id=tenant_id
+            )
             headers["Authorization"] = f"Bearer {jwt_token}"
+            # Also include X-Tenant-ID header for compatibility
+            if tenant_id:
+                headers["X-Tenant-ID"] = tenant_id
     async with httpx.AsyncClient(timeout=10.0) as client:
         url = f"{API_BASE}{path}"
         if method.upper() == "GET":
@@ -973,11 +1035,85 @@ async def login_submit(request: Request):
     # Check credentials
     if email == "admin@company.com" and password == "admin123":
         resp = RedirectResponse("/", status_code=303)
-        resp.set_cookie("session_token", email, httponly=True)
+        # For admin users, we can also fetch tenant context
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                headers = {"X-API-Key": os.getenv("API_KEYS", "soc-key-001").split(",")[0]}
+                # Try to decode JWT or get user profile
+                from shared.auth import verify_token, create_access_token
+                tenant_id = None
+                try:
+                    # Try to decode token if we had one
+                    user_data = verify_token(email)
+                    if user_data and hasattr(user_data, 'tenant_id'):
+                        tenant_id = user_data.tenant_id
+                except Exception:
+                    pass
+                
+                if not tenant_id:
+                    # Get user profile from API to get tenant_id
+                    url = f"{API_BASE}/auth/me"
+                    user_resp = await client.get(url, headers=headers)
+                    if user_resp.status_code == 200:
+                        user_profile = user_resp.json()
+                        tenant_id = user_profile.get('tenant_id')
+                
+                # Create JWT with tenant_id
+                jwt_token = create_access_token(
+                    user_id=email,
+                    email=email,
+                    role="admin",
+                    tenant_id=tenant_id
+                )
+                
+                # Store tenant context in session cookie
+                session_data = json.dumps({
+                    "user_id": email,
+                    "email": email,
+                    "role": "admin",
+                    "tenant_id": tenant_id
+                })
+                resp.set_cookie("session_token", session_data, httponly=True)
+        except Exception:
+            # Fallback to simple email token
+            resp.set_cookie("session_token", email, httponly=True)
         return resp
     elif email == "analyst@company.com" and password == "analyst123":
         resp = RedirectResponse("/", status_code=303)
-        resp.set_cookie("session_token", email, httponly=True)
+        # For analyst users, fetch tenant context
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                headers = {"X-API-Key": os.getenv("API_KEYS", "soc-key-001").split(",")[0]}
+                # Try to get user profile from API
+                from shared.auth import create_access_token
+                tenant_id = None
+                url = f"{API_BASE}/auth/me"
+                user_resp = await client.get(url, headers=headers)
+                if user_resp.status_code == 200:
+                    user_profile = user_resp.json()
+                    tenant_id = user_profile.get('tenant_id')
+                
+                # Create JWT with tenant_id
+                jwt_token = create_access_token(
+                    user_id=email,
+                    email=email,
+                    role="analyst",
+                    tenant_id=tenant_id
+                )
+                
+                # Store tenant context in session cookie
+                session_data = json.dumps({
+                    "user_id": email,
+                    "email": email,
+                    "role": "analyst",
+                    "tenant_id": tenant_id
+                })
+                resp.set_cookie("session_token", session_data, httponly=True)
+        except Exception:
+            # Fallback to simple email token
+            resp.set_cookie("session_token", email, httponly=True)
         return resp
     else:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid email or password credentials."})
@@ -996,12 +1132,28 @@ async def profile_page(request: Request):
     if not token:
         return RedirectResponse("/login", status_code=303)
         
-    current_user = {
-        "email": token,
-        "display_name": token.split("@")[0].title(),
-        "role": "admin" if "admin" in token else "analyst",
-        "last_login": datetime.now().isoformat()
-    }
+    # Try to parse session cookie to get tenant context
+    current_user = None
+    try:
+        import json
+        session_data = json.loads(token)
+        current_user = {
+            "email": session_data.get("email", session_data.get("user_id", token)),
+            "display_name": session_data.get("email", token).split("@")[0].title(),
+            "role": session_data.get("role", "admin" if "admin" in token else "analyst"),
+            "tenant_id": session_data.get("tenant_id"),
+            "last_login": datetime.now().isoformat()
+        }
+    except Exception:
+        # Fallback to simple token parsing
+        current_user = {
+            "email": token,
+            "display_name": token.split("@")[0].title(),
+            "role": "admin" if "admin" in token else "analyst",
+            "tenant_id": None,
+            "last_login": datetime.now().isoformat()
+        }
+    
     return templates.TemplateResponse("profile.html", {
         "request": request,
         "user": current_user,
@@ -1031,12 +1183,27 @@ async def users_directory(request: Request):
     if not token or "admin" not in token:
         return RedirectResponse("/login", status_code=303)
         
-    current_user = {
-        "email": token,
-        "display_name": token.split("@")[0].title(),
-        "role": "admin",
-        "last_login": datetime.now().isoformat()
-    }
+    # Parse session data to get tenant context
+    current_user = None
+    try:
+        import json
+        session_data = json.loads(token)
+        current_user = {
+            "email": session_data.get("email", session_data.get("user_id", token)),
+            "display_name": session_data.get("email", token).split("@")[0].title(),
+            "role": "admin",
+            "tenant_id": session_data.get("tenant_id"),
+            "last_login": datetime.now().isoformat()
+        }
+    except Exception:
+        # Fallback to simple token parsing
+        current_user = {
+            "email": token,
+            "display_name": token.split("@")[0].title(),
+            "role": "admin",
+            "tenant_id": None,
+            "last_login": datetime.now().isoformat()
+        }
     
     store = get_store()
     users_list = store.get("users", [])
@@ -1350,11 +1517,27 @@ async def approvals_dashboard(request: Request):
     token = request.cookies.get("session_token")
     if not token:
         return RedirectResponse("/login", status_code=303)
-    current_user = {
-        "email": token,
-        "display_name": token.split("@")[0].title(),
-        "role": "admin" if "admin" in token else "analyst"
-    }
+    
+    # Parse session data to get tenant context
+    current_user = None
+    try:
+        import json
+        session_data = json.loads(token)
+        current_user = {
+            "email": session_data.get("email", session_data.get("user_id", token)),
+            "display_name": session_data.get("email", token).split("@")[0].title(),
+            "role": session_data.get("role", "admin" if "admin" in token else "analyst"),
+            "tenant_id": session_data.get("tenant_id"),
+        }
+    except Exception:
+        # Fallback to simple token parsing
+        current_user = {
+            "email": token,
+            "display_name": token.split("@")[0].title(),
+            "role": "admin" if "admin" in token else "analyst",
+            "tenant_id": None,
+        }
+    
     res = await api_request("GET", "/approvals", request=request)
     approvals_list = res.get("approvals", [])
     return templates.TemplateResponse("approvals.html", {
