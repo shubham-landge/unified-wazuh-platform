@@ -3,14 +3,13 @@ from datetime import datetime, timezone
 from sqlalchemy import String, Integer, DateTime, JSON, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
-from shared.models.base import Base
+from shared.models.base import Base, TenantMixin
 
 
-class AuditLog(Base):
+class AuditLog(Base, TenantMixin):
     __tablename__ = "audit_log"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     action: Mapped[str] = mapped_column(String(255))
     resource_type: Mapped[str] = mapped_column(String(64))
     resource_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

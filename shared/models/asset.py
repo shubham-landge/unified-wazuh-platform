@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Integer, DateTime, JSON, Text, Boolean
+from sqlalchemy import String, DateTime, Boolean, Float, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
-from shared.models.base import Base
+from sqlalchemy.dialects.postgresql import UUID
+from shared.models.base import Base, TenantMixin
 
 
 class Asset(Base):

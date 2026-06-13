@@ -3,14 +3,13 @@ from datetime import datetime, timezone
 from sqlalchemy import String, Integer, DateTime, JSON, Text, BigInteger
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
-from shared.models.base import Base
+from shared.models.base import Base, TenantMixin
 
 
-class Alert(Base):
+class Alert(Base, TenantMixin):
     __tablename__ = "alerts"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     wazuh_alert_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     rule_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rule_description: Mapped[str | None] = mapped_column(Text, nullable=True)

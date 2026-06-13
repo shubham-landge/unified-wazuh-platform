@@ -3,10 +3,10 @@ from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, JSON, Text, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
-from shared.models.base import Base
+from shared.models.base import Base, TenantMixin
 
 
-class AgentDefinition(Base):
+class AgentDefinition(Base, TenantMixin):
     __tablename__ = "agent_definitions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
