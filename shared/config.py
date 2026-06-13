@@ -107,4 +107,25 @@ class Settings(BaseSettings):
 
     tenant_id: str = "default"
 
+    # ── Authentication & Authorization ──
+    jwt_secret_key: SecretStr = SecretStr("change-me-in-production-minimum-32-chars")
+    jwt_expiration_hours: int = 24
+    jwt_algorithm: str = "HS256"
+
+    # OIDC configuration (optional SSO)
+    oidc_enabled: bool = False
+    oidc_provider_url: str = ""  # e.g. https://accounts.google.com or https://okta.example.com
+    oidc_client_id: str = ""
+    oidc_client_secret: Optional[SecretStr] = None
+    oidc_redirect_uri: str = "http://localhost:8000/auth/callback"
+    oidc_scopes: str = "openid,profile,email"
+
+    # Alert deduplication
+    alert_dedup_enabled: bool = True
+    alert_correlation_window_minutes: int = 120
+
+    # Report scheduling
+    report_schedule_enabled: bool = True
+    schedule_check_interval_seconds: int = 60
+
 settings = Settings()
