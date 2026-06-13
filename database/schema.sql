@@ -192,7 +192,7 @@ CREATE TABLE vulnerabilities (
     cvss_score DECIMAL(3,1),
     severity TEXT CHECK (severity IN ('none','low','medium','high','critical')),
     epss_score DECIMAL(5,4),
-    cisa_kev BOOLEAN DEFAULT FALSE,
+    cisa_kev BOOLEAN,
     exploitability TEXT,
     package_name TEXT,
     package_version TEXT,
@@ -221,6 +221,207 @@ CREATE INDEX idx_vuln_status ON vulnerabilities(status);
 CREATE INDEX idx_vuln_risk ON vulnerabilities(risk_score DESC);
 CREATE INDEX idx_vuln_sla ON vulnerabilities(patch_sla) WHERE status NOT IN ('patched','verified','false_positive');
 CREATE INDEX idx_vuln_tenant ON vulnerabilities(tenant_id);
+
+-- ─── Generated Reports ───
+CREATE TABLE reports (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    report_type TEXT NOT NULL CHECK (report_type IN ('executive','vulnerability','case','compliance')),
+    format TEXT NOT NULL CHECK (format IN ('PDF','HTML','JSON')),
+    parameters JSONB NOT NULL DEFAULT '{}',
+    file_path TEXT,
+    file_size BIGINT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','generating','completed','failed')),
+    error_message TEXT,
+    created_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ
+);
+CREATE INDEX idx_reports_tenant ON reports(tenant_id);
+CREATE INDEX idx_reports_type ON reports(report_type);
+CREATE INDEX idx_reports_status ON reports(status);
+CREATE INDEX idx_reports_created_at ON reports(created_at DESC);
+
+-- ─── Notifications ───
+CREATE TABLE notification_channels (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    channel_type TEXT NOT NULL,
+    destination TEXT NOT NULL,
+    config JSONB DEFAULT '{}',
+    severity_filter TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_notification_channels_tenant ON notification_channels(tenant_id);
+CREATE INDEX idx_notification_channels_active ON notification_channels(is_active);
+
+CREATE TABLE notification_rules (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    channel_id UUID REFERENCES notification_channels(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    severity TEXT,
+    conditions JSONB DEFAULT '{}',
+    is_enabled BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_notification_rules_tenant ON notification_rules(tenant_id);
+CREATE INDEX idx_notification_rules_channel ON notification_rules(channel_id);
+CREATE INDEX idx_notification_rules_enabled ON notification_rules(is_enabled);
+
+CREATE TABLE notification_events (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    rule_id UUID REFERENCES notification_rules(id) ON DELETE SET NULL,
+    channel_id UUID REFERENCES notification_channels(id) ON DELETE SET NULL,
+    event_type TEXT NOT NULL,
+    payload JSONB DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'pending',
+    error_message TEXT,
+    sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_notification_events_tenant ON notification_events(tenant_id);
+CREATE INDEX idx_notification_events_rule ON notification_events(rule_id);
+CREATE INDEX idx_notification_events_channel ON notification_events(channel_id);
+CREATE INDEX idx_notification_events_created ON notification_events(created_at DESC);
+
+-- ─── SOAR ───
+CREATE TABLE soar_playbooks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    trigger_type TEXT NOT NULL,
+    steps JSONB DEFAULT '[]',
+    enabled BOOLEAN DEFAULT TRUE,
+    created_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_soar_playbooks_tenant ON soar_playbooks(tenant_id);
+CREATE INDEX idx_soar_playbooks_enabled ON soar_playbooks(enabled);
+
+CREATE TABLE soar_tasks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    playbook_id UUID REFERENCES soar_playbooks(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    task_type TEXT NOT NULL,
+    parameters JSONB DEFAULT '{}',
+    order_index INTEGER DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_soar_tasks_tenant ON soar_tasks(tenant_id);
+CREATE INDEX idx_soar_tasks_playbook ON soar_tasks(playbook_id);
+CREATE INDEX idx_soar_tasks_status ON soar_tasks(status);
+
+CREATE TABLE soar_executions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    playbook_id UUID REFERENCES soar_playbooks(id) ON DELETE SET NULL,
+    task_id UUID REFERENCES soar_tasks(id) ON DELETE SET NULL,
+    alert_id UUID REFERENCES alerts(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    triggered_by TEXT,
+    result JSONB DEFAULT '{}',
+    error_message TEXT,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_soar_executions_tenant ON soar_executions(tenant_id);
+CREATE INDEX idx_soar_executions_playbook ON soar_executions(playbook_id);
+CREATE INDEX idx_soar_executions_task ON soar_executions(task_id);
+CREATE INDEX idx_soar_executions_status ON soar_executions(status);
+
+-- ─── Threat Intel ───
+CREATE TABLE threat_intel_feeds (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    feed_type TEXT NOT NULL,
+    refresh_interval_minutes INTEGER NOT NULL DEFAULT 60,
+    parser_config JSONB DEFAULT '{}',
+    last_fetched_at TIMESTAMPTZ,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_threat_feeds_tenant ON threat_intel_feeds(tenant_id);
+CREATE INDEX idx_threat_feeds_active ON threat_intel_feeds(is_active);
+
+CREATE TABLE threat_intel_indicators (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    feed_id UUID REFERENCES threat_intel_feeds(id) ON DELETE SET NULL,
+    indicator_type TEXT NOT NULL,
+    value TEXT NOT NULL,
+    confidence DECIMAL(3,2),
+    severity TEXT,
+    context JSONB DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'active',
+    first_seen_at TIMESTAMPTZ,
+    last_seen_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_threat_indicators_tenant ON threat_intel_indicators(tenant_id);
+CREATE INDEX idx_threat_indicators_feed ON threat_intel_indicators(feed_id);
+CREATE INDEX idx_threat_indicators_type ON threat_intel_indicators(indicator_type);
+CREATE INDEX idx_threat_indicators_status ON threat_intel_indicators(status);
+CREATE INDEX idx_threat_indicators_expires ON threat_intel_indicators(expires_at);
+
+-- ─── UEBA ───
+CREATE TABLE ueba_baselines (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    subject_type TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    metric_name TEXT NOT NULL,
+    baseline_value DOUBLE PRECISION,
+    stddev DOUBLE PRECISION,
+    window_days INTEGER DEFAULT 30,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_ueba_baselines_tenant ON ueba_baselines(tenant_id);
+CREATE INDEX idx_ueba_baselines_subject ON ueba_baselines(subject_type, subject_id);
+CREATE INDEX idx_ueba_baselines_metric ON ueba_baselines(metric_name);
+
+CREATE TABLE ueba_anomalies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    baseline_id UUID REFERENCES ueba_baselines(id) ON DELETE SET NULL,
+    subject_type TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    anomaly_type TEXT NOT NULL,
+    score DOUBLE PRECISION,
+    severity TEXT,
+    description TEXT,
+    features JSONB DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'new',
+    detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_ueba_anomalies_tenant ON ueba_anomalies(tenant_id);
+CREATE INDEX idx_ueba_anomalies_baseline ON ueba_anomalies(baseline_id);
+CREATE INDEX idx_ueba_anomalies_subject ON ueba_anomalies(subject_type, subject_id);
+CREATE INDEX idx_ueba_anomalies_status ON ueba_anomalies(status);
+CREATE INDEX idx_ueba_anomalies_detected ON ueba_anomalies(detected_at DESC);
 
 -- ─── Audit Log ───
 CREATE TABLE audit_log (
@@ -303,4 +504,32 @@ CREATE TRIGGER trg_cases_updated_at
 
 CREATE TRIGGER trg_vulnerabilities_updated_at
     BEFORE UPDATE ON vulnerabilities FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_notification_channels_updated_at
+    BEFORE UPDATE ON notification_channels FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_notification_rules_updated_at
+    BEFORE UPDATE ON notification_rules FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_soar_playbooks_updated_at
+    BEFORE UPDATE ON soar_playbooks FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_soar_tasks_updated_at
+    BEFORE UPDATE ON soar_tasks FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_threat_intel_feeds_updated_at
+    BEFORE UPDATE ON threat_intel_feeds FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_threat_intel_indicators_updated_at
+    BEFORE UPDATE ON threat_intel_indicators FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_ueba_baselines_updated_at
+    BEFORE UPDATE ON ueba_baselines FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();

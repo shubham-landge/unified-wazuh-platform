@@ -1,6 +1,9 @@
 import asyncio
 import logging
-import importlib
+
+from .poller import AlertPoller
+from .triage_worker import TriageWorker
+from .vulnerability_worker import VulnerabilityWorker
 
 logging.basicConfig(
     level=logging.INFO,
@@ -9,42 +12,46 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def start_worker(module_path: str, class_name: str):
-    module = importlib.import_module(module_path)
-    cls = getattr(module, class_name)
-    instance = cls()
-    await instance.start()
-
-
 async def main():
-    workers = [
-        ("app.poller", "AlertPoller"),
-        ("app.triage_worker", "TriageWorker"),
-    ]
+    poller = AlertPoller()
+    triage_worker = TriageWorker()
+    vulnerability_worker = VulnerabilityWorker()
 
-    # Auto-discover optional workers (e.g., vulnerability_worker from Codex)
-    for extra in ["app.vulnerability_worker"]:
+    workers = [poller, triage_worker, vulnerability_worker]
+
+    # Auto-discover optional future workers
+    for module_name, class_name in [
+        ("app.notification_worker", "NotificationWorker"),
+        ("app.playbook_worker", "PlaybookWorker"),
+        ("app.threat_intel_worker", "ThreatIntelWorker"),
+        ("app.ueba_worker", "UEBAWorker"),
+    ]:
         try:
-            importlib.import_module(extra)
-            workers.append((extra, "VulnerabilityWorker"))
-            logger.info("Discovered optional worker: %s", extra)
+            import importlib
+            module = importlib.import_module(module_name)
+            cls = getattr(module, class_name)
+            workers.append(cls())
+            logger.info("Discovered optional worker: %s", module_name)
         except (ImportError, AttributeError):
             pass
 
-    logger.info("Starting %d workers: %s", len(workers), [w[0] for w in workers])
+    logger.info("Starting %d workers", len(workers))
 
-    tasks = [
-        asyncio.create_task(start_worker(mod, cls), name=mod)
-        for mod, cls in workers
-    ]
+    tasks = [asyncio.create_task(w.start()) for w in workers]
 
     try:
         await asyncio.gather(*tasks)
     except KeyboardInterrupt:
         logger.info("Shutting down workers...")
+    finally:
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        for w in workers:
+            try:
+                await w.stop()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

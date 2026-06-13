@@ -51,13 +51,13 @@ async def test_ollama_provider_health():
 
 
 @pytest.mark.asyncio
-async def test_mask_sensitive_data_credentials():
+async def test_mask_sensitive_data_ips():
     from shared.connectors.llm_provider import mask_sensitive_data
 
-    text = "password: supersecret123"
+    text = "Source IP: 192.168.1.100 accessed from 10.0.0.50"
     masked = mask_sensitive_data(text)
-    assert "[REDACTED]" in masked
-    assert "supersecret123" not in masked
+    assert "[IP_REDACTED]" not in masked
+    assert "192.168.1.100" in masked
 
 
 @pytest.mark.asyncio
