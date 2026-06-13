@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6" x-data="{ loading: false, successMsg: '', errorMsg: '', currentPassword: '', newPassword: '', confirmPassword: '' }">
+    <!-- Page Header -->
+    <div class="flex justify-between items-center mb-2">
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">User Profile Settings</h1>
+            <p class="text-xs text-secondary mt-0.5">Manage your identity details, user permissions, and update credentials.</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Profile details -->
+        <div class="card-premium h-fit space-y-4">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider pb-2 border-b border-white/5 flex items-center gap-2">
+                <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                Identity Details
+            </h3>
+
+            <div class="flex flex-col items-center py-4 space-y-3">
+                <div class="w-16 h-16 bg-accent-blue/15 border-2 border-accent-blue/30 text-accent-blue text-xl font-bold rounded-2xl flex items-center justify-center select-none shadow-[0_0_15px_rgba(59,130,246,0.1)]">
+                    {{ user.display_name[:2].upper() if user.display_name else 'US' }}
+                </div>
+                <div class="text-center">
+                    <h2 class="text-sm font-bold text-white">{{ user.display_name or 'SOC Analyst' }}</h2>
+                    <span class="text-[10px] text-muted">{{ user.email }}</span>
+                </div>
+                <div class="pt-2">
+                    {% if user.role == 'admin' %}
+                    <span class="px-2 py-0.5 bg-accent-red/20 text-red-400 border border-accent-red/30 rounded text-[9px] font-bold uppercase tracking-wider">Administrator</span>
+                    {% elif user.role == 'analyst' %}
+                    <span class="px-2 py-0.5 bg-accent-blue/20 text-blue-400 border border-accent-blue/30 rounded text-[9px] font-bold uppercase tracking-wider">SOC Analyst</span>
+                    {% else %}
+                    <span class="px-2 py-0.5 bg-white/10 text-secondary border border-white/10 rounded text-[9px] font-bold uppercase tracking-wider">Viewer</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="border-t border-white/5 pt-4 space-y-3 text-[10px] text-secondary">
+                <div class="flex justify-between">
+                    <span class="text-muted">Account Status:</span>
+                    <span class="text-accent-green font-bold flex items-center gap-1"><span class="w-1.5 h-1.5 bg-accent-green rounded-full"></span> Active</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-muted">Last Authentication:</span>
+                    <span class="font-mono text-primary">{{ user.last_login[:16].replace('T', ' ') if user.last_login else 'Just Now' }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Change password & profile edit -->
+        <div class="card-premium md:col-span-2 space-y-4">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider pb-2 border-b border-white/5 flex items-center gap-2">
+                <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m-5-3a5 5 0 11-5 5 5 5 0 015-5zM19 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3z"/></svg>
+                Change Authentication Credentials
+            </h3>
+
+            <!-- Message Alerts -->
+            <div x-show="successMsg" class="p-3 bg-accent-green/15 border border-accent-green/20 text-accent-green rounded-lg text-xs font-semibold" x-text="successMsg"></div>
+            <div x-show="errorMsg" class="p-3 bg-accent-red/15 border border-accent-red/20 text-accent-red rounded-lg text-xs font-semibold" x-text="errorMsg"></div>
+
+            <form @submit.prevent="
+                if (newPassword !== confirmPassword) { errorMsg = 'Passwords do not match!'; return; }
+                loading = true; errorMsg = ''; successMsg = '';
+                const form = new FormData();
+                form.append('current_password', currentPassword);
+                form.append('new_password', newPassword);
+                fetch('/profile/change-password', { method: 'POST', body: form })
+                    .then(r => r.json())
+                    .then(data => {
+                        loading = false;
+                        if (data.status === 'success') {
+                            successMsg = 'Password updated successfully!';
+                            currentPassword = ''; newPassword = ''; confirmPassword = '';
+                        } else {
+                            errorMsg = data.message || 'Failed to update password.';
+                        }
+                    });
+            " class="space-y-4">
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Current Password</label>
+                    <input type="password" x-model="currentPassword" required class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] text-muted font-bold uppercase tracking-wider">New Password</label>
+                        <input type="password" x-model="newPassword" required class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Confirm New Password</label>
+                        <input type="password" x-model="confirmPassword" required class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                    </div>
+                </div>
+
+                <div class="flex justify-end pt-4 border-t border-white/5">
+                    <button type="submit" :disabled="loading" class="px-4 py-2 bg-accent-blue hover:bg-accent-blue/90 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_10px_rgba(59,130,246,0.15)] flex items-center gap-1.5">
+                        <svg x-show="loading" class="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        Update Credentials
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

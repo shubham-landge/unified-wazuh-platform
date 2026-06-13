@@ -1,6 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-5xl mx-auto space-y-6" x-data="{ activeTab: 'wazuh', showKey: false, testSuccess: null, testLoading: false }">
+<div class="max-w-5xl mx-auto space-y-6" x-data="{ activeTab: 'wazuh', showKey: false, testSuccess: null, testLoading: false, testResult: null, testConnector(type) {
+    this.testLoading = type;
+    this.testResult = null;
+    const form = document.getElementById('settings-form');
+    const data = new FormData(form);
+    fetch('/settings/test-connector/' + type, { method: 'POST', body: data })
+        .then(r => r.json())
+        .then(r => {
+            this.testResult = { connector: type, html: r.html };
+            this.testLoading = false;
+        });
+} }">
     <!-- Page Header -->
     <div class="flex justify-between items-center mb-2">
         <div>
@@ -44,6 +55,14 @@
                     :class="activeTab === 'notifications' ? 'bg-accent-blue/15 text-accent-blue border border-accent-blue/15' : 'text-secondary hover:text-white hover:bg-white/5 border border-transparent'">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/></svg>
                 Notifications
+            </button>
+
+            <!-- Threat Intel Tab Button -->
+            <button @click="activeTab = 'threat-intel'" 
+                    class="w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2.5"
+                    :class="activeTab === 'threat-intel' ? 'bg-accent-blue/15 text-accent-blue border border-accent-blue/15' : 'text-secondary hover:text-white hover:bg-white/5 border border-transparent'">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+                Threat Intel
             </button>
         </div>
 
@@ -233,6 +252,104 @@
                     <div class="flex justify-end pt-4 border-t border-white/5">
                         <button type="submit" class="px-4 py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_10px_rgba(59,130,246,0.15)]">
                             Save Notification Rules
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- 5. Threat Intel Tab -->
+            <div x-show="activeTab === 'threat-intel'" class="space-y-4">
+                <div class="flex justify-between items-center border-b border-white/5 pb-3 mb-4">
+                    <div>
+                        <h3 class="text-xs font-bold text-white uppercase tracking-wider">Threat Intelligence Connectors</h3>
+                        <p class="text-[10px] text-muted">Configure external threat intelligence integrations and feed sync intervals.</p>
+                    </div>
+                </div>
+
+                <form id="settings-form" hx-post="/settings" hx-target="body" hx-swap="outerHTML" class="space-y-4">
+                    <input type="hidden" name="api_key" value="{{ settings.api_key }}">
+                    <input type="hidden" name="wazuh_host" value="{{ settings.wazuh_host }}">
+                    <input type="hidden" name="ollama_model" value="{{ settings.ollama_model }}">
+                    <input type="hidden" name="auto_triage" value="{{ settings.auto_triage }}">
+                    <input type="hidden" name="retention_days" value="{{ settings.retention_days }}">
+                    <input type="hidden" name="sync_interval" value="{{ settings.sync_interval }}">
+
+                    <!-- OTX Section -->
+                    <div class="card-premium">
+                        <h3 class="text-xs font-bold text-white flex items-center gap-2 mb-4">
+                            <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+                            AlienVault OTX
+                        </h3>
+                        <div class="grid grid-cols-1 gap-4">
+                            <div>
+                                <label class="text-[10px] text-muted font-bold uppercase tracking-wider">API Key</label>
+                                <div class="flex gap-2 mt-1">
+                                    <input type="password" name="otx_api_key" value="{{ settings.otx_api_key or '' }}" placeholder="API key for AlienVault OTX" class="flex-1 bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                                    <button type="button" @click="testConnector('otx')" :disabled="testLoading === 'otx'" class="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-1">
+                                        <svg x-show="testLoading === 'otx'" class="animate-spin h-3 w-3 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                        Test
+                                    </button>
+                                </div>
+                                <div x-show="testResult?.connector === 'otx'" x-html="testResult?.html" class="mt-2 text-xs font-semibold"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MISP Section -->
+                    <div class="card-premium">
+                        <h3 class="text-xs font-bold text-white flex items-center gap-2 mb-4 font-bold">MISP</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Server URL</label>
+                                <input type="url" name="misp_url" value="{{ settings.misp_url or '' }}" placeholder="https://misp.local" class="w-full bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none mt-1">
+                            </div>
+                            <div>
+                                <label class="text-[10px] text-muted font-bold uppercase tracking-wider">API Key</label>
+                                <div class="flex gap-2 mt-1">
+                                    <input type="password" name="misp_api_key" value="{{ settings.misp_api_key or '' }}" placeholder="API key for MISP" class="flex-1 bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                                    <button type="button" @click="testConnector('misp')" :disabled="testLoading === 'misp'" class="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-1">
+                                        <svg x-show="testLoading === 'misp'" class="animate-spin h-3 w-3 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                        Test
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 mt-2">
+                                <input type="checkbox" name="misp_verify_ssl" value="true" id="misp_verify_ssl" {% if settings.misp_verify_ssl != false %}checked{% endif %} class="rounded border-white/10 bg-deep text-accent-blue focus:ring-0">
+                                <label for="misp_verify_ssl" class="text-xs text-secondary cursor-pointer hover:text-white">Verify SSL certificate</label>
+                            </div>
+                        </div>
+                        <div x-show="testResult?.connector === 'misp'" x-html="testResult?.html" class="mt-2 text-xs font-semibold"></div>
+                    </div>
+
+                    <!-- VirusTotal Section -->
+                    <div class="card-premium">
+                        <h3 class="text-xs font-bold text-white flex items-center gap-2 mb-4 font-bold">VirusTotal</h3>
+                        <div>
+                            <label class="text-[10px] text-muted font-bold uppercase tracking-wider">API Key</label>
+                            <div class="flex gap-2 mt-1">
+                                <input type="password" name="virustotal_api_key" value="{{ settings.virustotal_api_key or '' }}" placeholder="API key for VirusTotal" class="flex-1 bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                                <button type="button" @click="testConnector('virustotal')" :disabled="testLoading === 'virustotal'" class="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-1">
+                                    <svg x-show="testLoading === 'virustotal'" class="animate-spin h-3 w-3 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                    Test
+                                </button>
+                            </div>
+                            <div x-show="testResult?.connector === 'virustotal'" x-html="testResult?.html" class="mt-2 text-xs font-semibold"></div>
+                        </div>
+                    </div>
+
+                    <!-- Feed Poll Interval -->
+                    <div class="card-premium">
+                        <h3 class="text-xs font-bold text-white flex items-center gap-2 mb-4 font-bold">Feed Polling</h3>
+                        <div>
+                            <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Poll Interval (seconds)</label>
+                            <input type="number" name="ti_feed_poll_interval_seconds" value="{{ settings.ti_feed_poll_interval_seconds or 3600 }}" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none w-40 mt-1">
+                            <p class="text-[10px] text-muted mt-1.5">How often the threat intel worker polls OTX and MISP for new indicators.</p>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end pt-4 border-t border-white/5">
+                        <button type="submit" class="px-4 py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_10px_rgba(59,130,246,0.15)]">
+                            Save Threat Intel settings
                         </button>
                     </div>
                 </form>
