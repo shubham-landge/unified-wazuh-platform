@@ -346,12 +346,28 @@ async def settings_page(request: Request):
         "ollama_model": "llama3",
         "auto_triage": "enabled",
         "retention_days": "90",
-        "sync_interval": "60"
+        "sync_interval": "60",
+        "otx_api_key": os.getenv("OTX_API_KEY", ""),
+        "misp_url": os.getenv("MISP_URL", ""),
+        "misp_api_key": os.getenv("MISP_API_KEY", ""),
+        "misp_verify_ssl": os.getenv("MISP_VERIFY_SSL", "true").lower() == "true",
+        "virustotal_api_key": os.getenv("VIRUSTOTAL_API_KEY", ""),
+        "ti_feed_poll_interval_seconds": int(os.getenv("TI_FEED_POLL_INTERVAL_SECONDS", "3600"))
     }
     if os.path.exists(settings_path):
         try:
             with open(settings_path, "r") as f:
-                local_settings.update(json.load(f))
+                loaded = json.load(f)
+                # Convert types if needed
+                if "misp_verify_ssl" in loaded:
+                    if isinstance(loaded["misp_verify_ssl"], str):
+                        loaded["misp_verify_ssl"] = loaded["misp_verify_ssl"].lower() == "true"
+                if "ti_feed_poll_interval_seconds" in loaded:
+                    try:
+                        loaded["ti_feed_poll_interval_seconds"] = int(loaded["ti_feed_poll_interval_seconds"])
+                    except ValueError:
+                        pass
+                local_settings.update(loaded)
         except Exception:
             pass
             
@@ -367,6 +383,18 @@ async def save_settings(request: Request):
     form_data = await request.form()
     new_settings = {k: v for k, v in form_data.items()}
     
+    # Handle checkboxes or other boolean conversions if they are in form_data
+    if "misp_verify_ssl" in new_settings:
+        new_settings["misp_verify_ssl"] = new_settings["misp_verify_ssl"].lower() == "true" or new_settings["misp_verify_ssl"] == "on"
+    else:
+        new_settings["misp_verify_ssl"] = False
+
+    if "ti_feed_poll_interval_seconds" in new_settings:
+        try:
+            new_settings["ti_feed_poll_interval_seconds"] = int(new_settings["ti_feed_poll_interval_seconds"])
+        except ValueError:
+            pass
+    
     settings_path = "app/settings.json"
     try:
         with open(settings_path, "w") as f:
@@ -380,6 +408,51 @@ async def save_settings(request: Request):
         "page": "settings",
         "toast": {"type": "success", "message": "Settings updated successfully"}
     })
+
+
+@app.post("/settings/test-connector/{connector_name}")
+async def test_connector(connector_name: str, request: Request):
+    form_data = await request.form()
+    
+    try:
+        if connector_name == "otx":
+            from shared.connectors.ti_alienvault import AlienVaultOTXConnector
+            api_key = form_data.get("otx_api_key", "").strip()
+            connector = AlienVaultOTXConnector(api_key=api_key)
+            res = await connector.health()
+            if res.get("connected"):
+                html = f'<span class="text-accent-green">✅ Connection successful! (User: {res.get("username", "Unknown")})</span>'
+            else:
+                html = f'<span class="text-accent-red">❌ Connection failed: {res.get("error", "Unknown error")}</span>'
+                
+        elif connector_name == "misp":
+            from shared.connectors.ti_misp import MISPConnector
+            url = form_data.get("misp_url", "").strip()
+            api_key = form_data.get("misp_api_key", "").strip()
+            verify_ssl = form_data.get("misp_verify_ssl") in ("true", "on", "True")
+            connector = MISPConnector(base_url=url, api_key=api_key)
+            connector.verify_ssl = verify_ssl
+            res = await connector.health()
+            if res.get("connected"):
+                html = f'<span class="text-accent-green">✅ Connection successful! (Version: {res.get("version", "Unknown")})</span>'
+            else:
+                html = f'<span class="text-accent-red">❌ Connection failed: {res.get("error", "Unknown error")}</span>'
+                
+        elif connector_name == "virustotal":
+            from shared.connectors.ti_virustotal import VirusTotalConnector
+            api_key = form_data.get("virustotal_api_key", "").strip()
+            connector = VirusTotalConnector(api_key=api_key)
+            res = await connector.health()
+            if res.get("connected"):
+                html = '<span class="text-accent-green">✅ Connection successful!</span>'
+            else:
+                html = f'<span class="text-accent-red">❌ Connection failed: {res.get("error", "Unknown error")}</span>'
+        else:
+            html = '<span class="text-accent-red">❌ Invalid connector type</span>'
+    except Exception as e:
+        html = f'<span class="text-accent-red">❌ Error: {str(e)}</span>'
+        
+    return JSONResponse({"html": html})
 
 
 @app.get("/landing", response_class=HTMLResponse)
@@ -649,12 +722,21 @@ async def health_page(request: Request):
     wazuh_health = await api_request("GET", "/wazuh/health")
     model_status = await api_request("GET", "/model/status")
     db_health = await api_request("GET", "/health")
+    full_health = await api_request("GET", "/health/full")
+    services = full_health.get("services", {})
+    
+    ti_health = {
+        "otx": services.get("otx", {"connected": False, "error": "Not configured"}),
+        "misp": services.get("misp", {"connected": False, "error": "Not configured"}),
+        "virustotal": services.get("virustotal", {"connected": False, "error": "Not configured"})
+    }
     
     return templates.TemplateResponse("health.html", {
         "request": request,
         "wazuh": wazuh_health,
         "model": model_status,
         "db": db_health,
+        "ti_health": ti_health,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "page": "health"
     })
@@ -665,12 +747,21 @@ async def health_status_partial(request: Request):
     wazuh_health = await api_request("GET", "/wazuh/health")
     model_status = await api_request("GET", "/model/status")
     db_health = await api_request("GET", "/health")
+    full_health = await api_request("GET", "/health/full")
+    services = full_health.get("services", {})
+    
+    ti_health = {
+        "otx": services.get("otx", {"connected": False, "error": "Not configured"}),
+        "misp": services.get("misp", {"connected": False, "error": "Not configured"}),
+        "virustotal": services.get("virustotal", {"connected": False, "error": "Not configured"})
+    }
     
     return templates.TemplateResponse("health_grid.html", {
         "request": request,
         "wazuh": wazuh_health,
         "model": model_status,
         "db": db_health,
+        "ti_health": ti_health,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
 

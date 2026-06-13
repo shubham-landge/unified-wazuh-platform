@@ -162,4 +162,88 @@
             Last checked: {{ timestamp }}
         </div>
     </div>
+
+    <!-- 7. AlienVault OTX Threat Intel Connector -->
+    <div class="card-premium flex flex-col justify-between" style="border-left: 4px solid {% if ti_health.otx.connected %}#22c55e{% else %}#ef4444{% endif %};">
+        <div class="space-y-3">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h4 class="text-xs font-bold text-white uppercase tracking-wider">AlienVault OTX</h4>
+                    <span class="text-[9px] text-muted font-mono">otx.alienvault.com</span>
+                </div>
+                <span class="badge-dot badge-dot-{% if ti_health.otx.connected %}open{% else %}critical{% endif %}">
+                    {% if ti_health.otx.connected %}CONNECTED{% else %}DISCONNECTED{% endif %}
+                </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-[10px] pt-1">
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">User Account</span>
+                    <span class="text-primary font-semibold block mt-0.5 truncate max-w-[100px]">{{ ti_health.otx.username or 'N/A' }}</span>
+                </div>
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Error Details</span>
+                    <span class="text-primary font-semibold block mt-0.5 truncate max-w-[100px]" title="{{ ti_health.otx.error or 'None' }}">{{ ti_health.otx.error or 'None' }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="text-[9px] text-muted border-t border-white/5 pt-3 mt-4">
+            Last checked: {{ timestamp }}
+        </div>
+    </div>
+
+    <!-- 8. MISP Threat Intel Connector -->
+    <div class="card-premium flex flex-col justify-between" style="border-left: 4px solid {% if ti_health.misp.connected %}#22c55e{% else %}#ef4444{% endif %};">
+        <div class="space-y-3">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h4 class="text-xs font-bold text-white uppercase tracking-wider">MISP Platform</h4>
+                    <span class="text-[9px] text-muted font-mono">misp:80</span>
+                </div>
+                <span class="badge-dot badge-dot-{% if ti_health.misp.connected %}open{% else %}critical{% endif %}">
+                    {% if ti_health.misp.connected %}CONNECTED{% else %}DISCONNECTED{% endif %}
+                </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-[10px] pt-1">
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Version</span>
+                    <span class="text-primary font-semibold block mt-0.5">{{ ti_health.misp.version or 'N/A' }}</span>
+                </div>
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Error Details</span>
+                    <span class="text-primary font-semibold block mt-0.5 truncate max-w-[100px]" title="{{ ti_health.misp.error or 'None' }}">{{ ti_health.misp.error or 'None' }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="text-[9px] text-muted border-t border-white/5 pt-3 mt-4">
+            Last checked: {{ timestamp }}
+        </div>
+    </div>
+
+    <!-- 9. VirusTotal Threat Intel Connector -->
+    <div class="card-premium flex flex-col justify-between" style="border-left: 4px solid {% if ti_health.virustotal.connected %}#22c55e{% else %}#ef4444{% endif %};">
+        <div class="space-y-3">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h4 class="text-xs font-bold text-white uppercase tracking-wider">VirusTotal</h4>
+                    <span class="text-[9px] text-muted font-mono">virustotal.com</span>
+                </div>
+                <span class="badge-dot badge-dot-{% if ti_health.virustotal.connected %}open{% else %}critical{% endif %}">
+                    {% if ti_health.virustotal.connected %}CONNECTED{% else %}DISCONNECTED{% endif %}
+                </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-[10px] pt-1">
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Status</span>
+                    <span class="text-primary font-semibold block mt-0.5">{% if ti_health.virustotal.connected %}Active{% else %}Inactive{% endif %}</span>
+                </div>
+                <div>
+                    <span class="text-muted block font-bold uppercase tracking-wider">Error Details</span>
+                    <span class="text-primary font-semibold block mt-0.5 truncate max-w-[100px]" title="{{ ti_health.virustotal.error or 'None' }}">{{ ti_health.virustotal.error or 'None' }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="text-[9px] text-muted border-t border-white/5 pt-3 mt-4">
+            Last checked: {{ timestamp }}
+        </div>
+    </div>
 </div>
