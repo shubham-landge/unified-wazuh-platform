@@ -24,6 +24,10 @@ from app.routers import (
     threat_intel,
     ueba,
     users,
+    compliance,
+    rag,
+    agents,
+    ticketing,
 )
 
 logging.basicConfig(
@@ -76,3 +80,7 @@ app.include_router(soar.router)
 app.include_router(threat_intel.router)
 app.include_router(ueba.router)
 app.include_router(users.router)
+app.include_router(compliance.router)
+app.include_router(rag.router)
+app.include_router(agents.router)
+app.include_router(ticketing.router)

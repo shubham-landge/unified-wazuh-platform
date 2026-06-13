@@ -650,20 +650,41 @@ async def test_channel(request: Request, channel_id: str):
 
 
 @app.get("/compliance", response_class=HTMLResponse)
-async def compliance_page(request: Request, framework: str = "soc2"):
-    alerts_data = await api_request("GET", "/alerts/recent?limit=100")
-    vulns_data = await api_request("GET", "/vulnerabilities?limit=100")
-    
-    alerts = alerts_data.get("alerts", [])
-    vulnerabilities = vulns_data.get("vulnerabilities", [])
-    
+async def compliance_page(request: Request, framework: str | None = None):
+    frameworks_data = await api_request("GET", "/compliance/frameworks")
+    frameworks = frameworks_data.get("frameworks", [])
+
+    target_fw = framework
+    if not target_fw and frameworks:
+        target_fw = frameworks[0]["id"]
+
+    score_data = {"score": {"total_controls": 0, "compliant": 0, "warnings": 0, "breaches": 0, "score": 0, "controls": []}}
+    if target_fw:
+        score_data = await api_request("GET", f"/compliance/frameworks/{target_fw}/score")
+
     return templates.TemplateResponse("compliance.html", {
         "request": request,
-        "alerts": alerts,
-        "vulnerabilities": vulnerabilities,
-        "framework": framework.lower(),
+        "frameworks": frameworks,
+        "score": score_data.get("score", {}),
+        "framework": target_fw or "",
         "page": "compliance"
     })
+
+
+@app.get("/compliance/score/{framework_id}")
+async def compliance_score_proxy(framework_id: str, request: Request):
+    data = await api_request("GET", f"/compliance/frameworks/{framework_id}/score")
+    return JSONResponse(data)
+
+
+@app.post("/compliance/exceptions")
+async def create_exception(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"status": "error", "message": "Invalid JSON"}, status_code=400)
+    result = await api_request("POST", "/compliance/exceptions", json_data=payload)
+    return JSONResponse(result)
 
 
 @app.get("/playbooks", response_class=HTMLResponse)
@@ -1176,13 +1197,11 @@ async def feedback_analytics(request: Request):
     store = get_store()
     items = store.get("feedback", [])
     
-    # Calculate stats
     total_count = len(items)
     helpful_count = sum(1 for i in items if i.get("rating") == "helpful")
     accuracy_rate = helpful_count / total_count if total_count > 0 else 1.0
     corrected_count = sum(1 for i in items if i.get("corrected_category") or i.get("corrected_severity"))
     
-    # Top corrected category
     cat_counts = {}
     for i in items:
         cat = i.get("corrected_category")
@@ -1200,6 +1219,64 @@ async def feedback_analytics(request: Request):
         "accuracy_rate": accuracy_rate,
         "corrected_count": corrected_count,
         "top_corrected_category": top_corrected
+    })
+
+
+# --- RAG Knowledge Base ---
+
+@app.get("/knowledge", response_class=HTMLResponse)
+async def knowledge_base(request: Request, source: str = "", limit: int = 50):
+    params = f"?limit={limit}"
+    if source:
+        params += f"&source={source}"
+    data = await api_request("GET", f"/rag/knowledge{params}")
+    sources_data = await api_request("GET", "/rag/knowledge?limit=200")
+    unique_sources = sorted(set(c.get("source", "") for c in sources_data.get("chunks", [])))
+    return templates.TemplateResponse("knowledge.html", {
+        "request": request,
+        "chunks": data.get("chunks", []),
+        "sources": unique_sources,
+        "page": "knowledge",
+    })
+
+
+# --- Ticketing Settings ---
+
+@app.get("/ticketing", response_class=HTMLResponse)
+async def ticketing_page(request: Request):
+    configs = await api_request("GET", "/ticketing/config")
+    return templates.TemplateResponse("ticketing.html", {
+        "request": request,
+        "configs": configs.get("configs", []),
+        "page": "ticketing",
+    })
+
+
+@app.get("/agents", response_class=HTMLResponse)
+async def agents_page(request: Request):
+    current_user = request.state.current_user
+    definitions = await api_request("GET", "/agents/definitions?limit=100")
+    runs = await api_request("GET", "/agents/runs?limit=50")
+    return templates.TemplateResponse("agents.html", {
+        "request": request,
+        "definitions": definitions.get("definitions", []),
+        "runs": runs.get("runs", []),
+        "current_user": current_user,
+        "page": "agents",
+    })
+
+
+@app.get("/agents/runs", response_class=HTMLResponse)
+async def agent_runs_page(request: Request):
+    current_user = request.state.current_user
+    runs = await api_request("GET", "/agents/runs?limit=100")
+    return templates.TemplateResponse("agents.html", {
+        "request": request,
+        "definitions": [],
+        "runs": runs.get("runs", []),
+        "current_user": current_user,
+        "page": "agents",
+        "active_tab": "runs",
     })
 
 

@@ -731,6 +731,126 @@ CREATE INDEX idx_feedback_triage ON user_feedback(triage_result_id);
 CREATE INDEX idx_feedback_tenant ON user_feedback(tenant_id);
 CREATE INDEX idx_feedback_created ON user_feedback(created_at DESC);
 
+-- ─── Knowledge Base (RAG vector store) ───
+CREATE TABLE knowledge_chunks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    chunk_text TEXT NOT NULL,
+    embedding vector(768),
+    metadata JSONB DEFAULT '{}',
+    token_count INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_knowledge_source ON knowledge_chunks(source);
+CREATE INDEX idx_knowledge_tenant ON knowledge_chunks(tenant_id);
+CREATE INDEX idx_knowledge_created ON knowledge_chunks(created_at DESC);
+
+-- ─── Compliance Frameworks ───
+CREATE TABLE compliance_frameworks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL DEFAULT '1.0',
+    description TEXT,
+    total_controls INTEGER DEFAULT 0,
+    compliant_controls INTEGER DEFAULT 0,
+    score DECIMAL(5,2) DEFAULT 0.00,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE compliance_controls (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    framework_id UUID NOT NULL REFERENCES compliance_frameworks(id) ON DELETE CASCADE,
+    control_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    category TEXT,
+    severity TEXT CHECK (severity IN ('low','medium','high','critical')),
+    status TEXT NOT NULL DEFAULT 'unknown' CHECK (status IN ('compliant','non_compliant','warning','unknown','not_applicable')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(framework_id, control_id)
+);
+CREATE INDEX idx_controls_framework ON compliance_controls(framework_id);
+CREATE INDEX idx_controls_status ON compliance_controls(status);
+
+CREATE TABLE compliance_mappings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    control_id UUID NOT NULL REFERENCES compliance_controls(id) ON DELETE CASCADE,
+    rule_id INTEGER,
+    rule_level_min INTEGER DEFAULT 0,
+    cve_pattern TEXT,
+    mitre_technique TEXT,
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_mappings_control ON compliance_mappings(control_id);
+CREATE INDEX idx_mappings_rule ON compliance_mappings(rule_id);
+
+CREATE TABLE compliance_exceptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    control_id UUID NOT NULL REFERENCES compliance_controls(id) ON DELETE CASCADE,
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    requested_by UUID,
+    approved_by UUID,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','expired')),
+    duration_days INTEGER DEFAULT 30,
+    expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_exceptions_control ON compliance_exceptions(control_id);
+CREATE INDEX idx_exceptions_status ON compliance_exceptions(status);
+CREATE INDEX idx_exceptions_tenant ON compliance_exceptions(tenant_id);
+
+-- ─── Multi-Agent Orchestration ───
+CREATE TABLE agent_definitions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    agent_type VARCHAR(64) NOT NULL,
+    config JSONB DEFAULT '{}',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_agent_definitions_active ON agent_definitions(is_active) WHERE is_active = TRUE;
+
+CREATE TABLE agent_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    definition_id UUID NOT NULL REFERENCES agent_definitions(id) ON DELETE CASCADE,
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    trigger_type VARCHAR(32) NOT NULL DEFAULT 'manual',
+    trigger_ref VARCHAR(255),
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    result_summary TEXT,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_agent_runs_definition ON agent_runs(definition_id);
+CREATE INDEX idx_agent_runs_tenant ON agent_runs(tenant_id);
+CREATE INDEX idx_agent_runs_status ON agent_runs(status);
+CREATE INDEX idx_agent_runs_created ON agent_runs(created_at DESC);
+
+CREATE TABLE agent_tasks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id UUID NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+    parent_task_id UUID,
+    agent_type VARCHAR(64) NOT NULL,
+    input_data JSONB DEFAULT '{}',
+    output_data JSONB,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    error TEXT,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_agent_tasks_run ON agent_tasks(run_id);
+CREATE INDEX idx_agent_tasks_status ON agent_tasks(status);
+
 -- ─── Triggers ───
 CREATE TRIGGER trg_users_updated_at
     BEFORE UPDATE ON users FOR EACH ROW
@@ -742,4 +862,33 @@ CREATE TRIGGER trg_alert_incidents_updated_at
 
 CREATE TRIGGER trg_report_schedules_updated_at
     BEFORE UPDATE ON report_schedules FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ─── Ticketing Integrations ───
+CREATE TABLE ticketing_configs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    config JSONB DEFAULT '{}',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE ticket_links (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id UUID NOT NULL,
+    provider TEXT NOT NULL,
+    remote_ticket_id TEXT NOT NULL,
+    remote_ticket_url TEXT,
+    sync_status TEXT DEFAULT 'pending',
+    last_synced_at TIMESTAMPTZ,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_ticket_links_case ON ticket_links(case_id);
+CREATE INDEX idx_ticket_links_provider ON ticket_links(provider);
+
+CREATE TRIGGER trg_ticketing_configs_updated_at
+    BEFORE UPDATE ON ticketing_configs FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();

@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6" x-data="{
+    activeTab: '{{ active_tab | default('definitions') }}',
+    selectedRun: null,
+    showTriggerModal: false,
+    selectedDefinitionId: null,
+    triggerRef: ''
+}">
+    <div class="flex justify-between items-center mb-2">
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">Multi-Agent Orchestration</h1>
+            <p class="text-xs text-secondary mt-0.5">Define and execute automated investigation agents across your SOC environment.</p>
+        </div>
+        <div class="flex items-center gap-2 bg-surface border border-white/5 rounded-lg p-1">
+            <button @click="activeTab = 'definitions'" :class="activeTab === 'definitions' ? 'bg-accent-blue text-white' : 'text-secondary hover:text-white'" class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">Agent Registry</button>
+            <button @click="activeTab = 'runs'" :class="activeTab === 'runs' ? 'bg-accent-blue text-white' : 'text-secondary hover:text-white'" class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">Run History</button>
+        </div>
+    </div>
+
+    <div x-show="activeTab === 'definitions'" class="space-y-4">
+        <div class="card-premium space-y-4">
+            <div class="flex justify-between items-center border-b border-white/5 pb-3">
+                <h3 class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>
+                    Registered Agents
+                </h3>
+                <span class="text-[10px] text-muted font-mono bg-deep px-2 py-1 rounded">{{ definitions | length }} agents</span>
+            </div>
+
+            {% if definitions %}
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                        <tr class="border-b border-white/5 text-[10px] text-muted uppercase tracking-wider">
+                            <th class="py-2.5 font-semibold">Name</th>
+                            <th class="py-2.5 font-semibold">Type</th>
+                            <th class="py-2.5 font-semibold">Description</th>
+                            <th class="py-2.5 font-semibold">Status</th>
+                            <th class="py-2.5 font-semibold text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/5">
+                        {% for defn in definitions %}
+                        <tr class="hover:bg-white/5 transition-all">
+                            <td class="py-3 font-semibold text-primary">{{ defn.name }}</td>
+                            <td class="py-3">
+                                <span class="font-mono text-[10px] bg-accent-blue/10 text-accent-blue border border-accent-blue/20 px-2 py-0.5 rounded">{{ defn.agent_type }}</span>
+                            </td>
+                            <td class="py-3 text-secondary max-w-xs truncate">{{ defn.description or '—' }}</td>
+                            <td class="py-3">
+                                {% if defn.is_active %}
+                                <span class="badge-dot badge-dot-open">Active</span>
+                                {% else %}
+                                <span class="badge-dot badge-dot-closed">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td class="py-3 text-right">
+                                <button
+                                    @click="selectedDefinitionId = '{{ defn.id }}'; showTriggerModal = true"
+                                    class="px-2 py-1 bg-accent-blue/15 hover:bg-accent-blue/25 border border-accent-blue/30 text-accent-blue rounded text-[10px] font-semibold transition-all">
+                                    Run &rarr;
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-12 text-muted">
+                <svg class="w-12 h-12 mx-auto mb-3 opacity-20" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>
+                <p class="text-xs">No agent definitions registered yet.</p>
+                <p class="text-[10px] mt-1">Create definitions via the API to get started.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div x-show="activeTab === 'runs'" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="card-premium lg:col-span-2 space-y-4">
+            <div class="flex justify-between items-center border-b border-white/5 pb-3">
+                <h3 class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Execution History
+                </h3>
+                <span class="text-[10px] text-muted font-mono bg-deep px-2 py-1 rounded">{{ runs | length }} runs</span>
+            </div>
+
+            {% if runs %}
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                        <tr class="border-b border-white/5 text-[10px] text-muted uppercase tracking-wider">
+                            <th class="py-2.5 font-semibold">Run ID</th>
+                            <th class="py-2.5 font-semibold">Trigger</th>
+                            <th class="py-2.5 font-semibold">Status</th>
+                            <th class="py-2.5 font-semibold">Summary</th>
+                            <th class="py-2.5 font-semibold text-right">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/5">
+                        {% for run in runs %}
+                        <tr class="hover:bg-white/5 transition-all">
+                            <td class="py-3 font-mono text-[10px] text-secondary">{{ run.id[:8] }}…</td>
+                            <td class="py-3">
+                                <span class="font-mono text-[10px] bg-deep px-2 py-0.5 rounded text-secondary">{{ run.trigger_type }}</span>
+                            </td>
+                            <td class="py-3">
+                                {% if run.status == 'completed' %}
+                                <span class="badge-dot badge-dot-open">Completed</span>
+                                {% elif run.status == 'running' %}
+                                <span class="badge-dot badge-dot-medium">Running</span>
+                                {% elif run.status == 'failed' %}
+                                <span class="badge-dot badge-dot-critical">Failed</span>
+                                {% else %}
+                                <span class="badge-dot badge-dot-closed">Pending</span>
+                                {% endif %}
+                            </td>
+                            <td class="py-3 text-secondary max-w-xs truncate">{{ run.result_summary or '—' }}</td>
+                            <td class="py-3 text-right">
+                                <button @click="selectedRun = {{ run | tojson }}" class="px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[10px] font-semibold text-secondary hover:text-white transition-all">View &rarr;</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-12 text-muted">
+                <svg class="w-12 h-12 mx-auto mb-3 opacity-20" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <p class="text-xs">No agent runs yet.</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="card-premium h-fit space-y-4">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider pb-2 border-b border-white/5 flex items-center gap-2">
+                <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                Run Detail
+            </h3>
+            <div x-show="selectedRun" class="space-y-3 text-xs">
+                <div>
+                    <span class="text-[10px] text-muted uppercase tracking-wider font-bold block">Status</span>
+                    <span class="text-primary font-semibold mt-0.5 block" x-text="selectedRun?.status"></span>
+                </div>
+                <div>
+                    <span class="text-[10px] text-muted uppercase tracking-wider font-bold block">Trigger</span>
+                    <span class="text-secondary mt-0.5 block" x-text="selectedRun?.trigger_type"></span>
+                </div>
+                <div>
+                    <span class="text-[10px] text-muted uppercase tracking-wider font-bold block">Summary</span>
+                    <span class="text-secondary mt-0.5 block" x-text="selectedRun?.result_summary || '—'"></span>
+                </div>
+                <div>
+                    <span class="text-[10px] text-muted uppercase tracking-wider font-bold block">Started</span>
+                    <span class="font-mono text-[10px] text-secondary mt-0.5 block" x-text="selectedRun?.started_at || '—'"></span>
+                </div>
+                <div>
+                    <span class="text-[10px] text-muted uppercase tracking-wider font-bold block">Completed</span>
+                    <span class="font-mono text-[10px] text-secondary mt-0.5 block" x-text="selectedRun?.completed_at || '—'"></span>
+                </div>
+            </div>
+            <div x-show="!selectedRun" class="text-xs text-muted text-center py-8 italic">
+                Select a run to view details.
+            </div>
+        </div>
+    </div>
+
+    <div x-show="showTriggerModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center" x-transition>
+        <div class="w-[420px] bg-surface border border-white/10 rounded-2xl shadow-2xl p-6" @click.away="showTriggerModal = false">
+            <div class="flex justify-between items-center border-b border-white/5 pb-4 mb-4">
+                <h3 class="text-sm font-bold text-white">Trigger Agent Run</h3>
+                <button @click="showTriggerModal = false" class="text-muted hover:text-white text-lg">&times;</button>
+            </div>
+            <form method="POST" action="/agents/run">
+                <input type="hidden" name="definition_id" :value="selectedDefinitionId">
+                <div class="space-y-3">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[9px] text-muted font-bold uppercase tracking-wider">Trigger Reference (optional)</label>
+                        <input type="text" name="trigger_ref" x-model="triggerRef" placeholder="e.g. alert-uuid or case-uuid" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none w-full">
+                    </div>
+                </div>
+                <div class="flex gap-2 mt-5">
+                    <button type="submit" class="flex-1 py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold transition-all">Execute Agent</button>
+                    <button type="button" @click="showTriggerModal = false" class="flex-1 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-secondary rounded-lg text-xs font-semibold transition-all">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
