@@ -7,10 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
+from app.middleware.auth_jwt import get_current_user_optional, TokenData
 from app.middleware.tenant_enforce import get_tenant_id
+from shared.auth import has_permission
+from shared.models.tenant import Tenant
 from shared.models.usage import TenantUsage, UsageRecord
+from shared.config import settings
 
 router = APIRouter(prefix="/usage", tags=["usage"])
+
+_DEFAULT_LIMIT = settings.api_default_page_limit
 
 
 class UsageRecordCreate(BaseModel):
@@ -18,6 +24,22 @@ class UsageRecordCreate(BaseModel):
     resource_id: str | None = None
     resource_type: str = "general"
     extra_meta: dict = Field(default_factory=dict)
+
+
+_DEFAULT_LIMITS = {
+    "alerts_per_month": settings.metering_default_alert_limit,
+    "api_calls_per_month": settings.metering_default_api_limit,
+    "storage_gb": settings.metering_default_storage_gb,
+    "ai_triage_per_month": settings.metering_default_ai_triage_limit,
+}
+
+
+def _get_per_tenant_limits(tenant_config: dict | None) -> dict:
+    limits = dict(_DEFAULT_LIMITS)
+    if tenant_config:
+        overrides = tenant_config.get("limits", {})
+        limits.update(overrides)
+    return limits
 
 
 def _row(item):
@@ -96,12 +118,13 @@ async def list_usage_records(
     _: str = Depends(validate_api_key),
     tenant_id: str | None = Depends(get_tenant_id),
 ):
-    stmt = select(UsageRecord).order_by(desc(UsageRecord.recorded_at)).limit(limit)
+    stmt = select(UsageRecord).order_by(desc(UsageRecord.recorded_at))
     if tenant_id:
         tenant_uuid = uuid.UUID(tenant_id)
         stmt = stmt.where(UsageRecord.tenant_id == tenant_uuid)
     if event_type:
         stmt = stmt.where(UsageRecord.event_type == event_type)
+    stmt = stmt.limit(limit)
     rows = (await db.execute(stmt)).scalars().all()
     return {"status": "success", "count": len(rows), "records": [_row(row) for row in rows]}
 
@@ -133,15 +156,58 @@ async def record_usage_event(
 
 @router.get("/limits")
 async def get_usage_limits(
+    db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
     tenant_id: str | None = Depends(get_tenant_id),
 ):
+    limits = dict(_DEFAULT_LIMITS)
+    if tenant_id:
+        tenant_stmt = select(Tenant).where(Tenant.id == uuid.UUID(tenant_id))
+        tenant = (await db.execute(tenant_stmt)).scalars().first()
+        if tenant:
+            limits = _get_per_tenant_limits(tenant.config)
     return {
         "status": "success",
-        "limits": {
-            "alerts_per_month": 100000,
-            "api_calls_per_month": 500000,
-            "storage_gb": 10,
-            "ai_triage_per_month": 5000,
-        },
+        "limits": limits,
     }
+
+
+@router.get("/all-tenants")
+async def get_all_tenants_usage(
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(validate_api_key),
+    user: TokenData | None = Depends(get_current_user_optional),
+):
+    if not user or (user.role != "admin" and not has_permission(user.permissions, "admin:tenant")):
+        raise HTTPException(status_code=403, detail="Super admin access required")
+
+    tenants = (await db.execute(select(Tenant).where(Tenant.is_active == True))).scalars().all()
+    results = []
+    now = datetime.now(timezone.utc)
+    period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    tenant_ids = [tenant.id for tenant in tenants]
+    usage_rows = {}
+    if tenant_ids:
+        usage_stmt = select(TenantUsage).where(
+            TenantUsage.tenant_id.in_(tenant_ids),
+            TenantUsage.period_start >= period_start,
+        ).order_by(desc(TenantUsage.period_start))
+        usage_result = await db.execute(usage_stmt)
+        for row in usage_result.scalars().all():
+            if row.tenant_id not in usage_rows:
+                usage_rows[row.tenant_id] = row
+
+    for tenant in tenants:
+        usage = usage_rows.get(tenant.id)
+        limits = _get_per_tenant_limits(tenant.config)
+        usage_data = _row(usage) if usage else {
+            "alerts_count": 0, "api_calls_count": 0, "storage_mb": 0.0,
+            "ai_triage_count": 0, "total_score": 0,
+        }
+        usage_data["tenant_name"] = tenant.name
+        usage_data["tenant_slug"] = tenant.slug
+        usage_data["limits"] = limits
+        results.append(usage_data)
+
+    return {"status": "success", "count": len(results), "tenants": results}

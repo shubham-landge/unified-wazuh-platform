@@ -64,6 +64,14 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
                 Threat Intel
             </button>
+
+            <!-- Branding Tab Button -->
+            <button @click="activeTab = 'branding'" 
+                    class="w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2.5"
+                    :class="activeTab === 'branding' ? 'bg-accent-blue/15 text-accent-blue border border-accent-blue/15' : 'text-secondary hover:text-white hover:bg-white/5 border border-transparent'">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42"/></svg>
+                Branding
+            </button>
         </div>
 
         <!-- Right Content Tab Panels -->
@@ -257,7 +265,19 @@
                 </form>
             </div>
 
-            <!-- 5. Threat Intel Tab -->
+            <!-- 5. Branding Tab -->
+            <div x-show="activeTab === 'branding'" class="space-y-4"
+                 hx-get="/settings/branding" hx-trigger="intersect once" hx-swap="innerHTML">
+                <div class="flex items-center justify-center py-12">
+                    <svg class="animate-spin h-6 w-6 text-accent-blue" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span class="ml-3 text-xs text-muted">Loading branding settings...</span>
+                </div>
+            </div>
+
+            <!-- 6. Threat Intel Tab -->
             <div x-show="activeTab === 'threat-intel'" class="space-y-4">
                 <div class="flex justify-between items-center border-b border-white/5 pb-3 mb-4">
                     <div>

@@ -91,6 +91,7 @@ async def add_user_to_template_context(request: Request, call_next):
     request.state.tenant_id = current_user.get("tenant_id") if current_user else None
     templates.env.globals["current_user"] = current_user
     templates.env.globals["tenant_id"] = current_user.get("tenant_id") if current_user else None
+    templates.env.globals["branding"] = _get_branding()
     
     pending_count = 0
     if token:
@@ -1018,6 +1019,61 @@ async def health_status_partial(request: Request):
 
 
 # --- Authentication & User Management Routes ---
+
+# --- Branding & Theme Settings ---
+
+BRANDING_STORE_PATH = "app/branding.json"
+
+
+def _get_branding():
+    if not os.path.exists(BRANDING_STORE_PATH):
+        return {
+            "primary_color": "#3b82f6",
+            "secondary_color": "#94a3b8",
+            "company_name": "WAZUH",
+            "logo_url": "",
+            "favicon_url": "",
+            "custom_css": "",
+        }
+    try:
+        with open(BRANDING_STORE_PATH, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_branding(data: dict):
+    try:
+        os.makedirs(os.path.dirname(BRANDING_STORE_PATH), exist_ok=True)
+        with open(BRANDING_STORE_PATH, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
+@app.get("/settings/branding", response_class=HTMLResponse)
+async def branding_settings_tab(request: Request):
+    branding = _get_branding()
+    return templates.TemplateResponse("branding_partial.html", {
+        "request": request,
+        "branding": branding,
+    })
+
+
+@app.post("/settings/branding")
+async def save_branding_settings(request: Request):
+    form = await request.form()
+    branding = {
+        "primary_color": form.get("primary_color", "#3b82f6"),
+        "secondary_color": form.get("secondary_color", "#94a3b8"),
+        "company_name": form.get("company_name", "WAZUH"),
+        "logo_url": form.get("logo_url", ""),
+        "favicon_url": form.get("favicon_url", ""),
+        "custom_css": form.get("custom_css", ""),
+    }
+    _save_branding(branding)
+    return JSONResponse({"status": "success", "branding": branding})
+
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):

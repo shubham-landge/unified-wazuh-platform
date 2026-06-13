@@ -7,11 +7,14 @@ from pydantic import BaseModel
 from app.db import get_db
 from app.middleware.auth import validate_api_key
 from app.middleware.tenant_enforce import get_tenant_id
+from shared.config import settings
 from shared.models.ticketing import TicketingConfig, TicketLink
 from shared.connectors.ticket_servicenow import ServiceNowConnector
 from shared.connectors.ticket_jira import JiraConnector
 
 router = APIRouter(prefix="/ticketing", tags=["ticketing"])
+
+_DEFAULT_LIMIT = settings.api_default_page_limit
 
 
 class TicketingConfigBody(BaseModel):
@@ -26,6 +29,7 @@ class TestConnectionBody(BaseModel):
 
 @router.get("/config")
 async def list_configs(
+    limit: int = Query(default=_DEFAULT_LIMIT, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
     tenant_id: str | None = Depends(get_tenant_id),
@@ -35,7 +39,8 @@ async def list_configs(
         import uuid
         tenant_uuid = uuid.UUID(tenant_id)
         query = query.where(TicketingConfig.tenant_id == tenant_uuid)
-    
+    query = query.limit(limit)
+
     result = await db.execute(query)
     configs = result.scalars().all()
     return {

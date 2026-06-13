@@ -570,30 +570,31 @@ async def bulk_update_status(
     _: str = Depends(validate_api_key),
     tenant_id: str | None = Depends(get_tenant_id),
 ):
+    try:
+        case_ids = [uuid.UUID(c) for c in body.case_ids]
+    except ValueError:
+        case_ids = []
+
+    if not case_ids:
+        return {"status": "success", "updated": 0}
+
+    query = select(Case).where(Case.id.in_(case_ids))
+    if tenant_id:
+        tenant_uuid = uuid.UUID(tenant_id)
+        query = query.where(Case.tenant_id == tenant_uuid)
+
+    result = await db.execute(query)
+    cases = result.scalars().all()
+
     updated = 0
-    for case_id_str in body.case_ids:
-        try:
-            uid = uuid.UUID(case_id_str)
-        except ValueError:
-            continue
-
-        query = select(Case).where(Case.id == uid)
-        if tenant_id:
-            tenant_uuid = uuid.UUID(tenant_id)
-            query = query.where(Case.tenant_id == tenant_uuid)
-        
-        result = await db.execute(query)
-        case = result.scalar_one_or_none()
-        if not case:
-            continue
-
+    for case in cases:
         old_status = case.status
         case.status = body.status
         if body.status in ("resolved", "closed"):
             case.closed_at = datetime.now(timezone.utc)
 
         event = CaseEvent(
-            case_id=uid,
+            case_id=case.id,
             tenant_id=case.tenant_id,
             event_type="status_changed",
             old_value=old_status,

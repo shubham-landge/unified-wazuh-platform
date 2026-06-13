@@ -2,7 +2,7 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -11,12 +11,15 @@ from starlette.status import HTTP_404_NOT_FOUND, HTTP_400_BAD_REQUEST, HTTP_403_
 from app.db import get_db
 from app.middleware.auth_jwt import get_current_user, require_role
 from app.middleware.tenant_enforce import get_tenant_id
+from shared.config import settings
 from shared.models.user import User, ROLES
 from shared.auth import hash_password, TokenData
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+_DEFAULT_LIMIT = settings.api_default_page_limit
 
 
 class UserCreate(BaseModel):
@@ -48,6 +51,7 @@ class UserUpdate(BaseModel):
 
 @router.get("", response_model=list[UserResponse])
 async def list_users(
+    limit: int = Query(default=_DEFAULT_LIMIT, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
     tenant_id: str | None = Depends(get_tenant_id),
@@ -59,7 +63,7 @@ async def list_users(
     query = select(User)
     if tenant_id:
         query = query.where(User.tenant_id == tenant_id)
-    query = query.order_by(User.created_at.desc())
+    query = query.order_by(User.created_at.desc()).limit(limit)
 
     result = await db.execute(query)
     users = result.scalars().all()

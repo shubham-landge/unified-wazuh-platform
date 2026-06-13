@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: soc-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: unified-wazuh-platform/api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: soc-config
+          env:
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: soc-secrets
+                  key: SECRET_KEY
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: soc-secrets
+                  key: JWT_SECRET_KEY
+            - name: API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: soc-secrets
+                  key: API_KEYS
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: soc-secrets
+                  key: DATABASE_PASSWORD
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: soc-secrets
+                  key: REDIS_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://soc_user:$(DATABASE_PASSWORD)@postgres:5432/soc_platform"
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
+            - name: OLLAMA_BASE_URL
+              value: "http://ollama:11434"
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+            requests:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: soc-platform
+spec:
+  selector:
+    app: api
+  ports:
+    - port: 8000
+      targetPort: 8000

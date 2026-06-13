@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: soc-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: unified-wazuh-platform/worker:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: soc-config
+          env:
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: soc-secrets
+                  key: SECRET_KEY
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: soc-secrets
+                  key: JWT_SECRET_KEY
+            - name: API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: soc-secrets
+                  key: API_KEYS
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: soc-secrets
+                  key: DATABASE_PASSWORD
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: soc-secrets
+                  key: REDIS_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://soc_user:$(DATABASE_PASSWORD)@postgres:5432/soc_platform"
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
+            - name: OLLAMA_BASE_URL
+              value: "http://ollama:11434"
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 250m
+              memory: 256Mi

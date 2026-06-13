@@ -11,14 +11,18 @@ from app.middleware.auth import validate_api_key
 from app.middleware.auth_jwt import get_current_user
 from app.middleware.tenant_enforce import get_tenant_id
 from shared.auth import TokenData
+from shared.config import settings
 from shared.models.compliance import ComplianceFramework, ComplianceControl, ComplianceMapping, ComplianceException
 from shared.compliance_checker import ComplianceChecker
 
 router = APIRouter(prefix="/compliance", tags=["compliance"])
 
+_DEFAULT_LIMIT = settings.api_default_page_limit
+
 
 @router.get("/frameworks")
 async def list_frameworks(
+    limit: int = Query(default=_DEFAULT_LIMIT, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
     tenant_id: str | None = Depends(get_tenant_id),
@@ -28,7 +32,8 @@ async def list_frameworks(
         import uuid
         tenant_uuid = uuid.UUID(tenant_id)
         query = query.where(ComplianceFramework.tenant_id == tenant_uuid)
-    
+    query = query.limit(limit)
+
     result = await db.execute(query)
     frameworks = result.scalars().all()
     return {
@@ -125,6 +130,7 @@ async def request_exception(
 @router.get("/exceptions")
 async def list_exceptions(
     status: str | None = Query(default=None),
+    limit: int = Query(default=_DEFAULT_LIMIT, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
     tenant_id: str | None = Depends(get_tenant_id),
@@ -134,9 +140,10 @@ async def list_exceptions(
         import uuid
         tenant_uuid = uuid.UUID(tenant_id)
         query = query.where(ComplianceException.tenant_id == tenant_uuid)
-    
+
     if status:
         query = query.where(ComplianceException.status == status)
+    query = query.limit(limit)
     result = await db.execute(query)
     excs = result.scalars().all()
     return {

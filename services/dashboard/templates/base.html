@@ -48,11 +48,16 @@
     <link rel="stylesheet" href="/static/style.css">
     
     <style>
-        /* Add minor helper styling that integrates Tailwind variables */
+        :root {
+            --brand-primary: {{ branding.primary_color if branding else '#3b82f6' }};
+            --brand-secondary: {{ branding.secondary_color if branding else '#94a3b8' }};
+            --brand-company: "{{ (branding.company_name if branding else 'WAZUH') | e }}";
+        }
         body {
             background-color: #070b14;
             color: #e8edf5;
         }
+        {{ branding.custom_css if branding and branding.custom_css else '' }}
     </style>
 </head>
 <body x-data="globalSOCState()" @keydown.window="handleShortcuts($event)">
@@ -64,14 +69,18 @@
             <div>
                 <!-- Brand Logo / Header -->
                 <div class="h-16 flex items-center gap-3 px-6 border-b border-white/5">
-                    <div class="p-1.5 bg-accent-blue/15 border border-accent-blue/30 rounded-lg">
-                        <svg class="w-6 h-6 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <div class="p-1.5 rounded-lg" style="background-color: color-mix(in srgb, var(--brand-primary) 15%, transparent); border-color: color-mix(in srgb, var(--brand-primary) 30%, transparent); border-width: 1px;">
+                        {% if branding and branding.logo_url %}
+                        <img src="{{ branding.logo_url }}" alt="Logo" class="w-6 h-6 rounded" @error="this.style.display='none'">
+                        {% else %}
+                        <svg class="w-6 h-6" style="color: var(--brand-primary)" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
                         </svg>
+                        {% endif %}
                     </div>
                     <div>
-                        <span class="font-bold text-white tracking-wide">WAZUH</span>
-                        <span class="text-xs font-semibold px-1.5 py-0.5 ml-1 bg-accent-blue/10 text-accent-blue border border-accent-blue/20 rounded">AI</span>
+                        <span class="font-bold text-white tracking-wide">{{ (branding.company_name if branding and branding.company_name else 'WAZUH') | upper }}</span>
+                        <span class="text-xs font-semibold px-1.5 py-0.5 ml-1 rounded" style="background-color: color-mix(in srgb, var(--brand-primary) 10%, transparent); color: var(--brand-primary); border-color: color-mix(in srgb, var(--brand-primary) 20%, transparent); border-width: 1px;">AI</span>
                     </div>
                 </div>
 

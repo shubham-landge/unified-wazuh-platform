@@ -10,10 +10,13 @@ from app.db import get_db
 from app.middleware.auth_jwt import get_current_user
 from app.middleware.auth import validate_api_key
 from app.middleware.tenant_enforce import get_tenant_id
+from shared.config import settings
 from shared.models.approval import ApprovalRequest
 from shared.auth import TokenData
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
+
+_DEFAULT_LIMIT = settings.api_default_page_limit
 
 class ApprovalCreate(BaseModel):
     requested_by: str
@@ -31,6 +34,7 @@ class ReviewRequest(BaseModel):
 @router.get("")
 async def list_approvals(
     status: str | None = Query(default=None),
+    limit: int = Query(default=_DEFAULT_LIMIT, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
     tenant_id: str | None = Depends(get_tenant_id)
@@ -44,6 +48,7 @@ async def list_approvals(
             query = query.where(ApprovalRequest.tenant_id == t_uid)
         except ValueError:
             pass
+    query = query.limit(limit)
     result = await db.execute(query)
     approvals = result.scalars().all()
     return {

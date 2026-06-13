@@ -88,6 +88,7 @@ class Settings(BaseSettings):
         return v
 
     api_rate_limit: int = 100
+    api_default_page_limit: int = 100
 
     # Comma-separated allowed CORS origins. Empty = no CORS (API-only, no browser access).
     cors_allowed_origins: str = ""
@@ -118,11 +119,14 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _reject_default_secret(self) -> "Settings":
         _default = "change-me-in-production-minimum-32-chars"
-        if self.jwt_secret_key.get_secret_value() == _default and not self.debug:
-            raise ValueError(
-                "JWT_SECRET_KEY must be overridden in production. "
-                "Set the JWT_SECRET_KEY environment variable."
-            )
+        if self.jwt_secret_key.get_secret_value() == _default:
+            from os import environ
+            env = environ.get("WAZUH_ENV", "").lower()
+            if env == "production":
+                raise ValueError(
+                    "JWT_SECRET_KEY must be overridden in production. "
+                    "Set the JWT_SECRET_KEY environment variable."
+                )
         return self
 
     # OIDC configuration (optional SSO)

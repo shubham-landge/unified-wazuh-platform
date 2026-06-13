@@ -17,6 +17,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost:
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("WAZUH_API_VERIFY_SSL", "false")
 os.environ.setdefault("WAZUH_INDEXER_VERIFY_SSL", "false")
+os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-for-testing-only")
 os.environ.setdefault("DASHBOARD_ALLOWED_CIDRS", "0.0.0.0/0")
 
 mock_db_module = MagicMock()

@@ -65,6 +65,10 @@
 | Human-Approved Actions | Antigravity | ApprovalRequest model, approvals API, approval worker with expiry, approvals dashboard UI | ✅ main |
 | Ticketing Integrations | OpenCode | ServiceNow + Jira connectors, ticketing config/model API, ticketing sync worker, ticketing settings dashboard | ✅ main |
 | RAG Fixes & Dashboard | OpenCode | Model/schema consistency fixes, Knowledge Base dashboard UI, integration tests | ✅ main |
+| Tenant API + Super Admin (Track A) | OpenCode | Tenant CRUD API, role-based super admin check, cross-tenant admin views, real stats | ✅ main |
+| White-Label Branding (Track D) | OpenCode | Branding API (colors/logo/css per tenant), dashboard theming via CSS vars, branding settings tab | ✅ main |
+| Usage Metering (Track E) | OpenCode | Per-tenant usage limits via config, metering middleware, super admin multi-tenant usage endpoint | ✅ main |
+| Schema + Model Consistency (Track F) | OpenCode | All 47 models use TenantMixin or NullableTenantMixin — track complete | ✅ main |
 
 ---
 

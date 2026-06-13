@@ -1,15 +1,19 @@
 import time
-from fastapi import APIRouter, Depends
+import logging
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
+from shared.config import settings
 from shared.connectors.llm_provider import get_provider
 from shared.connectors.wazuh_api import WazuhAPIConnector
 from shared.connectors.wazuh_indexer import WazuhIndexerConnector
 from shared.health_registry import HealthRegistry
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["health"])
 
 _registry = HealthRegistry()
@@ -27,10 +31,27 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         db_latency = int((time.time() - start) * 1000)
     except Exception:
         status = "degraded"
+
+    redis_ok = False
+    redis_latency = 0
+    try:
+        import redis as _redis
+        rstart = time.time()
+        r = _redis.from_url(settings.redis_url, decode_responses=True)
+        r.ping()
+        redis_ok = True
+        redis_latency = int((time.time() - rstart) * 1000)
+    except Exception as e:
+        logger.debug("Redis health check failed: %s", e)
+
+    if not db_ok:
+        status = "degraded"
+
     return {
         "status": status,
         "version": "1.0.0",
         "database": {"connected": db_ok, "latency_ms": db_latency},
+        "redis": {"connected": redis_ok, "latency_ms": redis_latency},
         "timestamp": int(time.time()),
     }
 
@@ -74,3 +95,9 @@ async def model_status(_: str = Depends(validate_api_key)):
         "model": getattr(provider, "model", None),
         "health": health,
     }
+
+
+@router.get("/metrics")
+async def metrics():
+    data = generate_latest()
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)
