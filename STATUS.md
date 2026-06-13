@@ -15,52 +15,19 @@
 | Integration & Tests | OpenCode | 56 tests passing (all mocked, no Docker/DB), /health no-auth, unified worker entrypoint, EC2 scripts with validation, healthcheck, port checks, rollback | ✅ main |
 | Cloud LLM + EPSS/KEV + Reports + Models/Routers | Codex | OpenAI/Gemini/Claude connectors with cost tracking, EPSS/KEV enrichment worker, report generator (Jinja2→PDF) with CRUD API, notification/SOAR/threat-intel/UEBA models+routers, database schema | ✅ main |
 
-## Remaining — to build (parallel)
 
-### Claude — Workers & Connectors (~20 files)
+## Phase 2 — In Progress (merging desktop app builds)
 
-| Deliverable | Files | Details |
-|---|---|---|
-| Notification Connectors | `shared/connectors/email.py`, `slack.py`, `teams.py`, `pagerduty.py` | Email (SMTP/aiosmtplib), Slack, Teams (adaptive cards), PagerDuty (Events API v2) |
-| Notification Worker | `services/worker/app/notification_worker.py` | Reads Redis `notifications_queue`, dispatches via correct connector, DLQ |
-| SOAR Playbook Engine | `shared/playbook_engine.py` | Trigger matching, ordered task execution (create_case, send_notification, webhook, wait, run_script) |
-| Playbook Worker | `services/worker/app/playbook_worker.py` | Reads Redis `playbook_queue`, executes playbooks with timeout handling |
-| Threat Intel Connectors | `shared/connectors/alienvault_otx.py`, `misp.py`, `virustotal.py` | OTX lookup, MISP search, VirusTotal IP/hash lookup |
-| Threat Intel Worker | `services/worker/app/threat_intel_worker.py` | Feed polling (6h), alert IoC enrichment, rate-limit handling |
-| UEBA Engine | `shared/ueba/baseline.py` | z-score baseline computation, anomaly detection |
-| UEBA Worker | `services/worker/app/ueba_worker.py` | Daily baseline computation, anomaly creation, notification triggers |
-| Health Monitoring | `shared/health_registry.py`, `shared/connectors/redis_health.py` | Cached parallel health checks, health() methods on wazuh_api/indexer connectors |
-| Notification Templates | `services/api/app/prompts/templates/notifications/` | Email HTML, Slack text, Teams card, PagerDuty incident templates |
-| Tests | 6 new test files | notification connectors + worker, playbook engine, TI connectors, UEBA engine, health registry |
-| Doc | `docs/ARCHITECTURE-REVIEW-CODEX.md` | Security, performance, reliability, consistency review |
+| Phase | Tool | What was built | Status |
+|---|---|---|---|
+| Dashboard UI v2 | Antigravity | Compliance dashboard (SOC2/PCI/HIPAA/NIST), notifications channels/rules/events UI, playbook builder, threat intel pages (IoC search + feeds), health page with auto-refresh grid, dashboard store, tests | 🔄 merging |
+| Workers & Connectors v2 | Claude | Email/Slack/Teams/PagerDuty connectors, notification worker, SOAR engine (trigger matching + task execution), AlienVault OTX/MISP/VirusTotal connectors, threat intel worker, UEBA baseline engine + anomaly detector, health registry, tests | 🔄 merging |
 
-### Antigravity — Dashboard UI (~16 files)
 
-| Deliverable | Files | Details |
-|---|---|---|
-| Notifications UI | `templates/notifications.html` | Channels/rules/events tabs, CRUD modals, enable/disable toggles |
-| Compliance Dashboard | `templates/compliance.html`, `compliance_detail.html` | SOC2/PCI-DSS/HIPAA/NIST framework viewer, control→alert/vuln mapping, evidence upload |
-| Playbook Builder | `templates/playbooks.html`, `playbook_detail.html`, `playbook_execution_detail.html` | Alpine.js drag-and-drop builder, trigger config, execution timeline |
-| Threat Intel Pages | `templates/threat_intel.html`, `threat_intel_ioc_detail.html`, `threat_intel_feeds.html` | IoC search, feed management, indicator detail |
-| Health Page | `templates/health.html` | Integration status grid with 30s auto-refresh |
-| Charts | `static/charts.js` | Alert severity, vulnerability trend, case resolution, MITRE techniques |
-| Integration | `dashboard/main.py` updates | Wire new routes, nav items in base.html, update reports.html to use live API |
-| Tests | 1 new test file | Dashboard route rendering |
 
 ---
 
-## Merge Order
-
-```
-Status: main at 301eb44 — Phase 1 fully merged
-─────────────────────────────────────────────────
-Next: Clone tool/claude branch from main (workers + connectors + review)
-      Clone tool/antigravity branch from main (dashboard UI + templates)
-      Run both in parallel — no file conflicts between them
-      Each PRs into main independently
-```
-
-## What already works (56 tests passing)
+## What already works (tests expected to grow from 56 → 80+)
 
 - `/health` — no auth required (Docker HEALTHCHECK)
 - `/vulnerabilities` — list/filter by status/severity/CVE/asset

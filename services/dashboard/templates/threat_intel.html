@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6" x-data="{
+    activeTab: 'lookup',
+    lookupQuery: '{{ query or '' }}',
+    feedSyncingId: null,
+    
+    syncFeed(feedId) {
+        this.feedSyncingId = feedId;
+        setTimeout(() => {
+            this.feedSyncingId = null;
+        }, 1500);
+    }
+}">
+    <!-- Page Header -->
+    <div class="flex justify-between items-center mb-2">
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">Threat Intelligence</h1>
+            <p class="text-xs text-secondary mt-0.5">Search Indicators of Compromise (IoC) and manage external threat intelligence feeds.</p>
+        </div>
+        <div class="flex items-center gap-2 bg-surface border border-white/5 rounded-lg p-1">
+            <button @click="activeTab = 'lookup'" :class="activeTab === 'lookup' ? 'bg-accent-blue text-white' : 'text-secondary hover:text-white'" class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">IoC Lookup</button>
+            <button @click="activeTab = 'feeds'" :class="activeTab === 'feeds' ? 'bg-accent-blue text-white' : 'text-secondary hover:text-white'" class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">Threat Feeds</button>
+        </div>
+    </div>
+
+    <!-- 1. IoC Lookup Tab -->
+    <div x-show="activeTab === 'lookup'" class="space-y-6">
+        <!-- Search Bar -->
+        <div class="card-premium">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-4 pb-2 border-b border-white/5 flex items-center gap-2">
+                <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                IoC Reputation Console
+            </h3>
+            
+            <form action="/threat-intel" method="GET" class="flex gap-3">
+                <input type="text" name="query" x-model="lookupQuery" placeholder="Enter IP address, Domain, or File Hash (MD5/SHA256)..." class="flex-1 bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-4 py-3 rounded-lg text-primary outline-none placeholder-muted">
+                <button type="submit" class="px-6 py-3 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_12px_rgba(59,130,246,0.2)]">Search indicator</button>
+            </form>
+        </div>
+
+        {% if ioc_results %}
+        <!-- Search Results Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Indicator Scoring Circular Display -->
+            <div class="card-premium flex flex-col justify-between items-center text-center p-6">
+                <div>
+                    <span class="text-[10px] font-bold text-muted uppercase tracking-wider block">Threat Reputation Score</span>
+                </div>
+                
+                <div class="relative w-40 h-40 flex items-center justify-center my-4">
+                    <svg class="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                        <path class="text-white/5" stroke-width="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        <path class="{% if ioc_results.score >= 80 %}text-accent-red{% elif ioc_results.score >= 50 %}text-accent-yellow{% else %}text-accent-green{% endif %}" stroke-dasharray="{{ ioc_results.score }}, 100" stroke-width="3" stroke-linecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                    </svg>
+                    <div class="absolute flex flex-col items-center">
+                        <span class="text-3xl font-extrabold text-white" x-text="'{{ ioc_results.score }}'"></span>
+                        <span class="text-[9px] font-bold text-muted uppercase tracking-wider">MALICIOUSNESS</span>
+                    </div>
+                </div>
+
+                <div>
+                    <span class="badge-dot badge-dot-{% if ioc_results.score >= 80 %}critical{% elif ioc_results.score >= 50 %}warning{% else %}open{% endif %}">
+                        {% if ioc_results.score >= 80 %}
+                        Confirmed Malicious Indicator
+                        {% elif ioc_results.score >= 50 %}
+                        Suspicious Reputation Detected
+                        {% else %}
+                        Clean / Unknown Reputation
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+
+            <!-- Indicator Profile details -->
+            <div class="card-premium lg:col-span-2 space-y-4">
+                <h3 class="text-xs font-bold text-white uppercase tracking-wider pb-2 border-b border-white/5 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 111.063.852l-.708 2.836a.75.75 0 001.063.852l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12v-.008z"/></svg>
+                    Indicator Intel Profile
+                </h3>
+
+                <div class="grid grid-cols-2 gap-4 text-xs">
+                    <div>
+                        <span class="text-[9px] text-muted block font-bold uppercase tracking-wider">Indicator Query</span>
+                        <code class="text-primary font-bold font-mono bg-deep/50 px-2 py-1 border border-white/5 rounded block mt-1 truncate">{{ ioc_results.query }}</code>
+                    </div>
+                    <div>
+                        <span class="text-[9px] text-muted block font-bold uppercase tracking-wider">Type</span>
+                        <span class="text-primary font-semibold block mt-1">{{ ioc_results.type }}</span>
+                    </div>
+                    <div>
+                        <span class="text-[9px] text-muted block font-bold uppercase tracking-wider">Category</span>
+                        <span class="text-primary font-semibold block mt-1">{{ ioc_results.category }}</span>
+                    </div>
+                    <div>
+                        <span class="text-[9px] text-muted block font-bold uppercase tracking-wider">Geographical Location</span>
+                        <span class="text-primary font-semibold block mt-1">{{ ioc_results.geoip }}</span>
+                    </div>
+                    <div>
+                        <span class="text-[9px] text-muted block font-bold uppercase tracking-wider">Associated Actor</span>
+                        <span class="text-primary font-semibold block mt-1">{{ ioc_results.actor }}</span>
+                    </div>
+                    <div>
+                        <span class="text-[9px] text-muted block font-bold uppercase tracking-wider">Last Sync Check</span>
+                        <span class="text-primary font-semibold block mt-1 font-mono">{{ ioc_results.last_seen[:19].replace('T', ' ') }}</span>
+                    </div>
+                </div>
+
+                <!-- Live Mapped Alert Ingestions -->
+                <div class="border-t border-white/5 pt-4">
+                    <span class="text-[9px] text-muted font-bold uppercase tracking-wider block mb-2">Live Internal Telemetry Correlation</span>
+                    
+                    {% if ioc_results.alerts_count > 0 %}
+                    <div class="p-3 bg-accent-red/10 border border-accent-red/25 rounded-lg flex items-center justify-between">
+                        <div class="flex items-center gap-2.5 text-xs text-white">
+                            <span class="w-2 h-2 bg-accent-red rounded-full animate-pulse shrink-0"></span>
+                            <span>Matched <span class="font-bold text-accent-red">{{ ioc_results.alerts_count }} live internal events</span> sharing this indicator hash or address.</span>
+                        </div>
+                        <a href="/alerts" class="px-2.5 py-1 bg-accent-red/25 hover:bg-accent-red/45 border border-accent-red/40 rounded text-[10px] font-bold text-white transition-all">Audit alerts</a>
+                    </div>
+                    {% else %}
+                    <div class="p-3 bg-white/5 border border-white/10 rounded-lg text-xs text-secondary italic">
+                        No internal endpoint logs or wazuh agent events match this threat indicator.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% elif query %}
+        <div class="card-premium py-12 text-center text-xs text-muted">
+            Search completed. No reputation metrics returned for search query.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- 2. Feeds Tab -->
+    <div x-show="activeTab === 'feeds'" class="space-y-6">
+        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Threat Intelligence Feeds</h3>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {% for feed in feeds %}
+            <div class="card-premium flex flex-col justify-between">
+                <div class="space-y-3">
+                    <div class="flex justify-between items-start">
+                        <div class="flex items-center gap-2">
+                            <div class="p-1 rounded bg-accent-blue/10 border border-accent-blue/20 text-accent-blue">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                            </div>
+                            <div>
+                                <h4 class="text-xs font-bold text-white">{{ feed.name }}</h4>
+                                <span class="text-[9px] text-muted font-mono">{{ feed.url }}</span>
+                            </div>
+                        </div>
+
+                        <form action="/threat-intel/feeds/{{ feed.id }}/toggle" method="POST" hx-post="/threat-intel/feeds/{{ feed.id }}/toggle" hx-target="body">
+                            <button type="submit" class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {% if feed.enabled %}bg-accent-green{% else %}bg-white/10{% endif %}">
+                                <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {% if feed.enabled %}translate-x-4{% else %}translate-x-0{% endif %}"></span>
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 pt-2 border-t border-white/5 text-[10px]">
+                        <div>
+                            <span class="text-muted block uppercase tracking-wider font-bold">Total Indicators</span>
+                            <span class="text-primary font-bold block mt-0.5">{{ '{:,}'.format(feed.indicators_count) }}</span>
+                        </div>
+                        <div>
+                            <span class="text-muted block uppercase tracking-wider font-bold">Last Synchronized</span>
+                            <span class="text-primary font-semibold block mt-0.5 font-mono">{{ feed.last_synced[:16].replace('T', ' ') }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end pt-4 mt-4 border-t border-white/5">
+                    <form action="/threat-intel/feeds/{{ feed.id }}/sync" method="POST" hx-post="/threat-intel/feeds/{{ feed.id }}/sync" hx-target="body" @submit="syncFeed('{{ feed.id }}')">
+                        <button type="submit" :disabled="feedSyncingId === '{{ feed.id }}'" class="px-3 py-1.5 bg-white/5 border border-white/10 hover:border-white/20 hover:bg-white/10 rounded text-[10px] font-bold text-white transition-all flex items-center gap-1.5 disabled:opacity-50">
+                            <svg class="w-3.5 h-3.5" :class="feedSyncingId === '{{ feed.id }}' ? 'animate-spin' : ''" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+                            <span x-text="feedSyncingId === '{{ feed.id }}' ? 'Syncing...' : 'Sync Feed'"></span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

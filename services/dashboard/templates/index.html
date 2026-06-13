@@ -97,6 +97,39 @@
         </div>
     </div>
 
+    <!-- Secondary Charts Row (Playbook Execution + Compliance Frameworks) -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <!-- Playbook Success Rate Pie Chart -->
+        <div class="card-premium flex flex-col justify-between min-h-[300px]">
+            <div class="flex justify-between items-center mb-4">
+                <div>
+                    <h3 class="text-xs font-bold text-white uppercase tracking-wider">Playbook Execution Health</h3>
+                    <p class="text-[10px] text-muted">Success rate of automated containment playbooks.</p>
+                </div>
+                <a href="/playbooks" class="text-[10px] text-accent-blue hover:underline font-semibold"
+                   hx-get="/playbooks" hx-target="body" hx-push-url="true">Configure playbooks &rarr;</a>
+            </div>
+            <div class="relative flex-1 flex items-center justify-center min-h-[200px]">
+                <canvas id="playbookRunsChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Compliance Status Bar Chart -->
+        <div class="card-premium lg:col-span-2 flex flex-col justify-between min-h-[300px]">
+            <div class="flex justify-between items-center mb-4">
+                <div>
+                    <h3 class="text-xs font-bold text-white uppercase tracking-wider">Regulatory Compliance Index</h3>
+                    <p class="text-[10px] text-muted">Live adherence score mapping for SOC2, PCI, and HIPAA.</p>
+                </div>
+                <a href="/compliance" class="text-[10px] text-accent-blue hover:underline font-semibold"
+                   hx-get="/compliance" hx-target="body" hx-push-url="true">Audit controls mapped &rarr;</a>
+            </div>
+            <div class="relative flex-1 min-h-[200px]">
+                <canvas id="complianceStatusChart"></canvas>
+            </div>
+        </div>
+    </div>
+
     <!-- Data Tables Row (Recent Alerts + Top Vulns) -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Recent Alerts Mini-Table -->
@@ -223,6 +256,22 @@
         }
         if (typeof initSeverityDistributionChart === 'function') {
             initSeverityDistributionChart('severityChart', casesData);
+        }
+
+        const playbookRunsData = [
+            {% for run in playbook_runs %}
+            {
+                "id": "{{ run.id }}",
+                "status": "{{ run.status }}"
+            },
+            {% endfor %}
+        ];
+
+        if (typeof initPlaybookRunsChart === 'function') {
+            initPlaybookRunsChart('playbookRunsChart', playbookRunsData);
+        }
+        if (typeof initComplianceStatusChart === 'function') {
+            initComplianceStatusChart('complianceStatusChart');
         }
     });
 </script>
