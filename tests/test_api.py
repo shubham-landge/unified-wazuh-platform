@@ -45,7 +45,7 @@ async def client(api_app):
 
 @pytest.mark.asyncio
 async def test_health_endpoint(client):
-    response = await client.get("/health", headers={"X-API-Key": "soc-key-001"})
+    response = await client.get("/health", headers={"X-API-Key": "soc-test-key-001"})
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
     assert "version" in response.json()
@@ -63,7 +63,7 @@ async def test_health_endpoint_no_auth(client):
     ["/alerts/recent", "/cases", "/assets", "/vulnerabilities", "/audit"],
 )
 async def test_list_endpoints(client, path):
-    response = await client.get(path, headers={"X-API-Key": "soc-key-001"})
+    response = await client.get(path, headers={"X-API-Key": "soc-test-key-001"})
     assert response.status_code == 200
     assert response.json()["status"] == "success"
 
@@ -74,7 +74,7 @@ async def test_model_status_endpoint(client):
         mp.setattr("services.api.app.routers.health.get_provider", lambda: OllamaProvider())
         mp.setattr(OllamaProvider, "health", AsyncMock(return_value={"connected": True}))
         response = await client.get(
-            "/model/status", headers={"X-API-Key": "soc-key-001"}
+            "/model/status", headers={"X-API-Key": "soc-test-key-001"}
         )
     assert response.status_code == 200
     assert "provider" in response.json()
@@ -86,7 +86,7 @@ async def test_wazuh_health_endpoint(client):
 
     with patch("services.api.app.routers.health.WazuhAPIConnector.health", AsyncMock(return_value={"connected": True})), patch("services.api.app.routers.health.WazuhIndexerConnector.health", AsyncMock(return_value={"connected": True})):
         response = await client.get(
-            "/wazuh/health", headers={"X-API-Key": "soc-key-001"}
+            "/wazuh/health", headers={"X-API-Key": "soc-test-key-001"}
         )
     assert response.status_code == 200
     assert "api_url" in response.json()
@@ -97,7 +97,7 @@ async def test_wazuh_health_endpoint(client):
 async def test_repeated_requests(client):
     for _ in range(5):
         response = await client.get(
-            "/health", headers={"X-API-Key": "soc-key-001"}
+            "/health", headers={"X-API-Key": "soc-test-key-001"}
         )
         assert response.status_code == 200
 

@@ -36,7 +36,11 @@ async def update_baseline(
         )
         session.add(baseline)
 
-    baseline.n += 1
+    baseline.n = (baseline.n or 0) + 1
+    if baseline.mean is None:
+        baseline.mean = 0.0
+    if baseline.m2 is None:
+        baseline.m2 = 0.0
     delta = observed - baseline.mean
     baseline.mean += delta / baseline.n
     delta2 = observed - baseline.mean

@@ -73,9 +73,8 @@ class TestAlienVaultOTX:
         assert result["found"] is False
         assert "not configured" in result["error"]
 
-    def test_unsupported_type(self, otx):
-        import asyncio
-        result = asyncio.get_event_loop().run_until_complete(otx.lookup("unknown_type", "val"))
+    async def test_unsupported_type(self, otx):
+        result = await otx.lookup("unknown_type", "val")
         assert result["found"] is False
 
 
