@@ -12,18 +12,15 @@
 |---|---|---|---|
 | Architecture Review | Claude | P0-P2 fixes: triage worker crash, dead-letter queue, prompt loading, real LLM wiring, 202 response, SHA-256 auth, CIDR whitelist, bracket-depth JSON parser, dateutil timestamps, offset pagination | ✅ main |
 | Dashboard & Docs | Antigravity | 5 architecture diagrams, SOC playbook guide, deployment guide, report/email templates, settings/landing pages | ✅ main |
-| Integration & Tests | OpenCode | 56 tests passing (all mocked, no Docker/DB), /health no-auth, unified worker entrypoint, EC2 scripts with validation, healthcheck, port checks, rollback | ✅ main |
+| Integration & Tests | OpenCode | Tests passing (all mocked, no Docker/DB), /health no-auth, unified worker entrypoint, EC2 scripts with validation, healthcheck, port checks, rollback | ✅ main |
 | Cloud LLM + EPSS/KEV + Reports + Models/Routers | Codex | OpenAI/Gemini/Claude connectors with cost tracking, EPSS/KEV enrichment worker, report generator (Jinja2→PDF) with CRUD API, notification/SOAR/threat-intel/UEBA models+routers, database schema | ✅ main |
-
 
 ## Phase 2 — In Progress (merging desktop app builds)
 
 | Phase | Tool | What was built | Status |
 |---|---|---|---|
-| Dashboard UI v2 | Antigravity | Compliance dashboard (SOC2/PCI/HIPAA/NIST), notifications channels/rules/events UI, playbook builder, threat intel pages (IoC search + feeds), health page with auto-refresh grid, dashboard store, tests | 🔄 merging |
-| Workers & Connectors v2 | Claude | Email/Slack/Teams/PagerDuty connectors, notification worker, SOAR engine (trigger matching + task execution), AlienVault OTX/MISP/VirusTotal connectors, threat intel worker, UEBA baseline engine + anomaly detector, health registry, tests | 🔄 merging |
-
-
+| Dashboard UI v2 | Antigravity | 7 dashboard screens (compliance, notifications, playbooks, threat intel, health), chart visualizations, dashboard store | 🔄 merging |
+| Workers & Connectors v2 | Claude | 4 notification connectors, notification worker, SOAR engine + actions, 3 TI connectors, TI worker, UEBA baseline + anomaly detector, health registry, 4 test files | 🔄 merging |
 
 ---
 

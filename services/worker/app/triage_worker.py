@@ -125,6 +125,45 @@ class TriageWorker:
                     session.add(case)
 
                 await session.commit()
+
+                # UEBA: update baselines and detect anomalies
+                try:
+                    from shared.ueba.detector import analyze_alert
+                    anomalies = await analyze_alert(session, alert)
+                    if anomalies:
+                        await session.commit()
+                        logger.info("UEBA: %d anomalies for alert %s", len(anomalies), alert_id)
+                except Exception as ueba_err:
+                    logger.warning("UEBA analysis failed for alert %s: %s", alert_id, ueba_err)
+
+                # SOAR: run matching playbooks
+                try:
+                    from shared.soar.engine import SOAREngine
+                    alert_dict = {
+                        "id": str(alert.id),
+                        "rule_level": alert.rule_level,
+                        "rule_description": alert.rule_description,
+                        "severity": result_data.get("severity", "medium"),
+                        "source_ip": alert.source_ip,
+                        "user_name": alert.user_name,
+                        "agent_name": alert.agent_name,
+                        "mitre_tactic": alert.mitre_tactic,
+                        "escalation_required": result_data.get("escalation_required", False),
+                    }
+                    soar = SOAREngine(session=session, redis_client=self.redis_client)
+                    playbook_results = await soar.run_for_alert(alert_dict)
+                    if playbook_results:
+                        logger.info("SOAR: %d playbooks ran for alert %s", len(playbook_results), alert_id)
+                except Exception as soar_err:
+                    logger.warning("SOAR execution failed for alert %s: %s", alert_id, soar_err)
+
+                # Push to TI enrichment queue
+                if self.redis_client:
+                    await self.redis_client.lpush(
+                        "ti_enrich_queue",
+                        json.dumps({"alert_id": str(alert_id)}),
+                    )
+
                 logger.info("Triage completed for alert %s", alert_id)
 
         except Exception as e:

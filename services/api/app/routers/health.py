@@ -8,8 +8,11 @@ from app.middleware.auth import validate_api_key
 from shared.connectors.llm_provider import get_provider
 from shared.connectors.wazuh_api import WazuhAPIConnector
 from shared.connectors.wazuh_indexer import WazuhIndexerConnector
+from shared.health_registry import HealthRegistry
 
 router = APIRouter(tags=["health"])
+
+_registry = HealthRegistry()
 
 
 @router.get("/health")
@@ -17,7 +20,6 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     status = "healthy"
     db_ok = False
     db_latency = 0
-
     start = time.time()
     try:
         await db.execute(text("SELECT 1"))
@@ -25,16 +27,23 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         db_latency = int((time.time() - start) * 1000)
     except Exception:
         status = "degraded"
-
     return {
         "status": status,
         "version": "1.0.0",
-        "database": {
-            "connected": db_ok,
-            "latency_ms": db_latency,
-        },
+        "database": {"connected": db_ok, "latency_ms": db_latency},
         "timestamp": int(time.time()),
     }
+
+
+@router.get("/health/full")
+async def health_check_full(_: str = Depends(validate_api_key)):
+    status = await _registry.check_all(use_cache=False)
+    return {**status, "timestamp": int(time.time())}
+
+
+@router.get("/health/ready")
+async def readiness():
+    return {"ready": True, "timestamp": int(time.time())}
 
 
 @router.get("/wazuh/health")

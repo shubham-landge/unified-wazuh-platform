@@ -17,5 +17,11 @@ from shared.models.notification import (
     NotificationEvent,
 )
 from shared.models.soar import SoarPlaybook, SoarTask, SoarExecution
-from shared.models.threat_intel import ThreatIntelFeed, ThreatIntelIndicator
+from shared.models.threat_intel import (
+    ThreatIntelFeed,
+    ThreatIntelIndicator,
+    ThreatIntelIoc,
+    AlertIocMatch,
+)
+from shared.models.playbook import Playbook, PlaybookRun
 from shared.models.ueba import UebaBaseline, UebaAnomaly

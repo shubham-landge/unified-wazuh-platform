@@ -533,3 +533,7 @@ CREATE TRIGGER trg_threat_intel_indicators_updated_at
 CREATE TRIGGER trg_ueba_baselines_updated_at
     BEFORE UPDATE ON ueba_baselines FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_ueba_anomalies_updated_at
+    BEFORE UPDATE ON ueba_anomalies FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();

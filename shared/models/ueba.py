@@ -22,6 +22,12 @@ class UebaBaseline(Base):
     stddev: Mapped[float | None] = mapped_column(Float, nullable=True)
     window_days: Mapped[int] = mapped_column(Integer, default=30)
     status: Mapped[str] = mapped_column(String(32), default="active")
+    n: Mapped[int] = mapped_column(Integer, default=0)
+    mean: Mapped[float] = mapped_column(Float, default=0.0)
+    m2: Mapped[float] = mapped_column(Float, default=0.0)
+    last_updated: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -40,6 +46,9 @@ class UebaAnomaly(Base):
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     baseline_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+    alert_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
     subject_type: Mapped[str] = mapped_column(String(64))

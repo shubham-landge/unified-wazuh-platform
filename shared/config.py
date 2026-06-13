@@ -45,6 +45,32 @@ class Settings(BaseSettings):
     claude_api_key: Optional[SecretStr] = None
     claude_model: str = "claude-opus-4-8"
 
+    # ── Notification connectors ──
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: Optional[SecretStr] = None
+    smtp_use_tls: bool = True
+    smtp_from_address: str = "soc-platform@localhost"
+
+    slack_webhook_url: str = ""
+    teams_webhook_url: str = ""
+    pagerduty_routing_key: Optional[SecretStr] = None
+
+    # ── Threat intel connectors ──
+    otx_api_key: Optional[SecretStr] = None
+    misp_url: str = ""
+    misp_api_key: Optional[SecretStr] = None
+    misp_verify_ssl: bool = True
+    virustotal_api_key: Optional[SecretStr] = None
+    ti_feed_poll_interval_seconds: int = 3600
+
+    # ── UEBA ──
+    ueba_zscore_medium: float = 2.5
+    ueba_zscore_high: float = 3.5
+    ueba_zscore_critical: float = 5.0
+    ueba_min_observations: int = 10
+
     # No default — must be set explicitly in .env to prevent accidental open access
     api_keys: Union[List[str], str] = Field(default_factory=list)
 
