@@ -137,6 +137,24 @@
                         Playbooks
                     </a>
 
+                    <!-- MTTR Dashboard -->
+                    <a href="/mttr-dashboard" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group {{ 'bg-accent-blue/10 text-accent-blue border border-accent-blue/15' if page == 'mttr-dashboard' else 'text-secondary hover:text-white hover:bg-white/5 border border-transparent' }}"
+                       hx-get="/mttr-dashboard" hx-target="body" hx-push-url="true">
+                        <svg class="w-5 h-5 shrink-0 group-hover:scale-105 transition-transform" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/>
+                        </svg>
+                        MTTR Analytics
+                    </a>
+
+                    <!-- ATT&CK Heatmap -->
+                    <a href="/attack-heatmap" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group {{ 'bg-accent-blue/10 text-accent-blue border border-accent-blue/15' if page == 'attack-heatmap' else 'text-secondary hover:text-white hover:bg-white/5 border border-transparent' }}"
+                       hx-get="/attack-heatmap" hx-target="body" hx-push-url="true">
+                        <svg class="w-5 h-5 shrink-0 group-hover:scale-105 transition-transform" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"/>
+                        </svg>
+                        ATT&CK Heatmap
+                    </a>
+
                     <!-- Threat Intel -->
                     <a href="/threat-intel" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group {{ 'bg-accent-blue/10 text-accent-blue border border-accent-blue/15' if page == 'threat-intel' else 'text-secondary hover:text-white hover:bg-white/5 border border-transparent' }}"
                        hx-get="/threat-intel" hx-target="body" hx-push-url="true">

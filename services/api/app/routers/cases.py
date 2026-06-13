@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func, text
 from pydantic import BaseModel
 from starlette.status import HTTP_404_NOT_FOUND, HTTP_400_BAD_REQUEST
 
@@ -11,6 +11,7 @@ from shared.models.case import Case
 from shared.models.analyst_note import AnalystNote
 from shared.models.case_event import CaseEvent
 from shared.models.case_investigation_step import CaseInvestigationStep
+from shared.models.ai_triage_result import AiTriageResult
 from app.middleware.auth import validate_api_key
 
 router = APIRouter(prefix="/cases", tags=["cases"])
@@ -408,6 +409,121 @@ async def update_step(
         "status": "success",
         "step_id": str(step.id),
         "completed": step.completed,
+    }
+
+
+@router.get("/stats/mttr")
+async def mttr_statistics(
+    days: int = Query(default=30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(validate_api_key),
+):
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    total_query = select(func.count(Case.id))
+    total_result = await db.execute(total_query)
+    total_cases = total_result.scalar()
+
+    open_query = select(func.count(Case.id)).where(Case.status == "open")
+    open_result = await db.execute(open_query)
+    open_count = open_result.scalar()
+
+    in_progress_query = select(func.count(Case.id)).where(Case.status == "in_progress")
+    in_progress_result = await db.execute(in_progress_query)
+    in_progress_count = in_progress_result.scalar()
+
+    resolved_query = select(func.count(Case.id)).where(Case.status == "resolved")
+    resolved_result = await db.execute(resolved_query)
+    resolved_count = resolved_result.scalar()
+
+    closed_query = select(func.count(Case.id)).where(Case.status == "closed")
+    closed_result = await db.execute(closed_query)
+    closed_count = closed_result.scalar()
+
+    fp_query = select(func.count(Case.id)).where(Case.status == "false_positive")
+    fp_result = await db.execute(fp_query)
+    fp_count = fp_result.scalar()
+
+    resolved_cases = await db.execute(
+        select(Case.created_at, Case.closed_at, Case.status).where(
+            Case.status.in_(["resolved", "closed"]),
+            Case.closed_at.isnot(None),
+            Case.created_at >= cutoff,
+        )
+    )
+    resolved_rows = resolved_cases.all()
+
+    mttr_seconds = []
+    mttr_by_day = {}
+    for row in resolved_rows:
+        delta = (row.closed_at - row.created_at).total_seconds()
+        mttr_seconds.append(delta)
+        day_key = row.closed_at.strftime("%Y-%m-%d")
+        if day_key not in mttr_by_day:
+            mttr_by_day[day_key] = []
+        mttr_by_day[day_key].append(delta)
+
+    avg_mttr_hours = round((sum(mttr_seconds) / len(mttr_seconds) / 3600), 2) if mttr_seconds else 0
+    trend = sorted(
+        [{"date": d, "avg_hours": round((sum(v) / len(v) / 3600), 2)} for d, v in mttr_by_day.items()],
+        key=lambda x: x["date"],
+    )
+
+    return {
+        "status": "success",
+        "total_cases": total_cases,
+        "open": open_count,
+        "in_progress": in_progress_count,
+        "resolved": resolved_count,
+        "closed": closed_count,
+        "false_positive": fp_count,
+        "avg_mttr_hours": avg_mttr_hours,
+        "closed_within_24h": sum(1 for d in mttr_seconds if d <= 86400),
+        "closed_within_7d": sum(1 for d in mttr_seconds if d <= 604800),
+        "total_resolved": len(mttr_seconds),
+        "trend": trend,
+    }
+
+
+@router.get("/stats/mitre-heatmap")
+async def mitre_heatmap(
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(validate_api_key),
+):
+    result = await db.execute(select(AiTriageResult.mitre_mapping))
+    rows = result.scalars().all()
+
+    tactic_map = {}
+    for row in rows:
+        mappings = row if isinstance(row, list) else []
+        if not mappings:
+            continue
+        for m in mappings:
+            tactic = m.get("tactic", "Unknown")
+            technique = m.get("technique", "Unknown")
+            name = m.get("name", technique)
+            key = f"{tactic}::{technique}"
+            if key not in tactic_map:
+                tactic_map[key] = {"tactic": tactic, "technique": technique, "name": name, "count": 0}
+            tactic_map[key]["count"] += 1
+
+    tactics_order = ["TA0001", "TA0002", "TA0003", "TA0004", "TA0005", "TA0006", "TA0007", "TA0008", "TA0009", "TA0010", "TA0011", "TA0040", "TA0043"]
+
+    tactical_groups = {}
+    for entry in tactic_map.values():
+        t = entry["tactic"]
+        if t not in tactical_groups:
+            tactical_groups[t] = []
+        tactical_groups[t].append(entry)
+
+    sorted_tactics = sorted(tactical_groups.keys(), key=lambda x: tactics_order.index(x) if x in tactics_order else 999)
+
+    return {
+        "status": "success",
+        "tactics": sorted_tactics,
+        "techniques_per_tactic": {t: sorted(tactical_groups[t], key=lambda x: -x["count"]) for t in sorted_tactics},
+        "total_techniques": sum(e["count"] for e in tactic_map.values()),
+        "unique_techniques": len(tactic_map),
     }
 
 
