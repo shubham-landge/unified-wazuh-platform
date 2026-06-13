@@ -227,6 +227,16 @@
                         Ticketing
                     </a>
 
+                    <!-- OSINT -->
+                    <a href="/osint" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group {{ 'bg-accent-blue/10 text-accent-blue border border-accent-blue/15' if page == 'OSINT' else 'text-secondary hover:text-white hover:bg-white/5 border border-transparent' }}"
+                       hx-get="/osint" hx-target="body" hx-push-url="true">
+                        <svg class="w-5 h-5 shrink-0 group-hover:scale-105 transition-transform" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+                        </svg>
+                        OSINT
+                    </a>
+                    </a>
+
                     <!-- Settings -->
                     <a href="/settings" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group {{ 'bg-accent-blue/10 text-accent-blue border border-accent-blue/15' if page == 'settings' else 'text-secondary hover:text-white hover:bg-white/5 border border-transparent' }}"
                        hx-get="/settings" hx-target="body" hx-push-url="true">

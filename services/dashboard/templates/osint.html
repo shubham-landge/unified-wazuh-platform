@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block content %}
+<div x-data="osintState()" class="space-y-6">
+    <div class="flex justify-between items-start gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">OSINT Investigation</h1>
+            <p class="text-xs text-secondary mt-0.5">Queue maigret lookups for usernames, email addresses, and domains, then review discovered profiles and enrichment history.</p>
+        </div>
+        <div class="card-premium px-4 py-2 text-xs text-secondary">
+            <div class="font-semibold text-white" x-text="selectedTargetId ? 'Selected lookup' : 'Recent activity'"></div>
+            <div class="font-mono text-[10px] mt-0.5" x-text="selectedTargetId || 'No target selected'"></div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="card-premium h-fit">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-4 pb-2 border-b border-white/5">Queue Lookup</h3>
+            <form action="/osint" method="get" class="space-y-4">
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Target Type</label>
+                    <select name="target_type" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none w-full">
+                        <option value="username">Username</option>
+                        <option value="email">Email</option>
+                        <option value="domain">Domain</option>
+                    </select>
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Target Value</label>
+                    <input name="target_value" type="text" placeholder="alice, alice@example.com, example.com" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none w-full">
+                </div>
+                <button type="submit" class="w-full py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold transition-all">
+                    Queue Lookup
+                </button>
+            </form>
+
+            <div class="grid grid-cols-2 gap-3 mt-6">
+                <div class="bg-deep/50 border border-white/5 rounded-lg p-3">
+                    <div class="text-[10px] uppercase tracking-wider text-muted">Targets</div>
+                    <div class="text-xl font-extrabold text-white mt-1" x-text="targets.length"></div>
+                </div>
+                <div class="bg-deep/50 border border-white/5 rounded-lg p-3">
+                    <div class="text-[10px] uppercase tracking-wider text-muted">Results</div>
+                    <div class="text-xl font-extrabold text-white mt-1" x-text="results.length"></div>
+                </div>
+            </div>
+
+            <div class="mt-6" x-show="selectedTarget && selectedTarget.id">
+                <div class="text-[10px] uppercase tracking-wider text-muted mb-2">Selected Target</div>
+                <div class="bg-deep/50 border border-white/5 rounded-lg p-3 space-y-1.5">
+                    <div class="text-sm font-semibold text-white" x-text="selectedTarget.target_value || 'N/A'"></div>
+                    <div class="text-xs text-secondary">
+                        <span class="font-mono" x-text="selectedTarget.target_type || 'unknown'"></span>
+                        <span class="mx-1 text-muted">•</span>
+                        <span class="font-mono" x-text="formatTime(selectedTarget.created_at)"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card-premium lg:col-span-2 space-y-4">
+            <div>
+                <div class="flex items-center justify-between gap-4 mb-3">
+                    <h3 class="text-xs font-bold text-white uppercase tracking-wider">Results</h3>
+                    <input type="text" x-model="search" placeholder="Filter results..." class="w-56 bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="border-b border-white/5 text-[10px] text-muted uppercase tracking-wider">
+                                <th class="py-2.5 font-semibold">Source</th>
+                                <th class="py-2.5 font-semibold">Profile URL</th>
+                                <th class="py-2.5 font-semibold">Name</th>
+                                <th class="py-2.5 font-semibold">Location</th>
+                                <th class="py-2.5 font-semibold">Captured</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-white/5">
+                            <template x-for="item in filteredResults()" :key="item.id">
+                                <tr class="hover:bg-white/5 transition-all">
+                                    <td class="py-3 font-semibold text-primary" x-text="item.source || 'unknown'"></td>
+                                    <td class="py-3 text-secondary">
+                                        <a :href="item.profile_url || '#'" target="_blank" class="text-accent-blue hover:underline break-all" x-text="item.profile_url || '—'"></a>
+                                    </td>
+                                    <td class="py-3 text-secondary" x-text="item.name || '—'"></td>
+                                    <td class="py-3 text-secondary" x-text="item.location || '—'"></td>
+                                    <td class="py-3 font-mono text-[10px] text-secondary" x-text="formatTime(item.created_at)"></td>
+                                </tr>
+                            </template>
+                            <tr x-show="filteredResults().length === 0">
+                                <td colspan="5" class="py-12 text-center text-muted">
+                                    No enriched profiles yet
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-3">Lookup History</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="border-b border-white/5 text-[10px] text-muted uppercase tracking-wider">
+                                <th class="py-2.5 font-semibold">Target</th>
+                                <th class="py-2.5 font-semibold">Type</th>
+                                <th class="py-2.5 font-semibold">Created</th>
+                                <th class="py-2.5 font-semibold text-right">Open</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-white/5">
+                            <template x-for="item in filteredTargets()" :key="item.id">
+                                <tr class="hover:bg-white/5 transition-all">
+                                    <td class="py-3 font-semibold text-primary" x-text="item.target_value || 'N/A'"></td>
+                                    <td class="py-3 text-secondary font-mono" x-text="item.target_type || 'unknown'"></td>
+                                    <td class="py-3 font-mono text-[10px] text-secondary" x-text="formatTime(item.created_at)"></td>
+                                    <td class="py-3 text-right">
+                                        <a :href="'/osint/history?target_id=' + item.id" class="px-2.5 py-1.5 bg-elevated hover:bg-white/5 border border-white/5 hover:border-white/10 rounded text-[10px] font-bold text-white transition-all">
+                                            View
+                                        </a>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="filteredTargets().length === 0">
+                                <td colspan="4" class="py-10 text-center text-muted">
+                                    No OSINT lookups recorded
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function osintState() {
+        return {
+            targets: {{ targets | tojson }},
+            results: {{ results | tojson }},
+            selectedTarget: {{ selected_target | tojson }},
+            selectedTargetId: "{{ selected_target_id or '' }}",
+            search: '',
+            formatTime(ts) {
+                if (!ts) return 'N/A';
+                return String(ts).substring(0, 19).replace('T', ' ');
+            },
+            filteredResults() {
+                const query = this.search.toLowerCase();
+                return this.results.filter(item => {
+                    if (!query) return true;
+                    return [
+                        item.source,
+                        item.profile_url,
+                        item.name,
+                        item.location,
+                    ].some(value => String(value || '').toLowerCase().includes(query));
+                });
+            },
+            filteredTargets() {
+                const query = this.search.toLowerCase();
+                return this.targets.filter(item => {
+                    if (!query) return true;
+                    return [
+                        item.target_value,
+                        item.target_type,
+                    ].some(value => String(value || '').toLowerCase().includes(query));
+                });
+            },
+        }
+    }
+</script>
+{% endblock %}

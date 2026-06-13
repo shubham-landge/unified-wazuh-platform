@@ -497,6 +497,32 @@ CREATE INDEX idx_ueba_anomalies_subject ON ueba_anomalies(subject_type, subject_
 CREATE INDEX idx_ueba_anomalies_status ON ueba_anomalies(status);
 CREATE INDEX idx_ueba_anomalies_detected ON ueba_anomalies(detected_at DESC);
 
+-- ─── OSINT ───
+CREATE TABLE osint_targets (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    target_type TEXT NOT NULL,
+    target_value TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_osint_targets_tenant ON osint_targets(tenant_id);
+CREATE INDEX idx_osint_targets_type ON osint_targets(target_type);
+CREATE INDEX idx_osint_targets_created ON osint_targets(created_at DESC);
+
+CREATE TABLE osint_results (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    target_id UUID NOT NULL REFERENCES osint_targets(id) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    profile_url TEXT,
+    name TEXT,
+    location TEXT,
+    raw_data JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_osint_results_target ON osint_results(target_id);
+CREATE INDEX idx_osint_results_source ON osint_results(source);
+CREATE INDEX idx_osint_results_created ON osint_results(created_at DESC);
+
 -- ─── Audit Log ───
 CREATE TABLE audit_log (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

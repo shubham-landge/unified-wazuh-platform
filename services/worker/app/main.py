@@ -19,7 +19,6 @@ async def main():
 
     workers = [poller, triage_worker, vulnerability_worker]
 
-    # Auto-discover optional future workers
     for module_name, class_name in [
         ("app.notification_worker", "NotificationWorker"),
         ("app.playbook_worker", "PlaybookWorker"),
@@ -30,6 +29,7 @@ async def main():
         ("app.agent_worker", "AgentWorker"),
         ("app.ticketing_worker", "TicketingWorker"),
         ("app.approval_worker", "ApprovalWorker"),
+        ("app.osint_worker", "OSINTWorker"),
     ]:
         try:
             import importlib
