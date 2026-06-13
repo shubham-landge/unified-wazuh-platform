@@ -30,6 +30,8 @@ from app.routers import (
     ticketing,
     approvals,
     osint,
+    usage,
+    tenants,
 )
 
 logging.basicConfig(
@@ -88,3 +90,5 @@ app.include_router(agents.router)
 app.include_router(ticketing.router)
 app.include_router(approvals.router)
 app.include_router(osint.router)
+app.include_router(usage.router)
+app.include_router(tenants.router)

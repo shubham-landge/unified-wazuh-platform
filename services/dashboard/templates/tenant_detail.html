@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="p-6 space-y-6">
+    <div class="flex items-center gap-3">
+        <a href="/tenants" class="text-muted hover:text-primary transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/>
+            </svg>
+        </a>
+        <div>
+            <h1 class="text-2xl font-bold text-primary">{{ tenant.name }}</h1>
+            <p class="text-secondary text-sm mt-1">{{ tenant.slug }}</p>
+        </div>
+        <span class="ml-auto px-3 py-1 text-xs font-semibold rounded-full {{ 'bg-accent-green/20 text-accent-green border border-accent-green/30' if tenant.is_active else 'bg-accent-red/20 text-accent-red border border-accent-red/30' }}">
+            {{ 'Active' if tenant.is_active else 'Inactive' }}
+        </span>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Tenant Info -->
+        <div class="bg-elevated border border-white/5 rounded-xl p-5">
+            <h2 class="text-lg font-semibold text-primary mb-4">Details</h2>
+            <dl class="space-y-3">
+                <div class="flex justify-between">
+                    <dt class="text-muted text-sm">Tenant ID</dt>
+                    <dd class="text-primary text-sm font-mono">{{ tenant.id }}</dd>
+                </div>
+                <div class="flex justify-between">
+                    <dt class="text-muted text-sm">Name</dt>
+                    <dd class="text-primary text-sm">{{ tenant.name }}</dd>
+                </div>
+                <div class="flex justify-between">
+                    <dt class="text-muted text-sm">Slug</dt>
+                    <dd class="text-primary text-sm">{{ tenant.slug }}</dd>
+                </div>
+                <div class="flex justify-between">
+                    <dt class="text-muted text-sm">Created</dt>
+                    <dd class="text-primary text-sm">{{ tenant.created_at[:10] if tenant.created_at else '-' }}</dd>
+                </div>
+                <div class="flex justify-between">
+                    <dt class="text-muted text-sm">Updated</dt>
+                    <dd class="text-primary text-sm">{{ tenant.updated_at[:10] if tenant.updated_at else '-' }}</dd>
+                </div>
+            </dl>
+        </div>
+
+        <!-- Stats -->
+        <div class="bg-elevated border border-white/5 rounded-xl p-5">
+            <h2 class="text-lg font-semibold text-primary mb-4">Statistics</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-deep rounded-lg p-4">
+                    <p class="text-muted text-xs font-medium">Alerts</p>
+                    <p class="text-2xl font-bold text-primary mt-1">{{ stats.alerts_count }}</p>
+                </div>
+                <div class="bg-deep rounded-lg p-4">
+                    <p class="text-muted text-xs font-medium">Cases</p>
+                    <p class="text-2xl font-bold text-primary mt-1">{{ stats.cases_count }}</p>
+                </div>
+                <div class="bg-deep rounded-lg p-4">
+                    <p class="text-muted text-xs font-medium">Assets</p>
+                    <p class="text-2xl font-bold text-primary mt-1">{{ stats.assets_count }}</p>
+                </div>
+                <div class="bg-deep rounded-lg p-4">
+                    <p class="text-muted text-xs font-medium">Users</p>
+                    <p class="text-2xl font-bold text-primary mt-1">{{ stats.users_count }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Config -->
+        <div class="bg-elevated border border-white/5 rounded-xl p-5 lg:col-span-2">
+            <h2 class="text-lg font-semibold text-primary mb-4">Configuration</h2>
+            <pre class="bg-deep rounded-lg p-4 text-xs text-secondary font-mono overflow-x-auto">{{ tenant.config | tojson(indent=2) if tenant.config else '{}' }}</pre>
+        </div>
+    </div>
+</div>
+{% endblock %}

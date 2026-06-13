@@ -1607,3 +1607,51 @@ async def osint_history_page(request: Request, target_id: str | None = None):
         "selected_target_id": target_id,
         "page": "OSINT",
     })
+
+
+@app.get("/usage", response_class=HTMLResponse)
+async def usage_page(request: Request, period: str = "current"):
+    summary = await api_request("GET", f"/usage/summary?period={period}")
+    records = await api_request("GET", "/usage/records?limit=50")
+    limits = await api_request("GET", "/usage/limits")
+    return templates.TemplateResponse("usage.html", {
+        "request": request,
+        "summary": summary.get("summary", {}),
+        "records": records.get("records", []),
+        "limits": limits.get("limits", {}),
+        "period": period,
+        "page": "usage",
+    })
+
+
+@app.get("/tenants", response_class=HTMLResponse)
+async def tenants_page(request: Request):
+    tenants = await api_request("GET", "/tenants")
+    return templates.TemplateResponse("tenants.html", {
+        "request": request,
+        "tenants": tenants.get("tenants", []),
+        "page": "tenants",
+    })
+
+
+@app.get("/tenants/{tenant_id}", response_class=HTMLResponse)
+async def tenant_detail_page(request: Request, tenant_id: str):
+    tenant = await api_request("GET", f"/tenants/{tenant_id}")
+    stats = await api_request("GET", f"/tenants/{tenant_id}/stats")
+    return templates.TemplateResponse("tenant_detail.html", {
+        "request": request,
+        "tenant": tenant.get("tenant", {}),
+        "stats": stats.get("stats", {}),
+        "page": "tenants",
+    })
+
+
+@app.post("/tenants")
+async def create_tenant_dashboard(request: Request):
+    form = await request.form()
+    result = await api_request("POST", "/tenants", json_data={
+        "name": form.get("name"),
+        "slug": form.get("slug"),
+    })
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/tenants", status_code=303)

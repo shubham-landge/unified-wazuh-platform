@@ -33,4 +33,5 @@ from shared.models.feedback import UserFeedback
 from shared.models.case_event import CaseEvent
 from shared.models.case_investigation_step import CaseInvestigationStep
 from shared.models.ticketing import TicketingConfig, TicketLink
+from shared.models.usage import TenantUsage, UsageRecord
 from shared.models.approval import ApprovalRequest

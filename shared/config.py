@@ -151,6 +151,14 @@ class Settings(BaseSettings):
     jira_api_token: SecretStr = SecretStr("")
     ticketing_sync_enabled: bool = False
 
+    # ── Usage Metering (Track E) ──
+    metering_enabled: bool = True
+    metering_retention_days: int = 365
+    metering_default_alert_limit: int = 100000
+    metering_default_api_limit: int = 500000
+    metering_default_storage_gb: int = 10
+    metering_default_ai_triage_limit: int = 5000
+
     # ── Tiered LLM Routing (Phase 3B) ──
     llm_tier_strategy: str = "auto"  # "fast" | "full" | "auto"
     llm_tier_fast_provider: str = "ollama"

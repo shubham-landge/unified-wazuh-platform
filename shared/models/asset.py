@@ -1,16 +1,15 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Boolean, Float, Text, JSON
+from sqlalchemy import String, Integer, DateTime, Boolean, Float, Text, JSON, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 from shared.models.base import Base, TenantMixin
 
 
-class Asset(Base):
+class Asset(Base, TenantMixin):
     __tablename__ = "assets"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     agent_id: Mapped[str] = mapped_column(String(255))
     agent_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     agent_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)

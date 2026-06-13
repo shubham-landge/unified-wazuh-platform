@@ -3,14 +3,13 @@ from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
-from shared.models.base import Base
+from shared.models.base import Base, TenantMixin
 
 
-class AnalystNote(Base):
+class AnalystNote(Base, TenantMixin):
     __tablename__ = "analyst_notes"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     case_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     analyst: Mapped[str] = mapped_column(String(255))
     note: Mapped[str] = mapped_column(Text)

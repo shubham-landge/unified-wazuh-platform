@@ -5,16 +5,15 @@ from sqlalchemy import Boolean, DateTime, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from shared.models.base import Base
+from shared.models.base import Base, TenantMixin
 
 
-class NotificationChannel(Base):
+class NotificationChannel(Base, TenantMixin):
     __tablename__ = "notification_channels"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     name: Mapped[str] = mapped_column(String(255))
     channel_type: Mapped[str] = mapped_column(String(32))
     destination: Mapped[str] = mapped_column(String(512))
@@ -31,13 +30,12 @@ class NotificationChannel(Base):
     )
 
 
-class NotificationRule(Base):
+class NotificationRule(Base, TenantMixin):
     __tablename__ = "notification_rules"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     channel_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
@@ -56,13 +54,12 @@ class NotificationRule(Base):
     )
 
 
-class NotificationEvent(Base):
+class NotificationEvent(Base, TenantMixin):
     __tablename__ = "notification_events"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     rule_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )

@@ -5,16 +5,15 @@ from sqlalchemy import Boolean, DateTime, JSON, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from shared.models.base import Base
+from shared.models.base import Base, TenantMixin
 
 
-class SoarPlaybook(Base):
+class SoarPlaybook(Base, TenantMixin):
     __tablename__ = "soar_playbooks"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     trigger_type: Mapped[str] = mapped_column(String(64))
@@ -31,13 +30,12 @@ class SoarPlaybook(Base):
     )
 
 
-class SoarTask(Base):
+class SoarTask(Base, TenantMixin):
     __tablename__ = "soar_tasks"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     playbook_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
@@ -56,13 +54,12 @@ class SoarTask(Base):
     )
 
 
-class SoarExecution(Base):
+class SoarExecution(Base, TenantMixin):
     __tablename__ = "soar_executions"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     playbook_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )

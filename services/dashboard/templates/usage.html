@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="p-6 space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-primary">Usage & Metering</h1>
+            <p class="text-secondary text-sm mt-1">Track your tenant's resource consumption and quotas</p>
+        </div>
+        <div class="flex gap-2">
+            <select id="period-select" class="bg-elevated border border-white/10 rounded-lg px-3 py-2 text-sm text-primary"
+                    onchange="window.location.href='?period='+this.value">
+                <option value="current" {% if period == 'current' %}selected{% endif %}>Current Month</option>
+                <option value="last_30d" {% if period == 'last_30d' %}selected{% endif %}>Last 30 Days</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-elevated border border-white/5 rounded-xl p-5">
+            <div class="flex items-center justify-between">
+                <span class="text-muted text-sm font-medium">Alerts</span>
+                <svg class="w-5 h-5 text-accent-red" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <p class="text-3xl font-bold text-primary mt-2">{{ summary.alerts_count }}</p>
+            <div class="w-full bg-white/10 rounded-full h-1.5 mt-3">
+                <div class="bg-accent-red h-1.5 rounded-full" style="width: {{ (summary.alerts_count / limits.alerts_per_month * 100)|round|int if limits.alerts_per_month > 0 else 0 }}%"></div>
+            </div>
+            <p class="text-xs text-muted mt-1">{{ (summary.alerts_count / limits.alerts_per_month * 100)|round(1) if limits.alerts_per_month > 0 else 0 }}% of {{ limits.alerts_per_month }} limit</p>
+        </div>
+
+        <div class="bg-elevated border border-white/5 rounded-xl p-5">
+            <div class="flex items-center justify-between">
+                <span class="text-muted text-sm font-medium">API Calls</span>
+                <svg class="w-5 h-5 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/>
+                </svg>
+            </div>
+            <p class="text-3xl font-bold text-primary mt-2">{{ summary.api_calls_count }}</p>
+            <div class="w-full bg-white/10 rounded-full h-1.5 mt-3">
+                <div class="bg-accent-blue h-1.5 rounded-full" style="width: {{ (summary.api_calls_count / limits.api_calls_per_month * 100)|round|int if limits.api_calls_per_month > 0 else 0 }}%"></div>
+            </div>
+            <p class="text-xs text-muted mt-1">{{ (summary.api_calls_count / limits.api_calls_per_month * 100)|round(1) if limits.api_calls_per_month > 0 else 0 }}% of {{ limits.api_calls_per_month }} limit</p>
+        </div>
+
+        <div class="bg-elevated border border-white/5 rounded-xl p-5">
+            <div class="flex items-center justify-between">
+                <span class="text-muted text-sm font-medium">Storage</span>
+                <svg class="w-5 h-5 text-accent-yellow" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"/>
+                </svg>
+            </div>
+            <p class="text-3xl font-bold text-primary mt-2">{{ "%.1f"|format(summary.storage_mb) }} MB</p>
+            <div class="w-full bg-white/10 rounded-full h-1.5 mt-3">
+                <div class="bg-accent-yellow h-1.5 rounded-full" style="width: {{ (summary.storage_mb / (limits.storage_gb * 1024) * 100)|round|int if limits.storage_gb > 0 else 0 }}%"></div>
+            </div>
+            <p class="text-xs text-muted mt-1">{{ (summary.storage_mb / (limits.storage_gb * 1024) * 100)|round(1) if limits.storage_gb > 0 else 0 }}% of {{ limits.storage_gb }} GB limit</p>
+        </div>
+
+        <div class="bg-elevated border border-white/5 rounded-xl p-5">
+            <div class="flex items-center justify-between">
+                <span class="text-muted text-sm font-medium">AI Triage</span>
+                <svg class="w-5 h-5 text-accent-green" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
+                </svg>
+            </div>
+            <p class="text-3xl font-bold text-primary mt-2">{{ summary.ai_triage_count }}</p>
+            <div class="w-full bg-white/10 rounded-full h-1.5 mt-3">
+                <div class="bg-accent-green h-1.5 rounded-full" style="width: {{ (summary.ai_triage_count / limits.ai_triage_per_month * 100)|round|int if limits.ai_triage_per_month > 0 else 0 }}%"></div>
+            </div>
+            <p class="text-xs text-muted mt-1">{{ (summary.ai_triage_count / limits.ai_triage_per_month * 100)|round(1) if limits.ai_triage_per_month > 0 else 0 }}% of {{ limits.ai_triage_per_month }} limit</p>
+        </div>
+    </div>
+
+    <!-- Usage Records Table -->
+    <div class="bg-elevated border border-white/5 rounded-xl p-5">
+        <h2 class="text-lg font-semibold text-primary mb-4">Usage Records</h2>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-muted border-b border-white/5">
+                        <th class="text-left py-3 px-2 font-medium">Event Type</th>
+                        <th class="text-left py-3 px-2 font-medium">Resource</th>
+                        <th class="text-left py-3 px-2 font-medium">Type</th>
+                        <th class="text-right py-3 px-2 font-medium">Recorded At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in records %}
+                    <tr class="border-b border-white/5 hover:bg-white/5 transition-colors">
+                        <td class="py-3 px-2 text-primary">{{ record.event_type }}</td>
+                        <td class="py-3 px-2 text-secondary">{{ record.resource_id or '-' }}</td>
+                        <td class="py-3 px-2 text-secondary">{{ record.resource_type }}</td>
+                        <td class="py-3 px-2 text-secondary text-right">{{ record.recorded_at[:10] if record.recorded_at else '-' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="py-8 text-center text-muted">No usage records found</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

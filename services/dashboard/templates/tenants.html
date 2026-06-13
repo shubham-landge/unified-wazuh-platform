@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="p-6 space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-primary">Tenant Management</h1>
+            <p class="text-secondary text-sm mt-1">Super admin — create, manage, and monitor tenants</p>
+        </div>
+        <button onclick="document.getElementById('create-modal').classList.remove('hidden')"
+                class="bg-accent-blue hover:bg-accent-blue/80 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            + New Tenant
+        </button>
+    </div>
+
+    <!-- Tenants Table -->
+    <div class="bg-elevated border border-white/5 rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="text-muted border-b border-white/5 bg-white/5">
+                    <th class="text-left py-3 px-4 font-medium">Name</th>
+                    <th class="text-left py-3 px-4 font-medium">Slug</th>
+                    <th class="text-center py-3 px-4 font-medium">Status</th>
+                    <th class="text-right py-3 px-4 font-medium">Created</th>
+                    <th class="text-right py-3 px-4 font-medium">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tenant in tenants %}
+                <tr class="border-b border-white/5 hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-primary font-medium">{{ tenant.name }}</td>
+                    <td class="py-3 px-4 text-secondary">{{ tenant.slug }}</td>
+                    <td class="py-3 px-4 text-center">
+                        {% if tenant.is_active %}
+                        <span class="px-2 py-0.5 text-xs font-semibold bg-accent-green/20 text-accent-green border border-accent-green/30 rounded-full">Active</span>
+                        {% else %}
+                        <span class="px-2 py-0.5 text-xs font-semibold bg-accent-red/20 text-accent-red border border-accent-red/30 rounded-full">Inactive</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-3 px-4 text-secondary text-right">{{ tenant.created_at[:10] if tenant.created_at else '-' }}</td>
+                    <td class="py-3 px-4 text-right">
+                        <a href="/tenants/{{ tenant.id }}" class="text-accent-blue hover:text-accent-blue/80 text-sm font-medium">View</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="py-8 text-center text-muted">No tenants found</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Create Tenant Modal -->
+<div id="create-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+    <div class="bg-elevated border border-white/10 rounded-xl p-6 w-full max-w-md mx-4">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold text-primary">Create Tenant</h2>
+            <button onclick="document.getElementById('create-modal').classList.add('hidden')" class="text-muted hover:text-primary">&times;</button>
+        </div>
+        <form action="/tenants" method="POST" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-secondary mb-1">Name</label>
+                <input type="text" name="name" required class="w-full bg-deep border border-white/10 rounded-lg px-3 py-2 text-sm text-primary focus:border-accent-blue focus:outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-secondary mb-1">Slug</label>
+                <input type="text" name="slug" required class="w-full bg-deep border border-white/10 rounded-lg px-3 py-2 text-sm text-primary focus:border-accent-blue focus:outline-none">
+                <p class="text-xs text-muted mt-1">Unique identifier used in URLs and API calls</p>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="document.getElementById('create-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-secondary hover:text-primary transition-colors">Cancel</button>
+                <button type="submit" class="bg-accent-blue hover:bg-accent-blue/80 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Create Tenant</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

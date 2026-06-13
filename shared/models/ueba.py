@@ -5,16 +5,15 @@ from sqlalchemy import DateTime, Float, Integer, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from shared.models.base import Base
+from shared.models.base import Base, TenantMixin
 
 
-class UebaBaseline(Base):
+class UebaBaseline(Base, TenantMixin):
     __tablename__ = "ueba_baselines"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     subject_type: Mapped[str] = mapped_column(String(64))
     subject_id: Mapped[str] = mapped_column(String(255))
     metric_name: Mapped[str] = mapped_column(String(255))
@@ -38,13 +37,12 @@ class UebaBaseline(Base):
     )
 
 
-class UebaAnomaly(Base):
+class UebaAnomaly(Base, TenantMixin):
     __tablename__ = "ueba_anomalies"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     baseline_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )

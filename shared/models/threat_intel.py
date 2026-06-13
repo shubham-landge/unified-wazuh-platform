@@ -5,16 +5,15 @@ from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from shared.models.base import Base
+from shared.models.base import Base, TenantMixin
 
 
-class ThreatIntelFeed(Base):
+class ThreatIntelFeed(Base, TenantMixin):
     __tablename__ = "threat_intel_feeds"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     name: Mapped[str] = mapped_column(String(255))
     source_url: Mapped[str] = mapped_column(Text)
     feed_type: Mapped[str] = mapped_column(String(64))
@@ -34,13 +33,12 @@ class ThreatIntelFeed(Base):
     )
 
 
-class ThreatIntelIndicator(Base):
+class ThreatIntelIndicator(Base, TenantMixin):
     __tablename__ = "threat_intel_indicators"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     feed_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )

@@ -941,3 +941,40 @@ CREATE TRIGGER trg_ticketing_configs_updated_at
 CREATE TRIGGER trg_approval_requests_updated_at
     BEFORE UPDATE ON approval_requests FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- ─── Usage Metering (Track E) ───
+CREATE TABLE tenant_usage (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    period_start TIMESTAMPTZ NOT NULL,
+    period_end TIMESTAMPTZ NOT NULL,
+    alerts_count INTEGER DEFAULT 0,
+    api_calls_count INTEGER DEFAULT 0,
+    cases_count INTEGER DEFAULT 0,
+    agents_count INTEGER DEFAULT 0,
+    storage_mb DOUBLE PRECISION DEFAULT 0.0,
+    ai_triage_count INTEGER DEFAULT 0,
+    report_count INTEGER DEFAULT 0,
+    total_score INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_tenant_usage_tenant ON tenant_usage(tenant_id);
+CREATE INDEX idx_tenant_usage_period ON tenant_usage(tenant_id, period_start, period_end);
+
+CREATE TABLE usage_records (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    resource_id TEXT,
+    resource_type TEXT NOT NULL,
+    extra_meta JSONB DEFAULT '{}',
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_usage_records_tenant ON usage_records(tenant_id);
+CREATE INDEX idx_usage_records_event ON usage_records(event_type);
+CREATE INDEX idx_usage_records_recorded ON usage_records(recorded_at);
+
+CREATE TRIGGER trg_tenant_usage_updated_at
+    BEFORE UPDATE ON tenant_usage FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
