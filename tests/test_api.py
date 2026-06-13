@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.db import get_db
 from app.routers import alerts, assets, audit, cases, health, vulnerabilities
+from shared.connectors.llm_provider import OllamaProvider
 
 
 def _empty_result():
@@ -69,18 +70,24 @@ async def test_list_endpoints(client, path):
 
 @pytest.mark.asyncio
 async def test_model_status_endpoint(client):
-    response = await client.get(
-        "/model/status", headers={"X-API-Key": "soc-key-001"}
-    )
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("services.api.app.routers.health.get_provider", lambda: OllamaProvider())
+        mp.setattr(OllamaProvider, "health", AsyncMock(return_value={"connected": True}))
+        response = await client.get(
+            "/model/status", headers={"X-API-Key": "soc-key-001"}
+        )
     assert response.status_code == 200
     assert "provider" in response.json()
 
 
 @pytest.mark.asyncio
 async def test_wazuh_health_endpoint(client):
-    response = await client.get(
-        "/wazuh/health", headers={"X-API-Key": "soc-key-001"}
-    )
+    from unittest.mock import patch
+
+    with patch("services.api.app.routers.health.WazuhAPIConnector.health", AsyncMock(return_value={"connected": True})), patch("services.api.app.routers.health.WazuhIndexerConnector.health", AsyncMock(return_value={"connected": True})):
+        response = await client.get(
+            "/wazuh/health", headers={"X-API-Key": "soc-key-001"}
+        )
     assert response.status_code == 200
     assert "api_url" in response.json()
     assert "indexer_url" in response.json()

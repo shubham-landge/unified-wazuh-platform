@@ -6,6 +6,10 @@ from shared.models.analyst_note import AnalystNote
 from shared.models.audit_log import AuditLog
 from shared.models.base import Base
 from shared.models.case import Case
+from shared.models.notification import NotificationChannel, NotificationRule, NotificationEvent
+from shared.models.soar import SoarPlaybook, SoarTask, SoarExecution
+from shared.models.threat_intel import ThreatIntelFeed, ThreatIntelIndicator
+from shared.models.ueba import UebaBaseline, UebaAnomaly
 from shared.models.report import Report
 from shared.models.vulnerability import Vulnerability
 
@@ -20,6 +24,16 @@ def test_expected_tables_are_registered():
         "vulnerabilities",
         "audit_log",
         "reports",
+        "notification_channels",
+        "notification_rules",
+        "notification_events",
+        "soar_playbooks",
+        "soar_tasks",
+        "soar_executions",
+        "threat_intel_feeds",
+        "threat_intel_indicators",
+        "ueba_baselines",
+        "ueba_anomalies",
     }.issubset(Base.metadata.tables)
 
 

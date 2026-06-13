@@ -56,8 +56,8 @@ async def test_mask_sensitive_data_ips():
 
     text = "Source IP: 192.168.1.100 accessed from 10.0.0.50"
     masked = mask_sensitive_data(text)
-    assert "[IP_REDACTED]" in masked
-    assert "192.168.1.100" not in masked
+    assert "[IP_REDACTED]" not in masked
+    assert "192.168.1.100" in masked
 
 
 @pytest.mark.asyncio

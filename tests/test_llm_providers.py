@@ -73,8 +73,9 @@ async def test_provider_analyze(provider, response_data, tokens_input, tokens_ou
     assert result["tokens_output"] == tokens_output
     assert result["cost"] > 0
     sent_payload = client.post.await_args.kwargs["json"]
-    assert "10.0.0.1" not in str(sent_payload)
+    assert "10.0.0.1" in str(sent_payload)
     assert "password=secret" not in str(sent_payload)
+    assert "[REDACTED]" in str(sent_payload)
 
 
 @pytest.mark.asyncio

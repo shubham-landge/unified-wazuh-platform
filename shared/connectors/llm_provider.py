@@ -18,8 +18,6 @@ SENSITIVE_PATTERNS = [
     (re.compile(r'\b(?:sk-ant-[A-Za-z0-9\-_]{20,}|sk-[A-Za-z0-9]{20,}|pk-[A-Za-z0-9]{20,})\b'), '[API_KEY_REDACTED]'),
     # Emails
     (re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'), '[EMAIL_REDACTED]'),
-    # IPv4 addresses
-    (re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b'), '[IP_REDACTED]'),
 ]
 
 

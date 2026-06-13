@@ -8,7 +8,20 @@ from shared.config import settings
 from app.middleware.audit import AuditMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.dashboard_access import DashboardAccessMiddleware
-from app.routers import health, alerts, cases, vulnerabilities, assets, triage, audit, reports
+from app.routers import (
+    health,
+    alerts,
+    cases,
+    vulnerabilities,
+    assets,
+    triage,
+    audit,
+    reports,
+    notifications,
+    soar,
+    threat_intel,
+    ueba,
+)
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -53,3 +66,7 @@ app.include_router(assets.router)
 app.include_router(triage.router)
 app.include_router(audit.router)
 app.include_router(reports.router)
+app.include_router(notifications.router)
+app.include_router(soar.router)
+app.include_router(threat_intel.router)
+app.include_router(ueba.router)
