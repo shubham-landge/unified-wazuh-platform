@@ -39,6 +39,16 @@ async def execute_action(action: dict, ctx: ActionContext) -> dict:
 
 async def _create_case(action: dict, ctx: ActionContext) -> dict:
     from shared.models.case import Case
+    from shared.models.case_investigation_step import CaseInvestigationStep
+    from shared.models.case_event import CaseEvent
+
+    risk_score = action.get("risk_score")
+    if risk_score is None:
+        level = ctx.alert.get("rule_level", 5)
+        confidence = action.get("confidence", 0.5)
+        fp_likelihood = action.get("false_positive_likelihood", 0.3)
+        risk_score = round(confidence * (1 - fp_likelihood) * min(level / 15, 1) * 10, 2)
+
     case = Case(
         alert_id=ctx.alert.get("id"),
         title=action.get("title") or ctx.alert.get("rule_description", "Playbook case"),
@@ -47,11 +57,29 @@ async def _create_case(action: dict, ctx: ActionContext) -> dict:
         description=action.get("description"),
         assigned_to=action.get("assigned_to"),
         escalation_required=action.get("escalation_required", False),
+        risk_score=risk_score,
     )
     ctx.session.add(case)
     await ctx.session.flush()
     ctx.case_id = str(case.id)
-    logger.info("SOAR created case %s", case.id)
+
+    for i, step_text in enumerate(action.get("investigation_steps", [])):
+        step = CaseInvestigationStep(
+            case_id=case.id,
+            description=step_text,
+            order=i,
+        )
+        ctx.session.add(step)
+
+    event = CaseEvent(
+        case_id=case.id,
+        event_type="case_created",
+        description=f"SOAR playbook case: {case.title}",
+        event_meta={"playbook": ctx.alert.get("playbook_name")},
+    )
+    ctx.session.add(event)
+
+    logger.info("SOAR created case %s (risk=%.2f, steps=%d)", case.id, risk_score, len(action.get("investigation_steps", [])))
     return {"success": True, "case_id": str(case.id)}
 
 

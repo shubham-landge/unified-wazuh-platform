@@ -223,6 +223,66 @@ async def add_note(request: Request, case_id: str):
     })
 
 
+@app.get("/cases/{case_id}/timeline")
+async def case_timeline(request: Request, case_id: str):
+    event_type = request.query_params.get("event_type")
+    limit = request.query_params.get("limit", "50")
+    offset = request.query_params.get("offset", "0")
+    path = f"/cases/{case_id}/timeline?limit={limit}&offset={offset}"
+    if event_type:
+        path += f"&event_type={event_type}"
+    data = await api_request("GET", path)
+    return templates.TemplateResponse("timeline_partial.html", {
+        "request": request,
+        "events": data.get("events", []),
+        "total": data.get("total", 0),
+    })
+
+
+@app.get("/cases/{case_id}/steps")
+async def case_steps(request: Request, case_id: str):
+    data = await api_request("GET", f"/cases/{case_id}/steps")
+    return templates.TemplateResponse("steps_partial.html", {
+        "request": request,
+        "steps": data.get("steps", []),
+        "case_id": case_id,
+    })
+
+
+@app.post("/cases/{case_id}/steps")
+async def create_step(request: Request, case_id: str):
+    try:
+        payload = await request.json()
+    except Exception:
+        form_data = await request.form()
+        payload = {
+            "description": form_data.get("description", ""),
+            "order": int(form_data.get("order", 0)),
+        }
+    await api_request("POST", f"/cases/{case_id}/steps", json_data=payload)
+    return await case_steps(request, case_id)
+
+
+@app.patch("/cases/{case_id}/steps/{step_id}")
+async def toggle_step(request: Request, case_id: str, step_id: str):
+    await api_request("PATCH", f"/cases/{case_id}/steps/{step_id}", json_data={})
+    return await case_steps(request, case_id)
+
+
+@app.post("/cases/bulk-status")
+async def bulk_update_status(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        form_data = await request.form()
+        payload = {
+            "case_ids": form_data.get("case_ids", "").split(","),
+            "status": form_data.get("status", "open"),
+        }
+    result = await api_request("POST", "/cases/bulk-status", json_data=payload)
+    return {"status": "success", "updated": result.get("updated", 0)}
+
+
 @app.post("/triage/run")
 async def run_triage(request: Request):
     try:
