@@ -1,9 +1,46 @@
-<div class="mt-4 p-5 bg-deep/80 border border-white/10 rounded-xl space-y-4 shadow-inner">
+<div class="mt-4 p-5 bg-deep/80 border border-white/10 rounded-xl space-y-4 shadow-inner" x-data="{
+    showFeedbackForm: false,
+    ratingSubmitted: false,
+    ratingVerdict: '{{ 'helpful' if result.user_rated else '' }}',
+    submitSimpleRating(val) {
+        this.ratingSubmitted = true;
+        this.ratingVerdict = val;
+        if (val === 'not_helpful') {
+            this.showFeedbackForm = true;
+        } else {
+            // POST rating directly
+            const fd = new FormData();
+            fd.append('rating', 'helpful');
+            fetch('/feedback/{{ result.triage_id }}', { method: 'POST', body: fd })
+                .then(() => {
+                    if (window.addGlobalToast) window.addGlobalToast('success', 'Feedback submitted! Thank you.');
+                });
+        }
+    },
+    submitCorrections(e) {
+        const form = e.target;
+        const fd = new FormData(form);
+        fd.append('rating', 'not_helpful');
+        fetch('/feedback/{{ result.triage_id }}', { method: 'POST', body: fd })
+            .then(() => {
+                this.showFeedbackForm = false;
+                if (window.addGlobalToast) window.addGlobalToast('success', 'Corrections submitted successfully.');
+            });
+    }
+}">
     <!-- Analysis Header -->
     <div class="flex justify-between items-start border-b border-white/5 pb-3">
         <div>
             <h4 class="text-xs font-bold text-white uppercase tracking-wider">AI Copilot Analysis Result</h4>
-            <p class="text-[10px] text-muted font-mono mt-0.5">Triage Session ID: {{ result.triage_id or 'Pending' }}</p>
+            <div class="flex items-center gap-2 mt-0.5">
+                <p class="text-[10px] text-muted font-mono">Triage Session ID: {{ result.triage_id or 'Pending' }}</p>
+                <span class="px-1.5 py-0.2 text-[8px] font-bold uppercase rounded {% if 'coder' in (result.model or '').lower() or '7b' in (result.model or '').lower() or 'llama3' in (result.model or '').lower() %}bg-accent-yellow/20 text-yellow-400 border border-accent-yellow/30{% else %}bg-accent-blue/20 text-blue-400 border border-accent-blue/30{% endif %}">
+                    {{ result.model or 'Ollama' }}
+                </span>
+                <span class="px-1 py-0.2 text-[8px] font-semibold text-muted bg-white/5 border border-white/10 rounded">
+                    {% if '1.5b' in (result.model or '').lower() or '3b' in (result.model or '').lower() or 'flash' in (result.model or '').lower() %}Fast Tier{% else %}Full Tier{% endif %}
+                </span>
+            </div>
         </div>
         <div class="flex gap-2">
             <span class="badge-dot badge-dot-{{ result.severity or 'medium' }} uppercase">
@@ -85,12 +122,73 @@
             </a>
         </div>
         {% endif %}
+
+        <!-- Feedback & Review Rating Controls -->
+        <div class="border-t border-white/5 pt-4 mt-4 space-y-3">
+            <div class="flex items-center justify-between text-[10px]">
+                <span class="text-secondary font-bold uppercase tracking-wider">Help us improve copilot results</span>
+                
+                <div class="flex gap-2" x-show="!ratingSubmitted">
+                    <button @click="submitSimpleRating('helpful')" class="px-2.5 py-1 bg-white/5 hover:bg-accent-green/10 border border-white/10 hover:border-accent-green/20 text-secondary hover:text-accent-green rounded text-[10px] font-bold transition-all flex items-center gap-1.5">
+                        👍 Helpful
+                    </button>
+                    <button @click="submitSimpleRating('not_helpful')" class="px-2.5 py-1 bg-white/5 hover:bg-accent-red/10 border border-white/10 hover:border-accent-red/20 text-secondary hover:text-accent-red rounded text-[10px] font-bold transition-all flex items-center gap-1.5">
+                        👎 Not Helpful
+                    </button>
+                </div>
+
+                <div x-show="ratingSubmitted" class="text-secondary">
+                    Feedback saved: <span class="font-bold text-white capitalize" x-text="ratingVerdict.replace('_', ' ')"></span>
+                </div>
+            </div>
+
+            <!-- Expandable corrections panel -->
+            <div x-show="showFeedbackForm" class="p-4 bg-deep/50 border border-white/5 rounded-xl space-y-4" x-cloak>
+                <form @submit.prevent="submitCorrections" class="space-y-4">
+                    <h5 class="text-[10px] font-bold text-white uppercase tracking-wider">Provide Correction Details</h5>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[9px] text-muted font-bold uppercase tracking-wider">Suggested Category</label>
+                            <select name="corrected_category" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-[10px] px-3 py-2 rounded-lg text-primary outline-none">
+                                <option value="" selected>No correction needed</option>
+                                <option value="recon">Reconnaissance</option>
+                                <option value="malware">Malware Execution</option>
+                                <option value="phishing">Phishing Campaign</option>
+                                <option value="brute_force">Brute Force</option>
+                                <option value="priv_escalation">Privilege Escalation</option>
+                            </select>
+                        </div>
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[9px] text-muted font-bold uppercase tracking-wider">Suggested Severity</label>
+                            <select name="corrected_severity" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-[10px] px-3 py-2 rounded-lg text-primary outline-none">
+                                <option value="" selected>No correction needed</option>
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                                <option value="critical">Critical</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[9px] text-muted font-bold uppercase tracking-wider">Additional Context / Comments</label>
+                        <textarea name="comments" rows="2" placeholder="e.g. This was an authorized test scan from our internal network..." class="w-full bg-deep border border-white/5 focus:border-accent-blue/50 text-[10px] px-3 py-2 rounded-lg text-primary outline-none"></textarea>
+                    </div>
+
+                    <div class="flex justify-end gap-2">
+                        <button type="button" @click="showFeedbackForm = false" class="px-3 py-1.5 bg-white/5 border border-white/10 hover:border-white/20 text-white rounded text-[10px]">Cancel</button>
+                        <button type="submit" class="px-3 py-1.5 bg-accent-blue hover:bg-accent-blue/90 text-white rounded text-[10px] font-bold shadow-[0_0_8px_rgba(59,130,246,0.15)]">Submit Correction</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
 </div>
 
 <!-- Send event-based toast trigger header via HTTP if wanted, but since we are within HTMX template, we can also inject a script -->
 <script>
     if (window.addGlobalToast) {
-        window.addGlobalToast("success", "AI Triage analysis complete. Incident case created.");
+        window.addGlobalToast("success", "AI Triage analysis complete.");
     }
 </script>

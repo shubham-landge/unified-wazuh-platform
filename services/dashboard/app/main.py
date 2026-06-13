@@ -1039,3 +1039,79 @@ async def delete_report_schedule(sch_id: str, request: Request):
     return RedirectResponse("/reports", status_code=303)
 
 
+# --- AI Triage Feedback Console Routes ---
+
+@app.post("/feedback/{triage_id}")
+async def submit_feedback(triage_id: str, request: Request):
+    form = await request.form()
+    rating = form.get("rating", "helpful")
+    corrected_category = form.get("corrected_category")
+    corrected_severity = form.get("corrected_severity")
+    comments = form.get("comments")
+    
+    token = request.cookies.get("session_token", "analyst@company.com")
+    
+    # In a real setup, proxy to the API:
+    # payload = { "rating": rating, "corrected_category": corrected_category, ... }
+    # await api_request("POST", f"/triage/{triage_id}/feedback", json_data=payload)
+    
+    store = get_store()
+    feedback_list = store.setdefault("feedback", [])
+    
+    new_entry = {
+        "triage_id": triage_id,
+        "rating": rating,
+        "corrected_category": corrected_category if corrected_category else None,
+        "corrected_severity": corrected_severity if corrected_severity else None,
+        "comments": comments if comments else None,
+        "operator": token,
+        "created_at": datetime.now().isoformat()
+    }
+    feedback_list.append(new_entry)
+    save_store(store)
+    
+    return JSONResponse({"status": "success"})
+
+
+@app.get("/feedback", response_class=HTMLResponse)
+async def feedback_analytics(request: Request):
+    token = request.cookies.get("session_token")
+    if not token or "admin" not in token:
+        return RedirectResponse("/login", status_code=303)
+        
+    current_user = {
+        "email": token,
+        "display_name": token.split("@")[0].title(),
+        "role": "admin"
+    }
+    
+    store = get_store()
+    items = store.get("feedback", [])
+    
+    # Calculate stats
+    total_count = len(items)
+    helpful_count = sum(1 for i in items if i.get("rating") == "helpful")
+    accuracy_rate = helpful_count / total_count if total_count > 0 else 1.0
+    corrected_count = sum(1 for i in items if i.get("corrected_category") or i.get("corrected_severity"))
+    
+    # Top corrected category
+    cat_counts = {}
+    for i in items:
+        cat = i.get("corrected_category")
+        if cat:
+            cat_counts[cat] = cat_counts.get(cat, 0) + 1
+            
+    top_corrected = max(cat_counts, key=cat_counts.get) if cat_counts else None
+    
+    return templates.TemplateResponse("feedback.html", {
+        "request": request,
+        "items": items,
+        "current_user": current_user,
+        "page": "feedback",
+        "total_count": total_count,
+        "accuracy_rate": accuracy_rate,
+        "corrected_count": corrected_count,
+        "top_corrected_category": top_corrected
+    })
+
+

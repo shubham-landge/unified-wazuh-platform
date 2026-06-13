@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+    <!-- Page Header -->
+    <div class="flex justify-between items-center mb-2">
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">AI Feedback Analytics Console</h1>
+            <p class="text-xs text-secondary mt-0.5">Audit model predictions feedback ratings, review metrics accuracy, and inspect operator corrections logs.</p>
+        </div>
+    </div>
+
+    <!-- KPI Summary Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div class="card-premium">
+            <span class="text-[10px] text-muted font-bold uppercase tracking-wider block">Total Ratings Logged</span>
+            <div class="flex items-baseline gap-2 mt-2">
+                <span class="text-2xl font-bold text-white tracking-tight">{{ total_count }}</span>
+                <span class="text-[10px] text-accent-green font-semibold">100% Volume</span>
+            </div>
+        </div>
+        <div class="card-premium">
+            <span class="text-[10px] text-muted font-bold uppercase tracking-wider block">Model Accuracy Rate</span>
+            <div class="flex items-baseline gap-2 mt-2">
+                <span class="text-2xl font-bold text-white tracking-tight">{{ '%.1f'|format(accuracy_rate * 100) }}%</span>
+                <span class="text-[10px] text-accent-green font-semibold">Target >85%</span>
+            </div>
+        </div>
+        <div class="card-premium">
+            <span class="text-[10px] text-muted font-bold uppercase tracking-wider block">Corrections Dispatched</span>
+            <div class="flex items-baseline gap-2 mt-2">
+                <span class="text-2xl font-bold text-white tracking-tight">{{ corrected_count }}</span>
+                <span class="text-[10px] text-secondary font-semibold">{{ '%.0f'|format((corrected_count / total_count if total_count else 0) * 100) }}% ratio</span>
+            </div>
+        </div>
+        <div class="card-premium">
+            <span class="text-[10px] text-muted font-bold uppercase tracking-wider block">Top Corrected Category</span>
+            <div class="flex items-baseline gap-2 mt-2">
+                <span class="text-lg font-bold text-white truncate max-w-[150px]">{{ top_corrected_category or 'N/A' }}</span>
+                <span class="text-[10px] text-accent-red font-semibold">Audit Priority</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Feedback Entry Logs Table -->
+    <div class="card-premium space-y-4">
+        <h3 class="text-xs font-bold text-white uppercase tracking-wider pb-2 border-b border-white/5 flex items-center gap-2">
+            <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+            Feedback Logs Directory
+        </h3>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="border-b border-white/5 text-[10px] text-muted uppercase tracking-wider">
+                        <th class="py-2.5 font-semibold">Triage Session ID</th>
+                        <th class="py-2.5 font-semibold">Model</th>
+                        <th class="py-2.5 font-semibold">Rating</th>
+                        <th class="py-2.5 font-semibold">Suggested Category</th>
+                        <th class="py-2.5 font-semibold">Suggested Severity</th>
+                        <th class="py-2.5 font-semibold">Context / Comments</th>
+                        <th class="py-2.5 font-semibold">Operator</th>
+                        <th class="py-2.5 font-semibold text-right">Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                    {% for item in items %}
+                    <tr class="hover:bg-white/5 transition-all">
+                        <td class="py-3 font-mono text-primary font-semibold max-w-[100px] truncate">{{ item.triage_id }}</td>
+                        <td class="py-3 text-secondary">{{ item.model or 'Unknown Model' }}</td>
+                        <td class="py-3">
+                            <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider {% if item.rating == 'helpful' %}bg-accent-green/20 text-accent-green{% else %}bg-accent-red/20 text-accent-red{% endif %}">
+                                {{ item.rating }}
+                            </span>
+                        </td>
+                        <td class="py-3 text-secondary font-medium capitalize">{{ item.corrected_category or '—' }}</td>
+                        <td class="py-3 text-secondary font-medium capitalize">{{ item.corrected_severity or '—' }}</td>
+                        <td class="py-3 text-muted italic truncate max-w-[200px]" title="{{ item.comments or 'No comment' }}">{{ item.comments or '—' }}</td>
+                        <td class="py-3 text-secondary font-mono">{{ item.operator }}</td>
+                        <td class="py-3 text-right font-mono text-[10px] text-secondary">{{ item.created_at[:16].replace('T', ' ') }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not items %}
+                    <tr>
+                        <td colspan="8" class="py-8 text-center text-secondary text-xs">No feedback logs found.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

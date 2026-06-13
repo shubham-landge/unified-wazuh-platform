@@ -192,3 +192,71 @@ def test_create_schedule_submits_correctly(client):
     resp = client.post("/reports/schedules", data=data, follow_redirects=False)
     assert resp.status_code == 303
     assert "/reports" in resp.headers["location"]
+
+
+@patch("services.dashboard.app.main.get_store")
+def test_feedback_page_requires_admin(mock_get_store, client):
+    # Mock return value of get_store
+    mock_get_store.return_value = {
+        "feedback": [
+            {
+                "triage_id": "test-triage-123",
+                "rating": "not_helpful",
+                "corrected_category": "malware",
+                "corrected_severity": "high",
+                "comments": "False positive test",
+                "operator": "admin@company.com",
+                "created_at": "2026-06-13T12:00:00"
+            }
+        ]
+    }
+
+    # Test unauthenticated redirect
+    resp = client.get("/feedback", follow_redirects=False)
+    assert resp.status_code == 303
+    assert "/login" in resp.headers["location"]
+    
+    # Test analyst user redirect (forbidden/redirect)
+    client.cookies.set("session_token", "analyst@company.com")
+    resp = client.get("/feedback", follow_redirects=False)
+    assert resp.status_code == 303
+    assert "/login" in resp.headers["location"]
+    
+    # Test admin user renders feedback page
+    client.cookies.set("session_token", "admin@company.com")
+    resp = client.get("/feedback")
+    assert resp.status_code == 200
+    assert "AI Feedback Analytics Console" in resp.text
+    assert "test-triage-123" in resp.text
+    assert "False positive test" in resp.text
+
+
+@patch("services.dashboard.app.main.save_store")
+@patch("services.dashboard.app.main.get_store")
+def test_submit_feedback(mock_get_store, mock_save_store, client):
+    mock_get_store.return_value = {}
+    
+    client.cookies.set("session_token", "analyst@company.com")
+    data = {
+        "rating": "not_helpful",
+        "corrected_category": "recon",
+        "corrected_severity": "low",
+        "comments": "Authorized port scan"
+    }
+    
+    resp = client.post("/feedback/session-999", data=data)
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "success"}
+    
+    # Verify save_store was called with the appended feedback
+    mock_save_store.assert_called_once()
+    saved_arg = mock_save_store.call_args[0][0]
+    assert "feedback" in saved_arg
+    assert len(saved_arg["feedback"]) == 1
+    assert saved_arg["feedback"][0]["triage_id"] == "session-999"
+    assert saved_arg["feedback"][0]["rating"] == "not_helpful"
+    assert saved_arg["feedback"][0]["corrected_category"] == "recon"
+    assert saved_arg["feedback"][0]["corrected_severity"] == "low"
+    assert saved_arg["feedback"][0]["comments"] == "Authorized port scan"
+    assert saved_arg["feedback"][0]["operator"] == "analyst@company.com"
+
