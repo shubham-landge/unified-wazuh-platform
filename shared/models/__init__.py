@@ -25,3 +25,7 @@ from shared.models.threat_intel import (
 )
 from shared.models.playbook import Playbook, PlaybookRun
 from shared.models.ueba import UebaBaseline, UebaAnomaly
+from shared.models.alert_dedup import AlertIncident
+from shared.models.report_schedule import ReportSchedule, ReportDelivery
+from shared.models.user import User
+from shared.models.feedback import UserFeedback

@@ -128,4 +128,20 @@ class Settings(BaseSettings):
     report_schedule_enabled: bool = True
     schedule_check_interval_seconds: int = 60
 
+    # ── Feedback Loop (Phase 3B) ──
+    feedback_enabled: bool = True
+    feedback_queue_ttl_hours: int = 720  # 30 days
+
+    # ── Tiered LLM Routing (Phase 3B) ──
+    llm_tier_strategy: str = "auto"  # "fast" | "full" | "auto"
+    llm_tier_fast_provider: str = "ollama"
+    llm_tier_fast_model: str = "qwen2.5-coder:3b"
+    llm_tier_full_provider: str = "ollama"
+    llm_tier_full_model: str = "qwen2.5-coder:7b"
+    llm_tier_level_threshold: int = 10
+    llm_tier_score_threshold: int = 4
+    llm_tier_burst_window_minutes: int = 10
+    llm_tier_known_bad_ips: str = ""  # comma-separated
+    llm_tier_complex_techniques: str = "T1569.002,T1059.001,T1021.001,T1485,T1490"  # lateral movement, ransomware, etc.
+
 settings = Settings()

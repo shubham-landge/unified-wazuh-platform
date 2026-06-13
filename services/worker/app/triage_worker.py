@@ -11,6 +11,7 @@ from shared.models.alert import Alert
 from shared.models.ai_triage_result import AiTriageResult
 from shared.models.case import Case
 from shared.connectors.llm_provider import get_provider
+from shared.connectors.llm_router import TieredRouter
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,9 @@ class TriageWorker:
                     logger.warning("Alert %s not found", alert_id)
                     return
 
-                provider = get_provider()
+                provider = TieredRouter().get_provider(alert=alert, tenant_id=str(alert.tenant_id))
+                tier = "full" if provider.name().startswith(("openai", "gemini", "claude")) or "7b" in provider.name() else "fast"
+                logger.info("Triaging alert %s with %s (%s tier)", alert_id, provider.name(), tier)
 
                 user_prompt = (
                     f"Alert Rule: {alert.rule_description}\n"

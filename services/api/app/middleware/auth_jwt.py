@@ -1,7 +1,7 @@
 """JWT-based authentication middleware for Phase 3A."""
 import logging
 from fastapi import HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
 
 from shared.auth import verify_token, TokenData, has_permission
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 security = HTTPBearer()
 
 
-async def get_current_user(credentials: HTTPAuthCredentials = Depends(security)) -> TokenData:
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> TokenData:
     """Validate JWT token and return user data."""
     token = credentials.credentials
     data = verify_token(token)
@@ -21,7 +21,7 @@ async def get_current_user(credentials: HTTPAuthCredentials = Depends(security))
     return data
 
 
-async def get_current_user_optional(credentials: HTTPAuthCredentials | None = Depends(HTTPBearer(auto_error=False))) -> TokenData | None:
+async def get_current_user_optional(credentials: HTTPAuthorizationCredentials | None = Depends(HTTPBearer(auto_error=False))) -> TokenData | None:
     """Optional JWT validation (for endpoints that work with or without auth)."""
     if not credentials:
         return None
