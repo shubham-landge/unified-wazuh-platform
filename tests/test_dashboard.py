@@ -136,3 +136,59 @@ def test_dashboard_test_connector_otx(mock_health, client):
     assert resp.status_code == 200
     assert "Connection successful" in resp.json()["html"]
     assert "mock_otx_user" in resp.json()["html"]
+
+# --- Phase 3A: Authentication & Report Scheduler UI Tests ---
+
+def test_login_page_renders(client):
+    resp = client.get("/login")
+    assert resp.status_code == 200
+    assert "Wazuh AI SOC Platform" in resp.text
+    assert "Email Address" in resp.text
+
+def test_profile_page_requires_auth(client):
+    resp = client.get("/profile", follow_redirects=False)
+    assert resp.status_code == 303
+    assert "/login" in resp.headers["location"]
+
+def test_profile_page_renders_with_auth(client):
+    client.cookies.set("session_token", "analyst@company.com")
+    resp = client.get("/profile")
+    assert resp.status_code == 200
+    assert "User Profile Settings" in resp.text
+    assert "analyst@company.com" in resp.text
+
+def test_users_page_admin_only(client):
+    # Test unauthenticated redirect
+    resp = client.get("/users", follow_redirects=False)
+    assert resp.status_code == 303
+    
+    # Test analyst user redirect (forbidden/redirect)
+    client.cookies.set("session_token", "analyst@company.com")
+    resp = client.get("/users", follow_redirects=False)
+    assert resp.status_code == 303
+    
+    # Test admin user renders
+    client.cookies.set("session_token", "admin@company.com")
+    resp = client.get("/users")
+    assert resp.status_code == 200
+    assert "Platform User Directory" in resp.text
+    assert "Provision User Account" in resp.text
+
+def test_report_schedules_page_loads(client):
+    client.cookies.set("session_token", "admin@company.com")
+    resp = client.get("/reports")
+    assert resp.status_code == 200
+    assert "Scheduled Reports" in resp.text
+    assert "New Report Schedule" in resp.text
+
+def test_create_schedule_submits_correctly(client):
+    client.cookies.set("session_token", "admin@company.com")
+    data = {
+        "report_type": "vulnerability",
+        "frequency": "daily",
+        "email_to": "admin@company.com",
+        "is_active": "on"
+    }
+    resp = client.post("/reports/schedules", data=data, follow_redirects=False)
+    assert resp.status_code == 303
+    assert "/reports" in resp.headers["location"]

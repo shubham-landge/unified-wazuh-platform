@@ -32,6 +32,24 @@ def save_store(store_data):
         return False
 
 
+# Ingest user context to templates automatically
+@app.middleware("http")
+async def add_user_to_template_context(request: Request, call_next):
+    token = request.cookies.get("session_token")
+    current_user = None
+    if token:
+        current_user = {
+            "email": token,
+            "display_name": token.split("@")[0].title(),
+            "role": "admin" if "admin" in token else "analyst",
+            "last_login": datetime.now().isoformat()
+        }
+    request.state.current_user = current_user
+    templates.env.globals["current_user"] = current_user
+    response = await call_next(request)
+    return response
+
+
 # Mount static files directory
 static_dir = "static" if os.path.exists("static") else "services/dashboard/static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -260,8 +278,8 @@ async def reports_page(request: Request):
     except Exception:
         reports_list = []
         
+    store = get_store()
     if not reports_list:
-        store = get_store()
         reports_list = store.get("reports", [])
         if not reports_list:
             reports_list = [
@@ -295,10 +313,23 @@ async def reports_page(request: Request):
             ]
             store["reports"] = reports_list
             save_store(store)
+            
+    schedules_list = store.get("schedules", [])
+    
+    current_user = None
+    token = request.cookies.get("session_token")
+    if token:
+        current_user = {
+            "email": token,
+            "display_name": token.split("@")[0].title(),
+            "role": "admin" if "admin" in token else "analyst"
+        }
         
     return templates.TemplateResponse("reports.html", {
         "request": request,
         "reports": reports_list,
+        "schedules": schedules_list,
+        "current_user": current_user,
         "page": "reports"
     })
 
@@ -731,6 +762,17 @@ async def health_page(request: Request):
         "virustotal": services.get("virustotal", {"connected": False, "error": "Not configured"})
     }
     
+    current_user = None
+    token = request.cookies.get("session_token")
+    if token:
+        # In a real environment, query API or decode JWT. For now, mock a session:
+        current_user = {
+            "email": token,
+            "display_name": token.split("@")[0].title(),
+            "role": "admin" if "admin" in token else "analyst",
+            "last_login": datetime.now().isoformat()
+        }
+        
     return templates.TemplateResponse("health.html", {
         "request": request,
         "wazuh": wazuh_health,
@@ -738,7 +780,8 @@ async def health_page(request: Request):
         "db": db_health,
         "ti_health": ti_health,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "page": "health"
+        "page": "health",
+        "current_user": current_user
     })
 
 
@@ -764,5 +807,235 @@ async def health_status_partial(request: Request):
         "ti_health": ti_health,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
+
+
+# --- Authentication & User Management Routes ---
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    if request.cookies.get("session_token"):
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+
+
+@app.post("/login")
+async def login_submit(request: Request):
+    form = await request.form()
+    email = form.get("email", "").strip()
+    password = form.get("password", "").strip()
+    
+    # Check credentials
+    if email == "admin@company.com" and password == "admin123":
+        resp = RedirectResponse("/", status_code=303)
+        resp.set_cookie("session_token", email, httponly=True)
+        return resp
+    elif email == "analyst@company.com" and password == "analyst123":
+        resp = RedirectResponse("/", status_code=303)
+        resp.set_cookie("session_token", email, httponly=True)
+        return resp
+    else:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid email or password credentials."})
+
+
+@app.get("/logout")
+async def logout_action():
+    resp = RedirectResponse("/login", status_code=303)
+    resp.delete_cookie("session_token")
+    return resp
+
+
+@app.get("/profile", response_class=HTMLResponse)
+async def profile_page(request: Request):
+    token = request.cookies.get("session_token")
+    if not token:
+        return RedirectResponse("/login", status_code=303)
+        
+    current_user = {
+        "email": token,
+        "display_name": token.split("@")[0].title(),
+        "role": "admin" if "admin" in token else "analyst",
+        "last_login": datetime.now().isoformat()
+    }
+    return templates.TemplateResponse("profile.html", {
+        "request": request,
+        "user": current_user,
+        "current_user": current_user,
+        "page": "profile"
+    })
+
+
+@app.post("/profile/change-password")
+async def change_password(request: Request):
+    token = request.cookies.get("session_token")
+    if not token:
+        return JSONResponse({"status": "error", "message": "Unauthorized"}, status_code=401)
+        
+    form = await request.form()
+    curr_pw = form.get("current_password")
+    new_pw = form.get("new_password")
+    
+    if curr_pw in ("admin123", "analyst123"):
+        return JSONResponse({"status": "success"})
+    return JSONResponse({"status": "error", "message": "Incorrect current password."})
+
+
+@app.get("/users", response_class=HTMLResponse)
+async def users_directory(request: Request):
+    token = request.cookies.get("session_token")
+    if not token or "admin" not in token:
+        return RedirectResponse("/login", status_code=303)
+        
+    current_user = {
+        "email": token,
+        "display_name": token.split("@")[0].title(),
+        "role": "admin",
+        "last_login": datetime.now().isoformat()
+    }
+    
+    store = get_store()
+    users_list = store.get("users", [])
+    if not users_list:
+        users_list = [
+            {"email": "admin@company.com", "display_name": "System Administrator", "role": "admin", "is_active": True, "last_login": datetime.now().isoformat()},
+            {"email": "analyst@company.com", "display_name": "Lead SOC Analyst", "role": "analyst", "is_active": True, "last_login": datetime.now().isoformat()},
+            {"email": "viewer@company.com", "display_name": "Audit Auditor", "role": "viewer", "is_active": False, "last_login": None}
+        ]
+        store["users"] = users_list
+        save_store(store)
+        
+    return templates.TemplateResponse("users.html", {
+        "request": request,
+        "users": users_list,
+        "current_user": current_user,
+        "page": "users"
+    })
+
+
+@app.post("/users")
+async def provision_user(request: Request):
+    token = request.cookies.get("session_token")
+    if not token or "admin" not in token:
+        return JSONResponse({"status": "error"}, status_code=403)
+        
+    form = await request.form()
+    email = form.get("email")
+    display_name = form.get("display_name")
+    role = form.get("role", "analyst")
+    
+    store = get_store()
+    users_list = store.setdefault("users", [])
+    # Append if not exists
+    if not any(u["email"] == email for u in users_list):
+        users_list.append({
+            "email": email,
+            "display_name": display_name,
+            "role": role,
+            "is_active": True,
+            "last_login": None
+        })
+        save_store(store)
+        
+    return RedirectResponse("/users", status_code=303)
+
+
+@app.patch("/users/{email}")
+async def modify_user(email: str, request: Request):
+    token = request.cookies.get("session_token")
+    if not token or "admin" not in token:
+        return JSONResponse({"status": "error"}, status_code=403)
+        
+    form = await request.form()
+    display_name = form.get("display_name")
+    role = form.get("role")
+    
+    store = get_store()
+    users_list = store.setdefault("users", [])
+    for u in users_list:
+        if u["email"] == email:
+            if display_name:
+                u["display_name"] = display_name
+            if role:
+                u["role"] = role
+            break
+    save_store(store)
+    return JSONResponse({"status": "success"})
+
+
+@app.post("/users/{email}/toggle")
+async def toggle_user(email: str, request: Request):
+    token = request.cookies.get("session_token")
+    if not token or "admin" not in token:
+        return JSONResponse({"status": "error"}, status_code=403)
+        
+    store = get_store()
+    users_list = store.setdefault("users", [])
+    for u in users_list:
+        if u["email"] == email:
+            u["is_active"] = not u["is_active"]
+            break
+    save_store(store)
+    return RedirectResponse("/users", status_code=303)
+
+
+# --- Report Scheduler Routes ---
+
+@app.post("/reports/schedules")
+async def save_report_schedule(request: Request):
+    form = await request.form()
+    report_type = form.get("report_type", "executive")
+    freq = form.get("frequency", "weekly")
+    email_to = form.get("email_to", "")
+    is_active = form.get("is_active") in ("true", "on", "True")
+    
+    cron_expr = form.get("cron_expression", "")
+    if not cron_expr or freq != "custom":
+        cron_expr = "0 0 * * *" if freq == "daily" else "0 8 * * 1" if freq == "weekly" else "0 8 1 * *"
+        
+    store = get_store()
+    schedules = store.setdefault("schedules", [])
+    new_sch = {
+        "id": f"sch-{int(datetime.now().timestamp())}",
+        "report_type": report_type,
+        "cron_expression": cron_expr,
+        "email_to": email_to,
+        "is_active": is_active,
+        "last_sent_at": None,
+        "next_run_at": (datetime.now() + (datetime.now() - datetime.now())).isoformat() + "Z"
+    }
+    schedules.append(new_sch)
+    save_store(store)
+    return RedirectResponse("/reports", status_code=303)
+
+
+@app.post("/reports/schedules/{sch_id}")
+async def update_report_schedule(sch_id: str, request: Request):
+    form = await request.form()
+    report_type = form.get("report_type")
+    email_to = form.get("email_to")
+    is_active = form.get("is_active") in ("true", "on", "True")
+    cron_expr = form.get("cron_expression", "")
+    
+    store = get_store()
+    schedules = store.setdefault("schedules", [])
+    for sch in schedules:
+        if sch["id"] == sch_id:
+            if report_type:
+                sch["report_type"] = report_type
+            if email_to:
+                sch["email_to"] = email_to
+            sch["is_active"] = is_active
+            if cron_expr:
+                sch["cron_expression"] = cron_expr
+            break
+    save_store(store)
+    return RedirectResponse("/reports", status_code=303)
+
+
+@app.post("/reports/schedules/{sch_id}/delete")
+async def delete_report_schedule(sch_id: str, request: Request):
+    store = get_store()
+    store["schedules"] = [s for s in store.setdefault("schedules", []) if s["id"] != sch_id]
+    save_store(store)
+    return RedirectResponse("/reports", status_code=303)
 
 

@@ -199,6 +199,17 @@
                         </svg>
                         Settings
                     </a>
+
+                    {% if current_user and current_user.role == 'admin' %}
+                    <!-- Users Directory (Admin Only) -->
+                    <a href="/users" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group {{ 'bg-accent-blue/10 text-accent-blue border border-accent-blue/15' if page == 'users' else 'text-secondary hover:text-white hover:bg-white/5 border border-transparent' }}"
+                       hx-get="/users" hx-target="body" hx-push-url="true">
+                        <svg class="w-5 h-5 shrink-0 group-hover:scale-105 transition-transform" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                        </svg>
+                        Users Directory
+                    </a>
+                    {% endif %}
                 </nav>
             </div>
 
@@ -276,11 +287,25 @@
                         </div>
                     </div>
 
-                    <!-- User Avatar -->
-                    <div class="flex items-center gap-2 border-l border-white/10 pl-4">
-                        <div class="w-7 h-7 bg-accent-blue/25 border border-accent-blue/50 text-accent-blue text-xs font-bold rounded-lg flex items-center justify-center select-none shadow-[0_0_10px_rgba(59,130,246,0.15)]">
-                            SL
+                    <!-- User Dropdown Menu -->
+                    <div class="relative pl-4 border-l border-white/10" x-data="{ userMenuOpen: false }">
+                        {% if current_user %}
+                        <button @click="userMenuOpen = !userMenuOpen" class="flex items-center gap-2 focus:outline-none">
+                            <div class="w-7 h-7 bg-accent-blue/25 border border-accent-blue/50 text-accent-blue text-xs font-bold rounded-lg flex items-center justify-center select-none shadow-[0_0_10px_rgba(59,130,246,0.15)]">
+                                {{ current_user.display_name[:2].upper() if current_user.display_name else 'US' }}
+                            </div>
+                            <span class="text-xs text-secondary hover:text-white font-medium truncate max-w-[100px]">{{ current_user.display_name }}</span>
+                        </button>
+                        <div x-show="userMenuOpen" @click.away="userMenuOpen = false" x-transition class="absolute right-0 mt-2 w-48 bg-elevated border border-white/10 rounded-xl shadow-2xl p-1 z-50">
+                            <div class="px-3 py-2 border-b border-white/5 text-[10px] text-muted font-bold uppercase tracking-wider">
+                                Role: {{ current_user.role }}
+                            </div>
+                            <a href="/profile" class="block px-3 py-2 text-xs text-secondary hover:text-white hover:bg-white/5 rounded-lg transition-all">My Profile</a>
+                            <a href="/logout" class="block px-3 py-2 text-xs text-accent-red hover:bg-accent-red/10 rounded-lg transition-all font-semibold">Sign Out</a>
                         </div>
+                        {% else %}
+                        <a href="/login" class="px-3 py-1.5 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_10px_rgba(59,130,246,0.15)]">Sign In</a>
+                        {% endif %}
                     </div>
                 </div>
             </header>
@@ -518,6 +543,7 @@
                         else if (targetKey === 'm') targetPath = '/compliance';
                         else if (targetKey === 'n') targetPath = '/notifications';
                         else if (targetKey === 'h') targetPath = '/health';
+                        else if (targetKey === 'u') targetPath = '/users';
 
                         if (targetPath) {
                             e.preventDefault();
