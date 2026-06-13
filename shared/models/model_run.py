@@ -19,4 +19,6 @@ class ModelRun(Base):
     success: Mapped[bool] = mapped_column(Boolean, default=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     cost: Mapped[float | None] = mapped_column(DECIMAL(10,6), nullable=True)
+    accuracy: Mapped[float | None] = mapped_column(DECIMAL(3,2), nullable=True)
+    total_feedback: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

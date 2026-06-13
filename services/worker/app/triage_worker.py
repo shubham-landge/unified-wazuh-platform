@@ -74,7 +74,7 @@ class TriageWorker:
                     logger.warning("Alert %s not found", alert_id)
                     return
 
-                provider = TieredRouter().get_provider(alert=alert, tenant_id=str(alert.tenant_id))
+                provider = await TieredRouter().get_provider(alert=alert, tenant_id=str(alert.tenant_id), db_session=session)
                 tier = "full" if provider.name().startswith(("openai", "gemini", "claude")) or "7b" in provider.name() else "fast"
                 logger.info("Triaging alert %s with %s (%s tier)", alert_id, provider.name(), tier)
 
@@ -97,6 +97,7 @@ class TriageWorker:
 
                 triage = AiTriageResult(
                     alert_id=alert.id,
+                    tenant_id=alert.tenant_id,
                     model_name=provider.name(),
                     prompt_text=user_prompt,
                     response_text=json.dumps(result_data),
@@ -118,6 +119,19 @@ class TriageWorker:
                 )
                 session.add(triage)
                 await session.flush()
+
+                from shared.models.model_run import ModelRun
+                from hashlib import sha256
+                model_run = ModelRun(
+                    tenant_id=alert.tenant_id,
+                    model_name=provider.name(),
+                    prompt_hash=sha256(user_prompt.encode()).hexdigest()[:16],
+                    input_tokens=result_data.get("tokens_input"),
+                    output_tokens=result_data.get("tokens_output"),
+                    latency_ms=result_data.get("latency_ms"),
+                    success=result_data.get("success", True),
+                )
+                session.add(model_run)
 
                 if result_data.get("escalation_required", False):
                     level = alert.rule_level or 5
