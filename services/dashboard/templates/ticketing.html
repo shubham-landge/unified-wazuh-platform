@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6" x-data="{
+    activeTab: 'servicenow',
+    configs: {{ configs | tojson }},
+    servicenow: { instance: '', user: '', password: '' },
+    jira: { url: '', email: '', api_token: '' },
+    testResult: null,
+    testLoading: false,
+    init() {
+        this.configs.forEach(c => {
+            if (c.provider === 'servicenow') this.servicenow = { ...this.servicenow, ...c.config };
+            if (c.provider === 'jira') this.jira = { ...this.jira, ...c.config };
+        });
+    },
+    async testConnection(provider) {
+        this.testLoading = provider;
+        this.testResult = null;
+        const cfg = provider === 'servicenow' ? this.servicenow : this.jira;
+        fetch('/ticketing/test', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ provider, config: cfg })
+        }).then(r => r.json()).then(d => {
+            this.testResult = { provider, connected: d.health?.connected, ...d };
+            this.testLoading = false;
+        });
+    },
+    async saveConfig(provider) {
+        const cfg = provider === 'servicenow' ? this.servicenow : this.jira;
+        fetch('/ticketing/config', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ provider, config: cfg })
+        }).then(r => r.json()).then(d => {
+            if (d.status === 'success') addGlobalToast('success', provider.charAt(0).toUpperCase() + provider.slice(1) + ' config saved');
+        });
+    }
+}">
+    <div class="flex justify-between items-center mb-2">
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">Ticketing Integrations</h1>
+            <p class="text-xs text-secondary mt-0.5">Connect ServiceNow and Jira for automated case sync.</p>
+        </div>
+        <div class="flex items-center gap-2 bg-surface border border-white/5 rounded-lg p-1">
+            <button @click="activeTab = 'servicenow'" :class="activeTab === 'servicenow' ? 'bg-accent-blue text-white' : 'text-secondary hover:text-white'" class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">ServiceNow</button>
+            <button @click="activeTab = 'jira'" :class="activeTab === 'jira' ? 'bg-accent-blue text-white' : 'text-secondary hover:text-white'" class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">Jira</button>
+        </div>
+    </div>
+
+    <div x-show="activeTab === 'servicenow'" class="card-premium space-y-4">
+        <h3 class="text-sm font-bold text-white">ServiceNow Configuration</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="flex flex-col gap-1.5">
+                <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Instance (e.g. dev123456)</label>
+                <input x-model="servicenow.instance" type="text" placeholder="dev123456" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Username</label>
+                <input x-model="servicenow.user" type="text" placeholder="admin" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Password</label>
+                <input x-model="servicenow.password" type="password" placeholder="••••••••" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+            </div>
+        </div>
+        <div class="flex gap-3 pt-2">
+            <button @click="testConnection('servicenow')" :disabled="testLoading === 'servicenow'" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-semibold text-secondary hover:text-white transition-all flex items-center gap-2">
+                <span x-show="testLoading === 'servicenow'" class="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                Test Connection
+            </button>
+            <button @click="saveConfig('servicenow')" class="px-4 py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_12px_rgba(59,130,246,0.2)]">Save Configuration</button>
+        </div>
+        <div x-show="testResult && testResult.provider === 'servicenow'" class="p-3 rounded-lg text-xs" :class="testResult.connected ? 'bg-accent-green/10 text-accent-green border border-accent-green/20' : 'bg-accent-red/10 text-accent-red border border-accent-red/20'">
+            <span x-text="testResult.connected ? 'Connection successful' : 'Connection failed: ' + (testResult.health?.error || 'Unknown')"></span>
+        </div>
+    </div>
+
+    <div x-show="activeTab === 'jira'" class="card-premium space-y-4">
+        <h3 class="text-sm font-bold text-white">Jira Configuration</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="flex flex-col gap-1.5">
+                <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Jira URL (e.g. https://your-domain.atlassian.net)</label>
+                <input x-model="jira.url" type="text" placeholder="https://your-domain.atlassian.net" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Email</label>
+                <input x-model="jira.email" type="email" placeholder="user@company.com" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-[10px] text-muted font-bold uppercase tracking-wider">API Token</label>
+                <input x-model="jira.api_token" type="password" placeholder="••••••••" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+            </div>
+        </div>
+        <div class="flex gap-3 pt-2">
+            <button @click="testConnection('jira')" :disabled="testLoading === 'jira'" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-semibold text-secondary hover:text-white transition-all flex items-center gap-2">
+                <span x-show="testLoading === 'jira'" class="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                Test Connection
+            </button>
+            <button @click="saveConfig('jira')" class="px-4 py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold transition-all shadow-[0_0_12px_rgba(59,130,246,0.2)]">Save Configuration</button>
+        </div>
+        <div x-show="testResult && testResult.provider === 'jira'" class="p-3 rounded-lg text-xs" :class="testResult.connected ? 'bg-accent-green/10 text-accent-green border border-accent-green/20' : 'bg-accent-red/10 text-accent-red border border-accent-red/20'">
+            <span x-text="testResult.connected ? 'Connection successful' : 'Connection failed: ' + (testResult.health?.error || 'Unknown')"></span>
+        </div>
+    </div>
+</div>
+{% endblock %}

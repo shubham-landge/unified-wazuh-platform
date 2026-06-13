@@ -11,6 +11,7 @@ from shared.models.alert import Alert
 from shared.models.analyst_note import AnalystNote
 from shared.models.case import Case
 from shared.models.vulnerability import Vulnerability
+from shared.models.compliance import ComplianceFramework, ComplianceControl, ComplianceException
 
 TEMPLATES_DIR = (
     Path(__file__).parent.parent
@@ -232,6 +233,60 @@ class ReportGenerator:
             ),
         }
         return self.templates.get_template("executive_summary.html").render(**context)
+
+    async def generate_compliance_report(
+        self,
+        framework_id: str | None = None,
+    ) -> str:
+        db = self._require_db()
+        from shared.compliance_checker import ComplianceChecker
+        checker = ComplianceChecker(db)
+
+        if framework_id:
+            frameworks_data = await db.execute(
+                select(ComplianceFramework).where(ComplianceFramework.id == framework_id)
+            )
+            frameworks = [frameworks_data.scalar_one_or_none()] if frameworks_data.scalar_one_or_none() else []
+        else:
+            result = await db.execute(select(ComplianceFramework))
+            frameworks = list(result.scalars().all())
+
+        sections = []
+        for fw in frameworks:
+            score_data = await checker.score_framework(str(fw.id))
+            exc_result = await db.execute(
+                select(ComplianceException, ComplianceControl.control_id)
+                .join(ComplianceControl, ComplianceException.control_id == ComplianceControl.id)
+                .where(
+                    ComplianceException.status == "approved",
+                    ComplianceControl.framework_id == fw.id,
+                )
+            )
+            exc_rows = exc_result.all()
+            exc_data = [
+                {"control_id": row.control_id, "reason": row.ComplianceException.reason,
+                 "expires_at": row.ComplianceException.expires_at.isoformat() if row.ComplianceException.expires_at else None}
+                for row in exc_rows
+            ]
+            sections.append({
+                "framework_name": fw.name,
+                "framework_version": fw.version,
+                "score": score_data["score"],
+                "total_controls": score_data["total_controls"],
+                "compliant": score_data["compliant"],
+                "warnings": score_data["warnings"],
+                "breaches": score_data["breaches"],
+                "controls": score_data["controls"],
+                "exceptions": exc_data,
+            })
+
+        context = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "sections": sections,
+        }
+        if sections:
+            context.update(sections[0])
+        return self.templates.get_template("compliance_report.html").render(**context)
 
     @staticmethod
     def html_to_pdf(html: str) -> bytes:

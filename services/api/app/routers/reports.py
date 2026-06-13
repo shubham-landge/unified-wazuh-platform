@@ -24,6 +24,7 @@ class ReportRequest(BaseModel):
     format: str = "PDF"
     date_range: str = "last_30d"
     case_id: str | None = None
+    framework_id: str | None = None
     filters: dict = Field(default_factory=dict)
 
 
@@ -102,6 +103,8 @@ async def create_report(
             html = await generator.generate_case_report(payload.case_id)
         elif report_type == "executive":
             html = await generator.generate_executive_summary(payload.date_range)
+        elif report_type == "compliance":
+            html = await generator.generate_compliance_report(framework_id=payload.framework_id)
         else:
             now = datetime.now(timezone.utc)
             html = await generator.generate_monthly_soc_report(now.month, now.year)

@@ -132,6 +132,22 @@ class Settings(BaseSettings):
     feedback_enabled: bool = True
     feedback_queue_ttl_hours: int = 720  # 30 days
 
+    # ── RAG / Embeddings (Phase 5A) ──
+    embedding_model: str = "nomic-embed-text"
+    rag_enabled: bool = True
+    rag_top_k: int = 5
+    rag_chunk_size: int = 1000
+    rag_chunk_overlap: int = 100
+
+    # ── Ticketing Integrations ──
+    servicenow_instance: str = ""
+    servicenow_user: str = ""
+    servicenow_password: SecretStr = SecretStr("")
+    jira_url: str = ""
+    jira_email: str = ""
+    jira_api_token: SecretStr = SecretStr("")
+    ticketing_sync_enabled: bool = False
+
     # ── Tiered LLM Routing (Phase 3B) ──
     llm_tier_strategy: str = "auto"  # "fast" | "full" | "auto"
     llm_tier_fast_provider: str = "ollama"
