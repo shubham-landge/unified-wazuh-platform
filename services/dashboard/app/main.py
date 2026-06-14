@@ -1,4 +1,5 @@
 import httpx
+import logging
 import os
 import json
 import hmac
@@ -13,6 +14,8 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import TimestampSigner, BadSignature, SignatureExpired
 from shared.config import settings
+
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -141,8 +144,8 @@ async def get_tenant_context(token: str):
             user_data = verify_token(token)
             if user_data and hasattr(user_data, 'tenant_id'):
                 tenant_id = user_data.tenant_id
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Token verification failed: %s", e)
 
         if not tenant_id:
             url = f"{API_BASE}/auth/me"
@@ -244,8 +247,8 @@ async def add_user_to_template_context(request: Request, call_next):
             else:
                 res = await api_request("GET", "/approvals/pending")
             pending_count = res.get("count", 0)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to fetch pending approvals: %s", e)
     templates.env.globals["pending_approvals_count"] = pending_count
 
     response = await call_next(request)
@@ -693,31 +696,30 @@ async def generate_report(request: Request):
     report_type = form_data.get("report_type", "Executive")
     format_type = form_data.get("format", "PDF")
     date_range = form_data.get("date_range", "last_24h")
-    
+
     payload = {
         "type": report_type,
         "format": format_type,
-        "date_range": date_range
+        "date_range": date_range,
     }
-    
+
     try:
-        await api_request("POST", "/reports", json_data=payload)
-    except Exception:
-        pass
-        
-    store = get_store()
-    new_report = {
-        "id": f"rep-{int(datetime.now().timestamp())}",
-        "name": f"{report_type} Security Report ({date_range.replace('_', ' ').capitalize()})",
-        "type": report_type,
-        "format": format_type,
-        "created_at": datetime.now().isoformat() + "Z",
-        "status": "completed",
-        "size": "1.4 MB" if format_type == "PDF" else "240 KB"
-    }
-    store.setdefault("reports", []).insert(0, new_report)
-    save_store(store)
-    
+        api_resp = await api_request("POST", "/reports", json_data=payload)
+        report_meta = api_resp.get("data") or api_resp
+        store = get_store()
+        store.setdefault("reports", []).insert(0, {
+            "id": report_meta.get("id", f"rep-{int(datetime.now().timestamp())}"),
+            "name": f"{report_type} Security Report ({date_range.replace('_', ' ').capitalize()})",
+            "type": report_type,
+            "format": format_type,
+            "created_at": report_meta.get("created_at", datetime.now().isoformat() + "Z"),
+            "status": report_meta.get("status", "queued"),
+            "size": "—",
+        })
+        save_store(store)
+    except Exception as e:
+        logger.warning("Report generation failed: %s", e)
+
     return RedirectResponse(url="/reports", status_code=303)
 
 
@@ -755,8 +757,8 @@ async def settings_page(request: Request):
                     except ValueError:
                         pass
                 local_settings.update(loaded)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to load settings file: %s", e)
 
     return templates.TemplateResponse("settings.html", {
         "request": request,
@@ -1339,8 +1341,8 @@ def _save_branding(data: dict):
         os.makedirs(os.path.dirname(BRANDING_STORE_PATH), exist_ok=True)
         with open(BRANDING_STORE_PATH, "w") as f:
             json.dump(data, f, indent=2)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to save branding data: %s", e)
 
 
 @app.get("/settings/branding", response_class=HTMLResponse)

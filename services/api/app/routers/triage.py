@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
@@ -17,6 +18,8 @@ from app.middleware.auth import validate_api_key
 from app.middleware.auth_jwt import get_current_user
 from shared.auth import TokenData
 from shared.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/triage", tags=["triage"])
 
@@ -258,7 +261,7 @@ async def submit_feedback(
                 "rating": body.rating,
             }))
             await r.aclose()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to enqueue feedback for triage %s: %s", triage_id, e)
 
     return {"status": "accepted", "feedback_id": str(feedback.id)}

@@ -1,6 +1,8 @@
 import logging
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
 import aiosmtplib
 
@@ -25,17 +27,27 @@ class EmailConnector:
         body_html: str,
         body_text: str | None = None,
         cc: list[str] | None = None,
+        attachments: list[dict] | None = None,
     ) -> dict:
-        msg = MIMEMultipart("alternative")
+        msg = MIMEMultipart("mixed")
         msg["Subject"] = subject
         msg["From"] = self.from_addr
         msg["To"] = ", ".join(to)
         if cc:
             msg["Cc"] = ", ".join(cc)
 
+        body_part = MIMEMultipart("alternative")
         if body_text:
-            msg.attach(MIMEText(body_text, "plain"))
-        msg.attach(MIMEText(body_html, "html"))
+            body_part.attach(MIMEText(body_text, "plain"))
+        body_part.attach(MIMEText(body_html, "html"))
+        msg.attach(body_part)
+
+        for att in attachments or []:
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(att["content"])
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f"attachment; filename={att['filename']}")
+            msg.attach(part)
 
         recipients = to + (cc or [])
 

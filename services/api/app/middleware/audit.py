@@ -29,7 +29,8 @@ class AuditMiddleware(BaseHTTPMiddleware):
             try:
                 body_bytes = await request.body()
                 body_str = body_bytes.decode("utf-8", errors="replace")[:2048]
-            except Exception:
+            except Exception as e:
+                logger.warning("Failed to read request body for audit: %s", e)
                 body_str = None
 
         response: Response = await call_next(request)

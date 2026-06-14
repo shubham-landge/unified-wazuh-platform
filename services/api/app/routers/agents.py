@@ -1,3 +1,4 @@
+import logging
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -9,6 +10,8 @@ from app.db import get_db
 from app.middleware.auth import validate_api_key
 from app.middleware.tenant_enforce import get_tenant_id
 from shared.models.agent import AgentDefinition, AgentRun, AgentTask
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -83,8 +86,8 @@ async def create_run(
         import json
         async with redis_async.from_url(settings.redis_url, decode_responses=True) as r:
             await r.lpush("agent_queue", json.dumps({"run_id": str(run.id)}))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to enqueue agent run %s: %s", run.id, e)
 
     return {"status": "accepted", "run_id": str(run.id)}
 
