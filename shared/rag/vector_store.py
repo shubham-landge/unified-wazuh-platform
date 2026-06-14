@@ -47,7 +47,7 @@ async def search_knowledge(query: str, db: AsyncSession, top_k: int = 5) -> list
     ]
 
 
-async def ingest_knowledge(source: str, text: str, db: AsyncSession, metadata: dict | None = None) -> bool:
+async def ingest_knowledge(source: str, text: str, db: AsyncSession, metadata: dict | None = None, commit: bool = True) -> bool:
     from shared.models.knowledge_base import KnowledgeChunk
     try:
         emb = await embed_text(text)
@@ -59,7 +59,10 @@ async def ingest_knowledge(source: str, text: str, db: AsyncSession, metadata: d
             token_count=len(text.split()),
         )
         db.add(chunk)
-        await db.commit()
+        if commit:
+            await db.commit()
+        else:
+            await db.flush()
         return True
     except Exception as e:
         logger.error("Failed to ingest knowledge: %s", e)

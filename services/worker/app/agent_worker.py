@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from shared.config import settings
 from shared.orchestrator.engine import OrchestrationEngine
+from shared.orchestrator import handlers
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,18 @@ class AgentWorker:
         self.session_factory = async_sessionmaker(self.engine, expire_on_commit=False)
         self.redis_client: redis.Redis | None = None
         self.orchestrator = OrchestrationEngine(session_factory=self.session_factory)
+        self._register_handlers()
+
+    def _register_handlers(self):
+        self.orchestrator.register_agent("triage", handlers.triage)
+        self.orchestrator.register_agent("ti_enrich", handlers.ti_enrich)
+        self.orchestrator.register_agent("ueba_check", handlers.ueba_check)
+        self.orchestrator.register_agent("case_create", handlers.case_create)
+        self.orchestrator.register_agent("soar_run", handlers.soar_run)
+        self.orchestrator.register_agent("notify", handlers.notify)
+        self.orchestrator.register_agent("review", handlers.review)
+        self.orchestrator.register_agent("lead", handlers.lead)
+        logger.info("Registered %d agent handlers", len(self.orchestrator._registry))
 
     async def start(self):
         self.redis_client = await redis.from_url(settings.redis_url, decode_responses=True)

@@ -207,6 +207,7 @@ class Settings(BaseSettings):
     rag_top_k: int = 5
     rag_chunk_size: int = 1000
     rag_chunk_overlap: int = 100
+    rag_skill_memory_enabled: bool = True
 
     # ── Ticketing Integrations ──
     servicenow_instance: str = ""
@@ -236,5 +237,12 @@ class Settings(BaseSettings):
     llm_tier_burst_window_minutes: int = 10
     llm_tier_known_bad_ips: str = ""  # comma-separated
     llm_tier_complex_techniques: str = "T1569.002,T1059.001,T1021.001,T1485,T1490"  # lateral movement, ransomware, etc.
+
+    # ── Credential Leak Monitoring ──
+    credential_leak_monitor_enabled: bool = False
+    credential_leak_hibp_api_key: Optional[SecretStr] = None
+    credential_leak_monitored_emails: str = ""  # comma-separated
+    credential_leak_monitored_domains: str = ""  # comma-separated
+    credential_leak_check_interval_seconds: int = 86400
 
 settings = Settings()

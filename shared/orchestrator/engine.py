@@ -1,14 +1,28 @@
+import asyncio
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Callable, Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from shared.config import settings
 from shared.models.agent import AgentDefinition, AgentRun, AgentTask
+from shared.rag import skill_memory
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class HandlerContext:
+    """Runtime context passed to every agent handler."""
+
+    session: AsyncSession
+    run: AgentRun
+    task: AgentTask
+    prev_output: dict[str, Any] | None = None
 
 
 class OrchestrationEngine:
@@ -65,34 +79,40 @@ class OrchestrationEngine:
 
             try:
                 tasks_cfg = definition.config.get("tasks", []) if definition else []
+                prev_output: dict[str, Any] = {}
 
-                for task_cfg in tasks_cfg:
-                    agent_type = task_cfg.get("agent_type", "unknown")
-                    task = AgentTask(
-                        run_id=run.id,
-                        agent_type=agent_type,
-                        input_data=task_cfg.get("input", {}),
-                        status="running",
-                        started_at=datetime.now(timezone.utc),
-                    )
-                    session.add(task)
-                    await session.flush()
+                i = 0
+                while i < len(tasks_cfg):
+                    # Build a parallel group: the current task plus any following task
+                    # marked with "parallel": true.
+                    group = [tasks_cfg[i]]
+                    while (
+                        i + 1 < len(tasks_cfg)
+                        and tasks_cfg[i + 1].get("parallel") is True
+                    ):
+                        group.append(tasks_cfg[i + 1])
+                        i += 1
 
-                    handler = self._registry.get(agent_type)
-                    if handler:
-                        try:
-                            output = await handler(task_cfg.get("input", {}))
-                            task.output_data = output if isinstance(output, dict) else {"result": str(output)}
-                            task.status = "completed"
-                        except Exception as exc:
-                            task.status = "failed"
-                            task.error = str(exc)
-                            logger.error("Task %s failed: %s", task.id, exc)
+                    if len(group) == 1:
+                        prev_output = await self._run_task(
+                            session, run, group[0], prev_output
+                        )
                     else:
-                        task.output_data = {}
-                        task.status = "completed"
+                        # Independent tasks in the group receive the same prev_output
+                        # and their outputs are merged afterwards.
+                        outputs = await asyncio.gather(
+                            *(
+                                self._run_task(session, run, cfg, prev_output)
+                                for cfg in group
+                            )
+                        )
+                        merged: dict[str, Any] = {}
+                        for out in outputs:
+                            if isinstance(out, dict):
+                                merged.update(out)
+                        prev_output = merged
 
-                    task.completed_at = datetime.now(timezone.utc)
+                    i += 1
 
                 run.status = "completed"
                 run.result_summary = f"Executed {len(tasks_cfg)} task(s)"
@@ -104,3 +124,56 @@ class OrchestrationEngine:
 
             run.completed_at = datetime.now(timezone.utc)
             await session.commit()
+
+    async def _run_task(
+        self,
+        session: AsyncSession,
+        run: AgentRun,
+        task_cfg: dict,
+        prev_output: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        agent_type = task_cfg.get("agent_type", "unknown")
+
+        # Output chaining: previous task output is merged into this task's input.
+        # Explicit task input takes precedence over inherited keys.
+        task_input = task_cfg.get("input", {}) or {}
+        chained_input = {**(prev_output or {}), **task_input}
+
+        task = AgentTask(
+            run_id=run.id,
+            agent_type=agent_type,
+            input_data=chained_input,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(task)
+        await session.flush()
+
+        handler = self._registry.get(agent_type)
+        if handler:
+            try:
+                ctx = HandlerContext(
+                    session=session, run=run, task=task, prev_output=prev_output
+                )
+                output = await handler(chained_input, ctx)
+                task.output_data = output if isinstance(output, dict) else {"result": str(output)}
+                task.status = "completed"
+            except Exception as exc:
+                task.status = "failed"
+                task.error = str(exc)
+                logger.error("Task %s (%s) failed: %s", task.id, agent_type, exc)
+                task.output_data = {"error": str(exc)}
+        else:
+            logger.warning("No handler registered for agent type: %s", agent_type)
+            task.output_data = {}
+            task.status = "completed"
+
+        task.completed_at = datetime.now(timezone.utc)
+
+        if settings.rag_skill_memory_enabled and task.status == "completed":
+            try:
+                await skill_memory.add_experience(session, task)
+            except Exception as exc:
+                logger.warning("Failed to store skill memory for task %s: %s", task.id, exc)
+
+        return task.output_data or {}

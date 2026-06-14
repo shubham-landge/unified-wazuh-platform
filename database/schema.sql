@@ -978,3 +978,29 @@ CREATE INDEX idx_usage_records_recorded ON usage_records(recorded_at);
 CREATE TRIGGER trg_tenant_usage_updated_at
     BEFORE UPDATE ON tenant_usage FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- ─── Credential Leak Monitoring ───
+CREATE TABLE credential_leaks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    target TEXT NOT NULL,
+    target_type TEXT DEFAULT 'email' CHECK (target_type IN ('email', 'domain')),
+    breach_name TEXT NOT NULL,
+    breach_date TEXT,
+    compromised_data JSONB DEFAULT '[]',
+    breach_description TEXT,
+    is_acknowledged BOOLEAN DEFAULT FALSE,
+    acknowledged_at TIMESTAMPTZ,
+    acknowledged_by TEXT,
+    source TEXT DEFAULT 'hibp',
+    raw_data JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_credential_leaks_tenant ON credential_leaks(tenant_id);
+CREATE INDEX idx_credential_leaks_tenant_created ON credential_leaks(tenant_id, created_at);
+CREATE INDEX idx_credential_leaks_target ON credential_leaks(target);
+
+CREATE TRIGGER trg_credential_leaks_updated_at
+    BEFORE UPDATE ON credential_leaks FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();

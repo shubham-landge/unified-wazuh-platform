@@ -117,8 +117,7 @@ async def test_generate_executive_summary_uses_llm():
     assert "Validate containment" in html
 
 
-def test_html_to_pdf_falls_back_to_html_bytes():
+def test_html_to_pdf_raises_on_weasyprint_failure():
     with patch.dict("sys.modules", {"weasyprint": None}):
-        result = ReportGenerator.html_to_pdf("<h1>Report</h1>")
-
-    assert result == b"<h1>Report</h1>"
+        with pytest.raises(RuntimeError, match="PDF generation failed"):
+            ReportGenerator.html_to_pdf("<h1>Report</h1>")

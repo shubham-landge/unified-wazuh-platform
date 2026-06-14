@@ -33,6 +33,8 @@ from app.routers import (
     osint,
     usage,
     tenants,
+    metrics,
+    posture,
 )
 
 logging.basicConfig(
@@ -94,3 +96,5 @@ app.include_router(approvals.router)
 app.include_router(osint.router)
 app.include_router(usage.router)
 app.include_router(tenants.router)
+app.include_router(metrics.router)
+app.include_router(posture.router)

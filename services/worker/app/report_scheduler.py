@@ -117,7 +117,7 @@ class ReportScheduler:
             file_path = storage / f"{uuid.uuid4()}.{suffix}"
 
             if report_format == "PDF":
-                content = generator.html_to_pdf(html)
+                content = await asyncio.get_event_loop().run_in_executor(None, generator.html_to_pdf, html)
             elif report_format == "JSON":
                 import json
                 content = json.dumps({"html": html}).encode("utf-8")
@@ -148,6 +148,8 @@ class ReportScheduler:
             await self._deliver_report(schedule, delivery, report_file_path, report_format)
             delivery.status = "delivered"
             delivery.completed_at = datetime.now(timezone.utc)
+            # Only update last_run_at on successful delivery so the schedule will retry on failure
+            schedule.last_run_at = now
             logger.info("Report delivered for schedule %s", schedule.id)
         except Exception as e:
             delivery.status = "failed"
@@ -155,8 +157,6 @@ class ReportScheduler:
             delivery.completed_at = datetime.now(timezone.utc)
             logger.error("Report delivery failed for schedule %s: %s", schedule.id, e)
 
-        # Update schedule's last_run_at
-        schedule.last_run_at = now
         await session.commit()
 
     async def _deliver_report(

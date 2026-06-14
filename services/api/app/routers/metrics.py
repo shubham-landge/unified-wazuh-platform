@@ -1,0 +1,115 @@
+import logging
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends
+from fastapi.responses import Response
+from prometheus_client import (
+    CollectorRegistry,
+    Gauge,
+    generate_latest,
+    CONTENT_TYPE_LATEST,
+)
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db import get_db
+from app.middleware.auth import validate_api_key
+from shared.config import settings
+from shared.models.alert import Alert
+from shared.models.case import Case
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/metrics", tags=["metrics"])
+
+# Dedicated registry so we don't pollute the global default registry.
+REGISTRY = CollectorRegistry()
+
+ALERT_VOLUME_24H = Gauge(
+    "soc_alert_volume_24h",
+    "Number of alerts ingested in the last 24 hours",
+    registry=REGISTRY,
+)
+OPEN_CASES = Gauge(
+    "soc_open_cases_total",
+    "Total number of open cases",
+    registry=REGISTRY,
+)
+MTTR_SECONDS = Gauge(
+    "soc_mttr_seconds",
+    "Mean time to resolve (seconds) for closed cases",
+    registry=REGISTRY,
+)
+MTTD_SECONDS = Gauge(
+    "soc_mttd_seconds",
+    "Mean time to detect (seconds) for alerts in the last 24 hours",
+    registry=REGISTRY,
+)
+AGENT_QUEUE_DEPTH = Gauge(
+    "soc_agent_queue_depth",
+    "Current depth of the agent worker Redis queue",
+    registry=REGISTRY,
+)
+
+
+def _try_redis_queue_depth() -> int | None:
+    try:
+        import redis
+
+        r = redis.from_url(settings.redis_url, decode_responses=True)
+        depth = r.llen("agent_queue")
+        r.close()
+        return depth
+    except Exception as exc:
+        logger.debug("Could not fetch agent queue depth: %s", exc)
+        return None
+
+
+@router.get("")
+async def metrics(
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(validate_api_key),
+):
+    now = datetime.now(timezone.utc)
+    day_ago = now - timedelta(hours=24)
+
+    # Alert volume (last 24h)
+    alert_count_result = await db.execute(
+        select(func.count(Alert.id)).where(Alert.created_at >= day_ago)
+    )
+    ALERT_VOLUME_24H.set(alert_count_result.scalar() or 0)
+
+    # Open cases
+    open_cases_result = await db.execute(
+        select(func.count(Case.id)).where(Case.status != "closed")
+    )
+    OPEN_CASES.set(open_cases_result.scalar() or 0)
+
+    # MTTR for closed cases
+    mttr_result = await db.execute(
+        select(
+            func.avg(
+                func.extract("epoch", Case.closed_at) - func.extract("epoch", Case.created_at)
+            )
+        ).where(Case.status == "closed", Case.closed_at.isnot(None))
+    )
+    mttr_value = mttr_result.scalar()
+    MTTR_SECONDS.set(mttr_value if mttr_value is not None else 0)
+
+    # MTTD for recent alerts (ingested_at - created_at of the alert/event)
+    mttd_result = await db.execute(
+        select(
+            func.avg(
+                func.extract("epoch", Alert.ingested_at) - func.extract("epoch", Alert.created_at)
+            )
+        ).where(Alert.ingested_at.isnot(None), Alert.created_at >= day_ago)
+    )
+    mttd_value = mttd_result.scalar()
+    MTTD_SECONDS.set(mttd_value if mttd_value is not None else 0)
+
+    # Agent queue depth
+    depth = _try_redis_queue_depth()
+    if depth is not None:
+        AGENT_QUEUE_DEPTH.set(depth)
+
+    data = generate_latest(REGISTRY)
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)

@@ -1,4 +1,5 @@
 import json
+import logging
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -12,6 +13,8 @@ from shared.models.analyst_note import AnalystNote
 from shared.models.case import Case
 from shared.models.vulnerability import Vulnerability
 from shared.models.compliance import ComplianceFramework, ComplianceControl, ComplianceException
+
+logger = logging.getLogger(__name__)
 
 TEMPLATES_DIR = (
     Path(__file__).parent.parent
@@ -294,8 +297,9 @@ class ReportGenerator:
             from weasyprint import HTML
 
             return HTML(string=html).write_pdf()
-        except Exception:
-            return html.encode("utf-8")
+        except Exception as exc:
+            logger.error("PDF generation failed: %s", exc)
+            raise RuntimeError(f"PDF generation failed: {exc}") from exc
 
     def _require_db(self):
         if self.db is None:

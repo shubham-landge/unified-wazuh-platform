@@ -43,7 +43,9 @@ class EmailConnector:
         msg.attach(body_part)
 
         for att in attachments or []:
-            part = MIMEBase("application", "octet-stream")
+            mime_type = att.get("mime_type") or "application/octet-stream"
+            main_type, _, sub_type = mime_type.partition("/")
+            part = MIMEBase(main_type or "application", sub_type or "octet-stream")
             part.set_payload(att["content"])
             encoders.encode_base64(part)
             part.add_header("Content-Disposition", f"attachment; filename={att['filename']}")
