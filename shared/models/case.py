@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Integer, DateTime, JSON, Text, Boolean, DECIMAL
+from sqlalchemy import String, Integer, DateTime, JSON, Text, Boolean, DECIMAL, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 from shared.models.base import Base, TenantMixin
@@ -8,6 +8,7 @@ from shared.models.base import Base, TenantMixin
 
 class Case(Base, TenantMixin):
     __tablename__ = "cases"
+    __table_args__ = (Index("ix_cases_tenant_created", "tenant_id", "created_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     alert_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

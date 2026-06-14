@@ -28,6 +28,7 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
     user_email: str
     user_role: str
+    tenant_id: str | None = None
 
 
 class RefreshRequest(BaseModel):
@@ -85,6 +86,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
         access_token=access_token,
         user_email=user.email,
         user_role=user.role,
+        tenant_id=str(user.tenant_id) if user.tenant_id else None,
     )
 
 

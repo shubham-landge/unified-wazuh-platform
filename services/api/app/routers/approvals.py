@@ -107,7 +107,8 @@ async def review_approval(
     approval_id: str,
     body: ReviewRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user),
+    tenant_id: str | None = Depends(get_tenant_id)
 ):
     if current_user.role not in ["admin", "analyst"]:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -115,8 +116,14 @@ async def review_approval(
         a_uid = uuid.UUID(approval_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid approval ID")
-    
+
     query = select(ApprovalRequest).where(ApprovalRequest.id == a_uid)
+    if tenant_id:
+        try:
+            t_uid = uuid.UUID(tenant_id)
+            query = query.where(ApprovalRequest.tenant_id == t_uid)
+        except ValueError:
+            pass
     res = await db.execute(query)
     req = res.scalar_one_or_none()
     if not req:

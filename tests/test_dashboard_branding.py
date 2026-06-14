@@ -4,9 +4,21 @@ import pytest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 import jinja2
-from services.dashboard.app.main import app, templates
+from services.dashboard.app.main import app, templates, _sign_session
 
 templates.env.loader = jinja2.FileSystemLoader("services/dashboard/templates")
+
+
+def _signed_cookie(email: str, role: str = "admin", tenant_id: str | None = None, csrf_token: str = "test-csrf-token") -> str:
+    from datetime import datetime, timezone
+    return _sign_session({
+        "sub": email,
+        "email": email,
+        "role": role,
+        "tenant_id": tenant_id,
+        "csrf_token": csrf_token,
+        "iat": datetime.now(timezone.utc).isoformat(),
+    })
 
 
 @pytest.fixture
@@ -27,7 +39,7 @@ def test_branding_settings_tab_returns_content(mock_api, mock_branding, client):
     }
     mock_api.return_value = {"status": "success"}
 
-    client.cookies.set("session_token", "admin@company.com")
+    client.cookies.set("session_token", _signed_cookie("admin@company.com", role="admin"))
     resp = client.get("/settings/branding")
 
     assert resp.status_code == 200
@@ -41,7 +53,7 @@ def test_branding_settings_tab_returns_content(mock_api, mock_branding, client):
 def test_save_branding_settings(mock_api, mock_save, client):
     mock_api.return_value = {"status": "success"}
 
-    client.cookies.set("session_token", "admin@company.com")
+    client.cookies.set("session_token", _signed_cookie("admin@company.com", role="admin"))
     resp = client.post("/settings/branding", data={
         "primary_color": "#ff0000",
         "secondary_color": "#00ff00",
@@ -49,7 +61,7 @@ def test_save_branding_settings(mock_api, mock_save, client):
         "logo_url": "https://myorg.com/logo.png",
         "favicon_url": "",
         "custom_css": "",
-    })
+    }, headers={"X-CSRF-Token": "test-csrf-token"})
 
     assert resp.status_code == 200
     data = resp.json()
@@ -76,7 +88,7 @@ def test_branding_appears_in_base_template(mock_api, mock_branding, client):
         "/vulnerabilities?limit=100": {"vulnerabilities": []},
     }.get(path, {})
 
-    client.cookies.set("session_token", "admin@company.com")
+    client.cookies.set("session_token", _signed_cookie("admin@company.com", role="admin"))
     resp = client.get("/")
 
     assert resp.status_code == 200
@@ -87,7 +99,7 @@ def test_branding_appears_in_base_template(mock_api, mock_branding, client):
 @patch("services.dashboard.app.main.api_request")
 def test_branding_settings_tab_in_settings_page(mock_api, client):
     mock_api.return_value = {"status": "success"}
-    client.cookies.set("session_token", "admin@company.com")
+    client.cookies.set("session_token", _signed_cookie("admin@company.com", role="admin"))
     resp = client.get("/settings")
 
     assert resp.status_code == 200

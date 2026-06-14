@@ -16,6 +16,20 @@ router = APIRouter(prefix="/ticketing", tags=["ticketing"])
 
 _DEFAULT_LIMIT = settings.api_default_page_limit
 
+_SENSITIVE_CONFIG_KEYS = {"password", "api_token", "api_key", "token", "secret", "credentials"}
+
+
+def _mask_sensitive_config(config: dict) -> dict:
+    masked = {}
+    for key, value in config.items():
+        if any(s in key.lower() for s in _SENSITIVE_CONFIG_KEYS):
+            masked[key] = "***"
+        elif isinstance(value, dict):
+            masked[key] = _mask_sensitive_config(value)
+        else:
+            masked[key] = value
+    return masked
+
 
 class TicketingConfigBody(BaseModel):
     provider: str
@@ -49,7 +63,7 @@ async def list_configs(
             {
                 "id": str(c.id),
                 "provider": c.provider,
-                "config": c.config,
+                "config": _mask_sensitive_config(c.config or {}),
                 "is_active": c.is_active,
                 "created_at": c.created_at.isoformat() if c.created_at else None,
             }
@@ -63,16 +77,26 @@ async def upsert_config(
     body: TicketingConfigBody,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
+    tenant_uuid = uuid.UUID(tenant_id) if tenant_id else None
     result = await db.execute(
-        select(TicketingConfig).where(TicketingConfig.provider == body.provider)
+        select(TicketingConfig).where(
+            TicketingConfig.provider == body.provider,
+            TicketingConfig.tenant_id == tenant_uuid,
+        )
     )
     existing = result.scalar_one_or_none()
     if existing:
         existing.config = body.config
         existing.is_active = True
     else:
-        existing = TicketingConfig(provider=body.provider, config=body.config, is_active=True)
+        existing = TicketingConfig(
+            provider=body.provider,
+            tenant_id=tenant_uuid,
+            config=body.config,
+            is_active=True,
+        )
         db.add(existing)
     await db.commit()
     return {"status": "success", "provider": body.provider}

@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <title>Unified Wazuh SOC Platform</title>
     
     <!-- Fonts -->
@@ -12,6 +13,28 @@
     
     <!-- HTMX, Alpine, and Chart.js -->
     <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <script>
+        document.body.addEventListener('htmx:configRequest', function(evt) {
+            var token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            if (token) {
+                evt.detail.headers['X-CSRF-Token'] = token;
+            }
+        });
+        document.addEventListener('submit', function(evt) {
+            var form = evt.target;
+            if (form.tagName !== 'FORM' || form.hasAttribute('hx-post') || form.hasAttribute('hx-delete') || form.hasAttribute('hx-put') || form.hasAttribute('hx-patch')) return;
+            var token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            if (!token) return;
+            var input = form.querySelector('input[name="csrf_token"]');
+            if (!input) {
+                input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'csrf_token';
+                form.appendChild(input);
+            }
+            input.value = token;
+        });
+    </script>
     <script src="https://unpkg.com/alpinejs@3.14.3" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>

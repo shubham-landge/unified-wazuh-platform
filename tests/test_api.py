@@ -89,8 +89,11 @@ async def test_wazuh_health_endpoint(client):
             "/wazuh/health", headers={"X-API-Key": "soc-test-key-001"}
         )
     assert response.status_code == 200
-    assert "api_url" in response.json()
-    assert "indexer_url" in response.json()
+    data = response.json()
+    assert "managers" in data
+    assert "indexers" in data
+    assert isinstance(data["managers"], list)
+    assert isinstance(data["indexers"], list)
 
 
 @pytest.mark.asyncio

@@ -1,18 +1,109 @@
 import httpx
 import os
 import json
-from datetime import datetime
+import hmac
+import hashlib
+import secrets
+import re
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Request, Form, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from itsdangerous import TimestampSigner, BadSignature, SignatureExpired
+from shared.config import settings
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _http_client
+    _http_client = httpx.AsyncClient(timeout=_HTTP_TIMEOUT)
+    yield
+    await _http_client.aclose()
+
+
+app = FastAPI(lifespan=lifespan)
 
 API_BASE = os.getenv("API_BASE_URL", "http://api:8000")
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory="templates", autoescape=True)
 
 STORE_PATH = "app/dashboard_store.json"
+_HTTP_TIMEOUT = 10.0
+_http_client: httpx.AsyncClient | None = None
+
+# Settings keys that must never be persisted to the dashboard JSON store.
+_SECRET_SETTINGS_KEYS = {"api_key", "otx_api_key", "misp_api_key", "virustotal_api_key"}
+
+
+def _settings_env_var(key: str) -> str:
+    return f"SETTINGS_{key.upper()}"
+
+
+def _load_secret_setting(key: str, fallback: str = "") -> str:
+    return os.getenv(_settings_env_var(key), os.getenv(key.upper(), fallback))
+
+_DASHBOARD_SECRET_KEY = os.getenv("DASHBOARD_SECRET_KEY")
+if not _DASHBOARD_SECRET_KEY:
+    _DASHBOARD_SECRET_KEY = hmac.new(
+        os.getenv("API_KEYS", "dev-only-key").encode(),
+        b"dashboard-session",
+        hashlib.sha256,
+    ).hexdigest()
+
+SESSION_COOKIE_NAME = "session_token"
+SESSION_MAX_AGE_SECONDS = int(os.getenv("DASHBOARD_SESSION_MAX_AGE", "28800"))
+_signer = TimestampSigner(_DASHBOARD_SECRET_KEY)
+
+
+def _sign_session(payload: dict) -> str:
+    data = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    return _signer.sign(data).decode()
+
+
+def _unsign_session(value: str) -> dict | None:
+    try:
+        raw = _signer.unsign(value, max_age=SESSION_MAX_AGE_SECONDS)
+        return json.loads(raw.decode())
+    except (BadSignature, SignatureExpired, json.JSONDecodeError):
+        return None
+
+
+def get_session_user(request: Request) -> dict | None:
+    """Return the signed session user dict, or None if invalid/missing."""
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        return None
+    session = _unsign_session(token)
+    if not session:
+        return None
+    email = session.get("email") or session.get("sub") or ""
+    return {
+        "email": email,
+        "display_name": email.split("@")[0].title() if "@" in email else email,
+        "role": session.get("role", "viewer"),
+        "tenant_id": session.get("tenant_id"),
+        "tenant_name": None,
+        "last_login": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def require_login(request: Request):
+    """Redirect unauthenticated users to /login."""
+    if not get_session_user(request):
+        return RedirectResponse("/login", status_code=303)
+    return None
+
+
+def get_csrf_token(request: Request) -> str | None:
+    """Return the CSRF token stored in the signed session, if any."""
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        return None
+    session = _unsign_session(token)
+    if not session:
+        return None
+    return session.get("csrf_token")
+
 
 def get_store():
     if not os.path.exists(STORE_PATH):
@@ -25,36 +116,47 @@ def get_store():
 
 
 async def get_tenant_context(token: str):
-    """Fetch tenant context from the API based on session token."""
+    """Fetch tenant context from the API based on session token.
+
+    Kept for backward compatibility; prefer get_session_user(request).
+    """
+    session = _unsign_session(token)
+    if session:
+        email = session.get("email") or session.get("sub") or ""
+        return {
+            "email": email,
+            "display_name": email.split("@")[0].title() if "@" in email else email,
+            "role": session.get("role", "viewer"),
+            "tenant_id": session.get("tenant_id"),
+            "tenant_name": None,
+        }
+
+    # Legacy unsigned token fallback (deprecated)
     import httpx
-    
     async with httpx.AsyncClient(timeout=10.0) as client:
         headers = {"X-API-Key": os.getenv("API_KEYS", "soc-key-001").split(",")[0]}
-        # Try to decode JWT token from session to get tenant_id
         from shared.auth import verify_token
         tenant_id = None
         try:
-            # Decode the JWT token from session to get tenant_id
             user_data = verify_token(token)
             if user_data and hasattr(user_data, 'tenant_id'):
                 tenant_id = user_data.tenant_id
         except Exception:
             pass
-            
-        # If no tenant_id in token, try to get user profile from API
+
         if not tenant_id:
             url = f"{API_BASE}/auth/me"
             resp = await client.get(url, headers=headers)
             if resp.status_code == 200:
                 user_profile = resp.json()
                 tenant_id = user_profile.get('tenant_id')
-                
+
         return {
             "email": token,
             "display_name": token.split("@")[0].title(),
             "role": "admin" if "admin" in token else "analyst",
             "tenant_id": tenant_id,
-            "tenant_name": None
+            "tenant_name": None,
         }
 
 def save_store(store_data):
@@ -66,38 +168,78 @@ def save_store(store_data):
         return False
 
 
+def _default_managers() -> list[dict]:
+    return [
+        {
+            "label": m["label"],
+            "url": m["url"],
+            "user": m["user"],
+            "password": m["password"],
+        }
+        for m in settings.parsed_wazuh_managers
+    ]
+
+
+def _default_indexers() -> list[dict]:
+    return [
+        {
+            "label": i["label"],
+            "url": i["url"],
+            "user": i["user"],
+            "password": i["password"],
+        }
+        for i in settings.parsed_wazuh_indexers
+    ]
+
+
+def get_managers() -> list[dict]:
+    store = get_store()
+    managers = store.get("managers")
+    if managers is None:
+        managers = _default_managers()
+        store["managers"] = managers
+        save_store(store)
+    return managers
+
+
+def save_managers(managers: list[dict]):
+    store = get_store()
+    store["managers"] = managers
+    save_store(store)
+
+
+def get_indexers() -> list[dict]:
+    store = get_store()
+    indexers = store.get("indexers")
+    if indexers is None:
+        indexers = _default_indexers()
+        store["indexers"] = indexers
+        save_store(store)
+    return indexers
+
+
+def save_indexers(indexers: list[dict]):
+    store = get_store()
+    store["indexers"] = indexers
+    save_store(store)
+
+
 # Ingest user context to templates automatically
 @app.middleware("http")
 async def add_user_to_template_context(request: Request, call_next):
-    token = request.cookies.get("session_token")
-    current_user = None
-    if token:
-        # Get full user context including tenant_id from API
-        try:
-            import asyncio
-            current_user = await get_tenant_context(token)
-        except Exception:
-            # Fallback to basic user info
-            current_user = {
-                "email": token,
-                "display_name": token.split("@")[0].title(),
-                "role": "admin" if "admin" in token else "analyst",
-                "tenant_id": None,
-                "tenant_name": None,
-                "last_login": datetime.now().isoformat()
-            }
-    
+    current_user = get_session_user(request)
+
     request.state.current_user = current_user
     request.state.tenant_id = current_user.get("tenant_id") if current_user else None
     templates.env.globals["current_user"] = current_user
     templates.env.globals["tenant_id"] = current_user.get("tenant_id") if current_user else None
+    templates.env.globals["csrf_token"] = get_csrf_token(request)
     templates.env.globals["branding"] = _get_branding()
-    
+
     pending_count = 0
-    if token:
+    if current_user:
         try:
-            # Use tenant-aware endpoint if tenant_id is available
-            if hasattr(request.state, 'tenant_id') and request.state.tenant_id:
+            if request.state.tenant_id:
                 res = await api_request("GET", f"/approvals/pending?tenant_id={request.state.tenant_id}")
             else:
                 res = await api_request("GET", "/approvals/pending")
@@ -110,6 +252,37 @@ async def add_user_to_template_context(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def csrf_protection(request: Request, call_next):
+    """Validate CSRF token for state-changing requests from authenticated users.
+
+    Uses the double-submit pattern: the token is stored in the signed session and
+    must be echoed back in the X-CSRF-Token header. Form bodies are left for route
+    handlers to consume.
+    """
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return await call_next(request)
+
+    path = request.url.path
+    if path in ("/login", "/logout") or path.startswith("/static/"):
+        return await call_next(request)
+
+    session = _unsign_session(request.cookies.get(SESSION_COOKIE_NAME, ""))
+    if not session:
+        # Unauthenticated state-changing requests are rejected by auth guards; allow pass-through.
+        return await call_next(request)
+
+    expected = session.get("csrf_token")
+    if not expected:
+        return JSONResponse({"status": "error", "message": "CSRF token missing from session"}, status_code=403)
+
+    submitted = request.headers.get("X-CSRF-Token")
+    if not submitted or not secrets.compare_digest(expected, submitted):
+        return JSONResponse({"status": "error", "message": "Invalid CSRF token"}, status_code=403)
+
+    return await call_next(request)
+
+
 # Mount static files directory
 static_dir = "static" if os.path.exists("static") else "services/dashboard/static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -118,48 +291,48 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 async def api_request(method: str, path: str, json_data: dict = None, data: dict = None, request: Request = None):
     headers = {"X-API-Key": os.getenv("API_KEYS", "soc-key-001").split(",")[0]}
     if request:
-        token = request.cookies.get("session_token")
-        if token:
-            # Extract tenant_id from JWT token if present in session
-            tenant_id = None
-            if hasattr(request.state, 'user') and request.state.user:
-                tenant_id = getattr(request.state.user, 'tenant_id', None)
-            
-            from shared.auth import create_access_token
-            role = "admin" if "admin" in token else "analyst"
-            jwt_token = create_access_token(
-                user_id=token, 
-                email=token, 
-                role=role,
-                tenant_id=tenant_id
-            )
-            headers["Authorization"] = f"Bearer {jwt_token}"
-            # Also include X-Tenant-ID header for compatibility
+        session = get_session_user(request)
+        if session:
+            access_token = None
+            raw_cookie = request.cookies.get(SESSION_COOKIE_NAME, "")
+            try:
+                raw_session = _unsign_session(raw_cookie) or {}
+                access_token = raw_session.get("access_token")
+            except Exception:
+                access_token = None
+
+            tenant_id = session.get("tenant_id")
+            if access_token:
+                headers["Authorization"] = f"Bearer {access_token}"
+            else:
+                from shared.auth import create_access_token
+                headers["Authorization"] = f"Bearer {create_access_token(
+                    user_id=session['email'],
+                    email=session['email'],
+                    role=session.get('role', 'viewer'),
+                    tenant_id=tenant_id,
+                )}"
             if tenant_id:
                 headers["X-Tenant-ID"] = tenant_id
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        url = f"{API_BASE}{path}"
-        if method.upper() == "GET":
-            resp = await client.get(url, headers=headers)
-        elif method.upper() == "POST":
-            resp = await client.post(url, headers=headers, json=json_data, data=data)
-        elif method.upper() == "PATCH":
-            resp = await client.patch(url, headers=headers, json=json_data, data=data)
-        elif method.upper() == "PUT":
-            resp = await client.put(url, headers=headers, json=json_data, data=data)
-        elif method.upper() == "DELETE":
-            resp = await client.delete(url, headers=headers)
-        
-        if resp.status_code >= 400:
-            try:
-                return resp.json()
-            except Exception:
-                return {"status": "error", "message": resp.text}
+    client = _http_client or httpx.AsyncClient(timeout=_HTTP_TIMEOUT)
+    url = f"{API_BASE}{path}"
+    if method.upper() == "GET":
+        resp = await client.get(url, headers=headers)
+    elif method.upper() == "POST":
+        resp = await client.post(url, headers=headers, json=json_data, data=data)
+    elif method.upper() == "PATCH":
+        resp = await client.patch(url, headers=headers, json=json_data, data=data)
+    elif method.upper() == "PUT":
+        resp = await client.put(url, headers=headers, json=json_data, data=data)
+    elif method.upper() == "DELETE":
+        resp = await client.delete(url, headers=headers)
+
+    if resp.status_code >= 400:
         try:
             return resp.json()
         except Exception:
-            return {"status": "success", "text": resp.text}
-
+            return {"status": "error", "detail": resp.text}
+    return resp.json()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -456,16 +629,8 @@ async def reports_page(request: Request):
             save_store(store)
             
     schedules_list = store.get("schedules", [])
-    
-    current_user = None
-    token = request.cookies.get("session_token")
-    if token:
-        current_user = {
-            "email": token,
-            "display_name": token.split("@")[0].title(),
-            "role": "admin" if "admin" in token else "analyst"
-        }
-        
+    current_user = get_session_user(request)
+
     return templates.TemplateResponse("reports.html", {
         "request": request,
         "reports": reports_list,
@@ -560,23 +725,26 @@ async def generate_report(request: Request):
 async def settings_page(request: Request):
     settings_path = "app/settings.json"
     local_settings = {
-        "api_key": os.getenv("API_KEYS", "soc-key-001").split(",")[0],
+        "api_key": _load_secret_setting("api_key", os.getenv("API_KEYS", "soc-key-001").split(",")[0]),
         "wazuh_host": "https://wazuh.local:55000",
         "ollama_model": "llama3",
         "auto_triage": "enabled",
         "retention_days": "90",
         "sync_interval": "60",
-        "otx_api_key": os.getenv("OTX_API_KEY", ""),
+        "otx_api_key": _load_secret_setting("otx_api_key", os.getenv("OTX_API_KEY", "")),
         "misp_url": os.getenv("MISP_URL", ""),
-        "misp_api_key": os.getenv("MISP_API_KEY", ""),
+        "misp_api_key": _load_secret_setting("misp_api_key", os.getenv("MISP_API_KEY", "")),
         "misp_verify_ssl": os.getenv("MISP_VERIFY_SSL", "true").lower() == "true",
-        "virustotal_api_key": os.getenv("VIRUSTOTAL_API_KEY", ""),
+        "virustotal_api_key": _load_secret_setting("virustotal_api_key", os.getenv("VIRUSTOTAL_API_KEY", "")),
         "ti_feed_poll_interval_seconds": int(os.getenv("TI_FEED_POLL_INTERVAL_SECONDS", "3600"))
     }
     if os.path.exists(settings_path):
         try:
             with open(settings_path, "r") as f:
                 loaded = json.load(f)
+                # Do not let on-disk JSON override secret values sourced from env vars.
+                for secret_key in _SECRET_SETTINGS_KEYS:
+                    loaded.pop(secret_key, None)
                 # Convert types if needed
                 if "misp_verify_ssl" in loaded:
                     if isinstance(loaded["misp_verify_ssl"], str):
@@ -589,10 +757,12 @@ async def settings_page(request: Request):
                 local_settings.update(loaded)
         except Exception:
             pass
-            
+
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "settings": local_settings,
+        "managers": get_managers(),
+        "indexers": get_indexers(),
         "page": "settings"
     })
 
@@ -601,7 +771,7 @@ async def settings_page(request: Request):
 async def save_settings(request: Request):
     form_data = await request.form()
     new_settings = {k: v for k, v in form_data.items()}
-    
+
     # Handle checkboxes or other boolean conversions if they are in form_data
     if "misp_verify_ssl" in new_settings:
         new_settings["misp_verify_ssl"] = new_settings["misp_verify_ssl"].lower() == "true" or new_settings["misp_verify_ssl"] == "on"
@@ -613,20 +783,138 @@ async def save_settings(request: Request):
             new_settings["ti_feed_poll_interval_seconds"] = int(new_settings["ti_feed_poll_interval_seconds"])
         except ValueError:
             pass
-    
+
+    # Secrets are sourced from SETTINGS_* environment variables; do not persist them to disk.
+    for secret_key in _SECRET_SETTINGS_KEYS:
+        new_settings.pop(secret_key, None)
+
     settings_path = "app/settings.json"
     try:
         with open(settings_path, "w") as f:
             json.dump(new_settings, f, indent=4)
     except Exception:
         pass
-        
+
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "settings": new_settings,
         "page": "settings",
         "toast": {"type": "success", "message": "Settings updated successfully"}
     })
+
+
+@app.post("/settings/managers/add")
+async def add_manager(request: Request):
+    current_user = get_session_user(request)
+    if not current_user or current_user.get("role") != "admin":
+        return JSONResponse({"status": "error", "message": "Forbidden"}, status_code=403)
+
+    form = await request.form()
+    managers = get_managers()
+    managers.append({
+        "label": form.get("label", f"manager-{len(managers) + 1}").strip(),
+        "url": form.get("url", "").strip(),
+        "user": form.get("user", "").strip(),
+        "password": form.get("password", "").strip(),
+    })
+    save_managers(managers)
+    return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/settings/managers/{idx}/delete")
+async def delete_manager(request: Request, idx: int):
+    current_user = get_session_user(request)
+    if not current_user or current_user.get("role") != "admin":
+        return JSONResponse({"status": "error", "message": "Forbidden"}, status_code=403)
+
+    managers = get_managers()
+    if 0 <= idx < len(managers):
+        managers.pop(idx)
+        save_managers(managers)
+    return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/settings/managers/{idx}/test")
+async def test_manager(request: Request, idx: int):
+    current_user = get_session_user(request)
+    if not current_user:
+        return JSONResponse({"status": "error", "message": "Unauthorized"}, status_code=401)
+
+    managers = get_managers()
+    if not (0 <= idx < len(managers)):
+        return JSONResponse({"status": "error", "message": "Invalid manager"}, status_code=400)
+
+    manager = managers[idx]
+    try:
+        client = _http_client or httpx.AsyncClient(timeout=_HTTP_TIMEOUT)
+        auth = (manager.get("user", ""), manager.get("password", ""))
+        resp = await client.get(
+            f"{manager['url'].rstrip('/')}/health-check",
+            auth=auth if any(auth) else None,
+            headers={"Content-Type": "application/json"},
+        )
+        ok = resp.status_code < 400
+    except Exception as exc:
+        return JSONResponse({"status": "error", "message": str(exc)})
+
+    return JSONResponse({"status": "success" if ok else "error", "connected": ok})
+
+
+@app.post("/settings/indexers/add")
+async def add_indexer(request: Request):
+    current_user = get_session_user(request)
+    if not current_user or current_user.get("role") != "admin":
+        return JSONResponse({"status": "error", "message": "Forbidden"}, status_code=403)
+
+    form = await request.form()
+    indexers = get_indexers()
+    indexers.append({
+        "label": form.get("label", f"indexer-{len(indexers) + 1}").strip(),
+        "url": form.get("url", "").strip(),
+        "user": form.get("user", "").strip(),
+        "password": form.get("password", "").strip(),
+    })
+    save_indexers(indexers)
+    return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/settings/indexers/{idx}/delete")
+async def delete_indexer(request: Request, idx: int):
+    current_user = get_session_user(request)
+    if not current_user or current_user.get("role") != "admin":
+        return JSONResponse({"status": "error", "message": "Forbidden"}, status_code=403)
+
+    indexers = get_indexers()
+    if 0 <= idx < len(indexers):
+        indexers.pop(idx)
+        save_indexers(indexers)
+    return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/settings/indexers/{idx}/test")
+async def test_indexer(request: Request, idx: int):
+    current_user = get_session_user(request)
+    if not current_user:
+        return JSONResponse({"status": "error", "message": "Unauthorized"}, status_code=401)
+
+    indexers = get_indexers()
+    if not (0 <= idx < len(indexers)):
+        return JSONResponse({"status": "error", "message": "Invalid indexer"}, status_code=400)
+
+    indexer = indexers[idx]
+    try:
+        client = _http_client or httpx.AsyncClient(timeout=_HTTP_TIMEOUT)
+        auth = (indexer.get("user", ""), indexer.get("password", ""))
+        resp = await client.get(
+            f"{indexer['url'].rstrip('/')}/_cluster/health",
+            auth=auth if any(auth) else None,
+            headers={"Content-Type": "application/json"},
+        )
+        ok = resp.status_code < 400
+    except Exception as exc:
+        return JSONResponse({"status": "error", "message": str(exc)})
+
+    return JSONResponse({"status": "success" if ok else "error", "connected": ok})
 
 
 @app.post("/settings/test-connector/{connector_name}")
@@ -801,6 +1089,9 @@ async def compliance_page(request: Request, framework: str | None = None):
 
 @app.get("/compliance/score/{framework_id}")
 async def compliance_score_proxy(framework_id: str, request: Request):
+    redirect = require_login(request)
+    if redirect:
+        return redirect
     data = await api_request("GET", f"/compliance/frameworks/{framework_id}/score")
     return JSONResponse(data)
 
@@ -971,17 +1262,8 @@ async def health_page(request: Request):
         "virustotal": services.get("virustotal", {"connected": False, "error": "Not configured"})
     }
     
-    current_user = None
-    token = request.cookies.get("session_token")
-    if token:
-        # In a real environment, query API or decode JWT. For now, mock a session:
-        current_user = {
-            "email": token,
-            "display_name": token.split("@")[0].title(),
-            "role": "admin" if "admin" in token else "analyst",
-            "last_login": datetime.now().isoformat()
-        }
-        
+    current_user = get_session_user(request)
+
     return templates.TemplateResponse("health.html", {
         "request": request,
         "wazuh": wazuh_health,
@@ -1023,6 +1305,16 @@ async def health_status_partial(request: Request):
 # --- Branding & Theme Settings ---
 
 BRANDING_STORE_PATH = "app/branding.json"
+
+_CSS_DANGEROUS_RE = re.compile(
+    r"url\s*\([^)]*\)|@import\b|javascript:|expression\s*\(|behavior\s*:|</style>",
+    re.IGNORECASE,
+)
+
+
+def _sanitize_custom_css(css: str) -> str:
+    """Strip dangerous CSS constructs that could lead to XSS or data exfiltration."""
+    return _CSS_DANGEROUS_RE.sub("", css)
 
 
 def _get_branding():
@@ -1069,7 +1361,7 @@ async def save_branding_settings(request: Request):
         "company_name": form.get("company_name", "WAZUH"),
         "logo_url": form.get("logo_url", ""),
         "favicon_url": form.get("favicon_url", ""),
-        "custom_css": form.get("custom_css", ""),
+        "custom_css": _sanitize_custom_css(form.get("custom_css", "")),
     }
     _save_branding(branding)
     return JSONResponse({"status": "success", "branding": branding})
@@ -1077,7 +1369,7 @@ async def save_branding_settings(request: Request):
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    if request.cookies.get("session_token"):
+    if request.cookies.get(SESSION_COOKIE_NAME):
         return RedirectResponse("/", status_code=303)
     return templates.TemplateResponse("login.html", {"request": request, "error": None})
 
@@ -1087,129 +1379,81 @@ async def login_submit(request: Request):
     form = await request.form()
     email = form.get("email", "").strip()
     password = form.get("password", "").strip()
-    
-    # Check credentials
-    if email == "admin@company.com" and password == "admin123":
+
+    # Dev-only escape hatch for local testing without seeded API users.
+    dev_allowed = os.getenv("DASHBOARD_DEV_ALLOW_HARDCODED", "").lower() in ("1", "true", "yes")
+    if dev_allowed and email == "admin@company.com" and password == "admin123":
         resp = RedirectResponse("/", status_code=303)
-        # For admin users, we can also fetch tenant context
-        try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                headers = {"X-API-Key": os.getenv("API_KEYS", "soc-key-001").split(",")[0]}
-                # Try to decode JWT or get user profile
-                from shared.auth import verify_token, create_access_token
-                tenant_id = None
-                try:
-                    # Try to decode token if we had one
-                    user_data = verify_token(email)
-                    if user_data and hasattr(user_data, 'tenant_id'):
-                        tenant_id = user_data.tenant_id
-                except Exception:
-                    pass
-                
-                if not tenant_id:
-                    # Get user profile from API to get tenant_id
-                    url = f"{API_BASE}/auth/me"
-                    user_resp = await client.get(url, headers=headers)
-                    if user_resp.status_code == 200:
-                        user_profile = user_resp.json()
-                        tenant_id = user_profile.get('tenant_id')
-                
-                # Create JWT with tenant_id
-                jwt_token = create_access_token(
-                    user_id=email,
-                    email=email,
-                    role="admin",
-                    tenant_id=tenant_id
-                )
-                
-                # Store tenant context in session cookie
-                session_data = json.dumps({
-                    "user_id": email,
-                    "email": email,
-                    "role": "admin",
-                    "tenant_id": tenant_id
-                })
-                resp.set_cookie("session_token", session_data, httponly=True)
-        except Exception:
-            # Fallback to simple email token
-            resp.set_cookie("session_token", email, httponly=True)
+        session_payload = {
+            "sub": email,
+            "email": email,
+            "role": "admin",
+            "tenant_id": None,
+            "csrf_token": secrets.token_urlsafe(32),
+            "iat": datetime.now(timezone.utc).isoformat(),
+        }
+        resp.set_cookie(SESSION_COOKIE_NAME, _sign_session(session_payload), httponly=True, max_age=SESSION_MAX_AGE_SECONDS)
         return resp
-    elif email == "analyst@company.com" and password == "analyst123":
+    if dev_allowed and email == "analyst@company.com" and password == "analyst123":
         resp = RedirectResponse("/", status_code=303)
-        # For analyst users, fetch tenant context
-        try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                headers = {"X-API-Key": os.getenv("API_KEYS", "soc-key-001").split(",")[0]}
-                # Try to get user profile from API
-                from shared.auth import create_access_token
-                tenant_id = None
-                url = f"{API_BASE}/auth/me"
-                user_resp = await client.get(url, headers=headers)
-                if user_resp.status_code == 200:
-                    user_profile = user_resp.json()
-                    tenant_id = user_profile.get('tenant_id')
-                
-                # Create JWT with tenant_id
-                jwt_token = create_access_token(
-                    user_id=email,
-                    email=email,
-                    role="analyst",
-                    tenant_id=tenant_id
-                )
-                
-                # Store tenant context in session cookie
-                session_data = json.dumps({
-                    "user_id": email,
-                    "email": email,
-                    "role": "analyst",
-                    "tenant_id": tenant_id
-                })
-                resp.set_cookie("session_token", session_data, httponly=True)
-        except Exception:
-            # Fallback to simple email token
-            resp.set_cookie("session_token", email, httponly=True)
+        session_payload = {
+            "sub": email,
+            "email": email,
+            "role": "analyst",
+            "tenant_id": None,
+            "csrf_token": secrets.token_urlsafe(32),
+            "iat": datetime.now(timezone.utc).isoformat(),
+        }
+        resp.set_cookie(SESSION_COOKIE_NAME, _sign_session(session_payload), httponly=True, max_age=SESSION_MAX_AGE_SECONDS)
         return resp
-    else:
+
+    try:
+        client = _http_client or httpx.AsyncClient(timeout=_HTTP_TIMEOUT)
+        api_resp = await client.post(
+            f"{API_BASE}/auth/login",
+            json={"email": email, "password": password},
+        )
+    except httpx.RequestError:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Authentication service unavailable."})
+
+    if api_resp.status_code != 200:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid email or password credentials."})
+
+    data = api_resp.json()
+    access_token = data.get("access_token")
+    role = data.get("user_role", "viewer")
+    tenant_id = data.get("tenant_id")
+
+    if not access_token:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid email or password credentials."})
+
+    resp = RedirectResponse("/", status_code=303)
+    session_payload = {
+        "sub": email,
+        "email": email,
+        "role": role,
+        "tenant_id": tenant_id,
+        "access_token": access_token,
+        "csrf_token": secrets.token_urlsafe(32),
+        "iat": datetime.now(timezone.utc).isoformat(),
+    }
+    resp.set_cookie(SESSION_COOKIE_NAME, _sign_session(session_payload), httponly=True, max_age=SESSION_MAX_AGE_SECONDS)
+    return resp
 
 
 @app.get("/logout")
 async def logout_action():
     resp = RedirectResponse("/login", status_code=303)
-    resp.delete_cookie("session_token")
+    resp.delete_cookie(SESSION_COOKIE_NAME)
     return resp
 
 
 @app.get("/profile", response_class=HTMLResponse)
 async def profile_page(request: Request):
-    token = request.cookies.get("session_token")
-    if not token:
+    current_user = get_session_user(request)
+    if not current_user:
         return RedirectResponse("/login", status_code=303)
-        
-    # Try to parse session cookie to get tenant context
-    current_user = None
-    try:
-        import json
-        session_data = json.loads(token)
-        current_user = {
-            "email": session_data.get("email", session_data.get("user_id", token)),
-            "display_name": session_data.get("email", token).split("@")[0].title(),
-            "role": session_data.get("role", "admin" if "admin" in token else "analyst"),
-            "tenant_id": session_data.get("tenant_id"),
-            "last_login": datetime.now().isoformat()
-        }
-    except Exception:
-        # Fallback to simple token parsing
-        current_user = {
-            "email": token,
-            "display_name": token.split("@")[0].title(),
-            "role": "admin" if "admin" in token else "analyst",
-            "tenant_id": None,
-            "last_login": datetime.now().isoformat()
-        }
-    
+
     return templates.TemplateResponse("profile.html", {
         "request": request,
         "user": current_user,
@@ -1220,47 +1464,30 @@ async def profile_page(request: Request):
 
 @app.post("/profile/change-password")
 async def change_password(request: Request):
-    token = request.cookies.get("session_token")
-    if not token:
+    current_user = get_session_user(request)
+    if not current_user:
         return JSONResponse({"status": "error", "message": "Unauthorized"}, status_code=401)
-        
+
     form = await request.form()
     curr_pw = form.get("current_password")
-    new_pw = form.get("new_password")
-    
-    if curr_pw in ("admin123", "analyst123"):
+
+    # Dev-only hardcoded escape hatch; production password changes must be handled by the API.
+    dev_allowed = os.getenv("DASHBOARD_DEV_ALLOW_HARDCODED", "").lower() in ("1", "true", "yes")
+    if dev_allowed and curr_pw in ("admin123", "analyst123"):
         return JSONResponse({"status": "success"})
-    return JSONResponse({"status": "error", "message": "Incorrect current password."})
+
+    return JSONResponse(
+        {"status": "error", "message": "Password change is not supported by the dashboard; use the API."},
+        status_code=501,
+    )
 
 
 @app.get("/users", response_class=HTMLResponse)
 async def users_directory(request: Request):
-    token = request.cookies.get("session_token")
-    if not token or "admin" not in token:
+    current_user = get_session_user(request)
+    if not current_user or current_user.get("role") != "admin":
         return RedirectResponse("/login", status_code=303)
-        
-    # Parse session data to get tenant context
-    current_user = None
-    try:
-        import json
-        session_data = json.loads(token)
-        current_user = {
-            "email": session_data.get("email", session_data.get("user_id", token)),
-            "display_name": session_data.get("email", token).split("@")[0].title(),
-            "role": "admin",
-            "tenant_id": session_data.get("tenant_id"),
-            "last_login": datetime.now().isoformat()
-        }
-    except Exception:
-        # Fallback to simple token parsing
-        current_user = {
-            "email": token,
-            "display_name": token.split("@")[0].title(),
-            "role": "admin",
-            "tenant_id": None,
-            "last_login": datetime.now().isoformat()
-        }
-    
+
     store = get_store()
     users_list = store.get("users", [])
     if not users_list:
@@ -1282,10 +1509,10 @@ async def users_directory(request: Request):
 
 @app.post("/users")
 async def provision_user(request: Request):
-    token = request.cookies.get("session_token")
-    if not token or "admin" not in token:
+    current_user = get_session_user(request)
+    if not current_user or current_user.get("role") != "admin":
         return JSONResponse({"status": "error"}, status_code=403)
-        
+
     form = await request.form()
     email = form.get("email")
     display_name = form.get("display_name")
@@ -1309,10 +1536,10 @@ async def provision_user(request: Request):
 
 @app.patch("/users/{email}")
 async def modify_user(email: str, request: Request):
-    token = request.cookies.get("session_token")
-    if not token or "admin" not in token:
+    current_user = get_session_user(request)
+    if not current_user or current_user.get("role") != "admin":
         return JSONResponse({"status": "error"}, status_code=403)
-        
+
     form = await request.form()
     display_name = form.get("display_name")
     role = form.get("role")
@@ -1332,10 +1559,10 @@ async def modify_user(email: str, request: Request):
 
 @app.post("/users/{email}/toggle")
 async def toggle_user(email: str, request: Request):
-    token = request.cookies.get("session_token")
-    if not token or "admin" not in token:
+    current_user = get_session_user(request)
+    if not current_user or current_user.get("role") != "admin":
         return JSONResponse({"status": "error"}, status_code=403)
-        
+
     store = get_store()
     users_list = store.setdefault("users", [])
     for u in users_list:
@@ -1446,23 +1673,24 @@ async def submit_feedback(triage_id: str, request: Request):
     corrected_severity = form.get("corrected_severity")
     comments = form.get("comments")
     
-    token = request.cookies.get("session_token", "analyst@company.com")
-    
+    current_user = get_session_user(request)
+    operator = current_user.get("email") if current_user else "anonymous"
+
     # In a real setup, proxy to the API:
     # payload = { "rating": rating, "corrected_category": corrected_category, ... }
     # await api_request("POST", f"/triage/{triage_id}/feedback", json_data=payload)
-    
+
     store = get_store()
     feedback_list = store.setdefault("feedback", [])
-    
+
     new_entry = {
         "triage_id": triage_id,
         "rating": rating,
         "corrected_category": corrected_category if corrected_category else None,
         "corrected_severity": corrected_severity if corrected_severity else None,
         "comments": comments if comments else None,
-        "operator": token,
-        "created_at": datetime.now().isoformat()
+        "operator": operator,
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
     feedback_list.append(new_entry)
     save_store(store)
@@ -1472,16 +1700,10 @@ async def submit_feedback(triage_id: str, request: Request):
 
 @app.get("/feedback", response_class=HTMLResponse)
 async def feedback_analytics(request: Request):
-    token = request.cookies.get("session_token")
-    if not token or "admin" not in token:
+    current_user = get_session_user(request)
+    if not current_user or current_user.get("role") != "admin":
         return RedirectResponse("/login", status_code=303)
-        
-    current_user = {
-        "email": token,
-        "display_name": token.split("@")[0].title(),
-        "role": "admin"
-    }
-    
+
     store = get_store()
     items = store.get("feedback", [])
     
@@ -1514,6 +1736,9 @@ async def feedback_analytics(request: Request):
 
 @app.get("/knowledge", response_class=HTMLResponse)
 async def knowledge_base(request: Request, source: str = "", limit: int = 50):
+    redirect = require_login(request)
+    if redirect:
+        return redirect
     params = f"?limit={limit}"
     if source:
         params += f"&source={source}"
@@ -1532,6 +1757,9 @@ async def knowledge_base(request: Request, source: str = "", limit: int = 50):
 
 @app.get("/ticketing", response_class=HTMLResponse)
 async def ticketing_page(request: Request):
+    redirect = require_login(request)
+    if redirect:
+        return redirect
     configs = await api_request("GET", "/ticketing/config")
     return templates.TemplateResponse("ticketing.html", {
         "request": request,
@@ -1542,6 +1770,9 @@ async def ticketing_page(request: Request):
 
 @app.get("/agents", response_class=HTMLResponse)
 async def agents_page(request: Request):
+    redirect = require_login(request)
+    if redirect:
+        return redirect
     current_user = request.state.current_user
     definitions = await api_request("GET", "/agents/definitions?limit=100")
     runs = await api_request("GET", "/agents/runs?limit=50")
@@ -1556,6 +1787,9 @@ async def agents_page(request: Request):
 
 @app.get("/agents/runs", response_class=HTMLResponse)
 async def agent_runs_page(request: Request):
+    redirect = require_login(request)
+    if redirect:
+        return redirect
     current_user = request.state.current_user
     runs = await api_request("GET", "/agents/runs?limit=100")
     return templates.TemplateResponse("agents.html", {
@@ -1570,30 +1804,10 @@ async def agent_runs_page(request: Request):
 
 @app.get("/approvals", response_class=HTMLResponse)
 async def approvals_dashboard(request: Request):
-    token = request.cookies.get("session_token")
-    if not token:
+    current_user = get_session_user(request)
+    if not current_user:
         return RedirectResponse("/login", status_code=303)
-    
-    # Parse session data to get tenant context
-    current_user = None
-    try:
-        import json
-        session_data = json.loads(token)
-        current_user = {
-            "email": session_data.get("email", session_data.get("user_id", token)),
-            "display_name": session_data.get("email", token).split("@")[0].title(),
-            "role": session_data.get("role", "admin" if "admin" in token else "analyst"),
-            "tenant_id": session_data.get("tenant_id"),
-        }
-    except Exception:
-        # Fallback to simple token parsing
-        current_user = {
-            "email": token,
-            "display_name": token.split("@")[0].title(),
-            "role": "admin" if "admin" in token else "analyst",
-            "tenant_id": None,
-        }
-    
+
     res = await api_request("GET", "/approvals", request=request)
     approvals_list = res.get("approvals", [])
     return templates.TemplateResponse("approvals.html", {
@@ -1606,8 +1820,8 @@ async def approvals_dashboard(request: Request):
 
 @app.post("/approvals/{approval_id}/review")
 async def review_approval_dashboard(approval_id: str, request: Request):
-    token = request.cookies.get("session_token")
-    if not token:
+    current_user = get_session_user(request)
+    if not current_user:
         return RedirectResponse("/login", status_code=303)
     form = await request.form()
     status = form.get("status")
@@ -1620,6 +1834,9 @@ async def review_approval_dashboard(approval_id: str, request: Request):
 
 @app.get("/osint", response_class=HTMLResponse)
 async def osint_page(request: Request, target_type: str | None = None, target_value: str | None = None, target_id: str | None = None):
+    redirect = require_login(request)
+    if redirect:
+        return redirect
     targets = await api_request("GET", "/osint/targets?limit=100")
     selected = {"target": {}, "results": []}
     if target_type and target_value:

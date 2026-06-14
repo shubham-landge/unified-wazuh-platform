@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -31,25 +32,38 @@ class AlertPoller:
             await asyncio.sleep(settings.poll_interval_seconds)
 
     async def poll(self):
-        logger.info("Polling Wazuh Indexer for new alerts...")
+        indexers = settings.parsed_wazuh_indexers
+        logger.info("Polling %d Wazuh indexer(s) for new alerts...", len(indexers))
 
-        connector = WazuhIndexerConnector()
-        raw_alerts = await connector.search_alerts(
-            lookback_hours=settings.alert_lookback_hours,
-            size=settings.max_alerts_per_poll,
-        )
+        all_raw_alerts: list[tuple[dict, str]] = []
+        for indexer in indexers:
+            connector = WazuhIndexerConnector(
+                base_url=indexer["url"],
+                user=indexer["user"],
+                password=indexer["password"],
+                label=indexer["label"],
+            )
+            raw_alerts = await connector.search_alerts(
+                lookback_hours=settings.alert_lookback_hours,
+                size=settings.max_alerts_per_poll,
+            )
+            logger.info("Indexer %s returned %d raw alerts", indexer["label"], len(raw_alerts))
+            for raw in raw_alerts:
+                all_raw_alerts.append((raw, indexer["label"]))
+            await connector.close()
 
-        if not raw_alerts:
+        if not all_raw_alerts:
             logger.info("No new alerts found")
             return
 
-        logger.info("Found %d raw alerts", len(raw_alerts))
+        logger.info("Found %d raw alerts across all indexers", len(all_raw_alerts))
 
         async with self.session_factory() as session:
             new_count = 0
-            for raw in raw_alerts:
+            seen_hashes: set[str] = set()
+            for raw, label in all_raw_alerts:
                 try:
-                    alert = await self._normalize_alert(session, raw)
+                    alert = await self._normalize_alert(session, raw, label, seen_hashes)
                     if alert:
                         session.add(alert)
                         await session.flush()
@@ -65,10 +79,43 @@ class AlertPoller:
             await session.commit()
             logger.info("Ingested %d new alerts, queued for triage", new_count)
 
-    async def _normalize_alert(self, session: AsyncSession, raw: dict) -> Alert | None:
+    @staticmethod
+    def _alert_hash(raw: dict) -> str:
+        """Stable hash for cross-indexer deduplication based on key fields."""
+        rule = raw.get("rule", {})
+        agent = raw.get("agent", {})
+        data = raw.get("data", {})
+        src_ip = raw.get("srcip") or data.get("srcip")
+        dst_ip = raw.get("dstip") or data.get("dstip")
+        key = json.dumps(
+            {
+                "rule_id": rule.get("id"),
+                "rule_level": rule.get("level"),
+                "agent_id": agent.get("id"),
+                "src_ip": src_ip,
+                "dst_ip": dst_ip,
+                "timestamp": str(raw.get("timestamp")),
+            },
+            sort_keys=True,
+            default=str,
+        )
+        return hashlib.sha256(key.encode()).hexdigest()
+
+    async def _normalize_alert(
+        self,
+        session: AsyncSession,
+        raw: dict,
+        manager_label: str,
+        seen_hashes: set[str],
+    ) -> Alert | None:
         wazuh_alert_id = raw.get("id") or raw.get("_id")
         if not wazuh_alert_id:
             return None
+
+        alert_hash = self._alert_hash(raw)
+        if alert_hash in seen_hashes:
+            return None
+        seen_hashes.add(alert_hash)
 
         from sqlalchemy import select
         existing = await session.execute(
@@ -85,6 +132,7 @@ class AlertPoller:
 
         alert = Alert(
             wazuh_alert_id=str(wazuh_alert_id),
+            manager_label=manager_label,
             rule_id=rule.get("id"),
             rule_description=rule.get("description"),
             rule_level=rule.get("level"),

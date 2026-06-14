@@ -49,13 +49,22 @@ class TenantEnforcementMiddleware(BaseHTTPMiddleware):
                 request.state.user = token_data
                 request.state.tenant_id = tenant_id
 
-        # Legacy API keys have no per-key tenant mapping — do not synthesise a
-        # fake tenant_id here. Tenant-scoped filters in routers skip when
-        # tenant_id is None, so API-key callers see all tenants (admin access).
+        # Legacy API keys: if no per-key tenant mapping, fall back to the
+        # configured default tenant. If no default is configured, reject the
+        # request so API-key callers cannot see all tenants by accident.
         if not tenant_id:
             api_key = request.headers.get("X-API-Key", "")
             if api_key:
-                request.state.tenant_id = None
+                from shared.config import settings
+                default_tenant = settings.api_key_default_tenant
+                if default_tenant:
+                    tenant_id = default_tenant
+                    request.state.tenant_id = tenant_id
+                else:
+                    raise HTTPException(
+                        status_code=HTTP_403_FORBIDDEN,
+                        detail="API-key requests require a configured default tenant",
+                    )
 
         # For authenticated requests, tenant_id is now mandatory
         if not tenant_id and auth_header.startswith("Bearer "):

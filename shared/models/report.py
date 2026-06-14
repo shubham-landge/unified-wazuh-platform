@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, DateTime, JSON, String, Text
+from sqlalchemy import BigInteger, DateTime, JSON, String, Text, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,6 +10,7 @@ from shared.models.base import Base, TenantMixin
 
 class Report(Base, TenantMixin):
     __tablename__ = "reports"
+    __table_args__ = (Index("ix_reports_tenant_created", "tenant_id", "created_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

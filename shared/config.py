@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     wazuh_indexer_password: SecretStr = SecretStr("")
     wazuh_indexer_verify_ssl: bool = True
 
+    # Multi-manager / multi-indexer configuration.
+    # Format per entry: label=url;user;password  (entries comma-separated).
+    # When empty, the legacy single-manager/indexer settings above are used.
+    wazuh_managers: str = ""
+    wazuh_indexers: str = ""
+
     llm_provider: str = "ollama"
     ollama_base_url: str = "http://ollama:11434"
     ollama_model: str = "qwen2.5-coder:7b"
@@ -87,6 +93,10 @@ class Settings(BaseSettings):
             return [x.strip() for x in v.split(',') if x.strip()]
         return v
 
+    # Optional default tenant for legacy API-key callers. If unset, API-key requests
+    # without an explicit tenant context are rejected.
+    api_key_default_tenant: Optional[str] = None
+
     api_rate_limit: int = 100
     api_default_page_limit: int = 100
 
@@ -128,6 +138,48 @@ class Settings(BaseSettings):
                     "Set the JWT_SECRET_KEY environment variable."
                 )
         return self
+
+    @model_validator(mode="after")
+    def _derive_multi_manager_defaults(self) -> "Settings":
+        if not self.wazuh_managers:
+            pw = self.wazuh_api_password.get_secret_value() if self.wazuh_api_password else ""
+            self.wazuh_managers = f"default={self.wazuh_api_url};{self.wazuh_api_user};{pw}"
+        if not self.wazuh_indexers:
+            pw = self.wazuh_indexer_password.get_secret_value() if self.wazuh_indexer_password else ""
+            self.wazuh_indexers = f"default={self.wazuh_indexer_url};{self.wazuh_indexer_user};{pw}"
+        return self
+
+    @staticmethod
+    def _parse_manager_string(value: str) -> list[dict]:
+        if not value:
+            return []
+        results = []
+        for entry in value.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            if "=" in entry:
+                label, rest = entry.split("=", 1)
+            else:
+                label, rest = "default", entry
+            parts = rest.split(";")
+            results.append(
+                {
+                    "label": label.strip(),
+                    "url": parts[0].strip(),
+                    "user": parts[1].strip() if len(parts) > 1 else "",
+                    "password": parts[2].strip() if len(parts) > 2 else "",
+                }
+            )
+        return results
+
+    @property
+    def parsed_wazuh_managers(self) -> list[dict]:
+        return self._parse_manager_string(self.wazuh_managers)
+
+    @property
+    def parsed_wazuh_indexers(self) -> list[dict]:
+        return self._parse_manager_string(self.wazuh_indexers)
 
     # OIDC configuration (optional SSO)
     oidc_enabled: bool = False

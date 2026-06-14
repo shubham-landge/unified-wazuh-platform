@@ -3,13 +3,13 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_db
+from app.db import get_db, async_session
 from app.middleware.auth import validate_api_key
 from app.middleware.tenant_enforce import get_tenant_id
 from shared.config import settings
@@ -68,18 +68,71 @@ async def list_reports(
     return {"status": "success", "count": len(reports), "reports": [_metadata(r) for r in reports]}
 
 
-@router.post("", status_code=201)
+async def _generate_report_task(report_id: uuid.UUID, payload_dict: dict, api_key_prefix: str):
+    """Background task that generates the report file and updates its status."""
+    async with async_session() as db:
+        report = await db.get(Report, report_id)
+        if not report:
+            return
+
+        report_type = payload_dict.get("type", "").lower()
+        report_format = payload_dict.get("format", "PDF").upper()
+        date_range = payload_dict.get("date_range", "last_30d")
+        filters = payload_dict.get("filters", {})
+        case_id = payload_dict.get("case_id")
+        framework_id = payload_dict.get("framework_id")
+
+        try:
+            generator = ReportGenerator(db)
+            if report_type in ("vulnerability", "technical"):
+                html = await generator.generate_vulnerability_report(date_range, filters)
+            elif report_type == "case":
+                if not case_id:
+                    raise ValueError("case_id is required for case reports")
+                html = await generator.generate_case_report(case_id)
+            elif report_type == "executive":
+                html = await generator.generate_executive_summary(date_range)
+            elif report_type == "compliance":
+                html = await generator.generate_compliance_report(framework_id=framework_id)
+            else:
+                now = datetime.now(timezone.utc)
+                html = await generator.generate_monthly_soc_report(now.month, now.year)
+
+            storage = Path(settings.reports_storage_path)
+            storage.mkdir(parents=True, exist_ok=True)
+            suffix = "xlsx" if report_format == "EXCEL" else report_format.lower()
+            path = storage / f"{report.id}.{suffix}"
+            if report_format == "PDF":
+                content = generator.html_to_pdf(html)
+            elif report_format == "JSON":
+                content = json.dumps({"html": html}).encode("utf-8")
+            else:
+                content = html.encode("utf-8")
+            path.write_bytes(content)
+
+            report.file_path = str(path)
+            report.file_size = len(content)
+            report.status = "completed"
+            report.completed_at = datetime.now(timezone.utc)
+        except Exception as exc:
+            report.status = "failed"
+            report.error_message = str(exc)
+        await db.commit()
+
+
+@router.post("", status_code=202)
 async def create_report(
     payload: ReportRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(validate_api_key),
     tenant_id: str | None = Depends(get_tenant_id),
 ):
     report_type = payload.type.lower()
     report_format = payload.format.upper()
-    if report_type not in {"executive", "vulnerability", "case", "compliance"}:
+    if report_type not in {"executive", "technical", "vulnerability", "case", "compliance"}:
         raise HTTPException(status_code=400, detail="Unsupported report type")
-    if report_format not in {"PDF", "HTML", "JSON"}:
+    if report_format not in {"PDF", "HTML", "JSON", "EXCEL"}:
         raise HTTPException(status_code=400, detail="Unsupported report format")
 
     now = datetime.now(timezone.utc)
@@ -94,50 +147,19 @@ async def create_report(
         report_type=report_type,
         format=report_format,
         parameters=payload.model_dump(),
-        status="generating",
+        status="queued",
         created_by=api_key[:8],
         expires_at=now + timedelta(days=settings.report_retention_days),
     )
     db.add(report)
     await db.flush()
 
-    try:
-        generator = ReportGenerator(db)
-        if report_type == "vulnerability":
-            html = await generator.generate_vulnerability_report(
-                payload.date_range, payload.filters
-            )
-        elif report_type == "case":
-            if not payload.case_id:
-                raise ValueError("case_id is required for case reports")
-            html = await generator.generate_case_report(payload.case_id)
-        elif report_type == "executive":
-            html = await generator.generate_executive_summary(payload.date_range)
-        elif report_type == "compliance":
-            html = await generator.generate_compliance_report(framework_id=payload.framework_id)
-        else:
-            now = datetime.now(timezone.utc)
-            html = await generator.generate_monthly_soc_report(now.month, now.year)
-
-        storage = Path(settings.reports_storage_path)
-        storage.mkdir(parents=True, exist_ok=True)
-        suffix = report_format.lower()
-        path = storage / f"{report.id}.{suffix}"
-        if report_format == "PDF":
-            content = generator.html_to_pdf(html)
-        elif report_format == "JSON":
-            content = json.dumps({"html": html}).encode("utf-8")
-        else:
-            content = html.encode("utf-8")
-        path.write_bytes(content)
-
-        report.file_path = str(path)
-        report.file_size = len(content)
-        report.status = "completed"
-        report.completed_at = datetime.now(timezone.utc)
-    except Exception as exc:
-        report.status = "failed"
-        report.error_message = str(exc)
+    background_tasks.add_task(
+        _generate_report_task,
+        report.id,
+        payload.model_dump(),
+        api_key[:8],
+    )
     await db.commit()
     return _metadata(report)
 
@@ -178,6 +200,7 @@ async def download_report(
         "PDF": "application/pdf",
         "HTML": "text/html",
         "JSON": "application/json",
+        "EXCEL": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }
     return FileResponse(
         report.file_path,

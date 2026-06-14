@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone, timedelta
+from typing import Literal
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func, text
@@ -30,6 +31,7 @@ class CaseUpdate(BaseModel):
     severity: str | None = None
     false_positive: bool | None = None
     escalation_required: bool | None = None
+    risk_score: float | None = None
 
 
 class CaseCreate(BaseModel):
@@ -38,11 +40,18 @@ class CaseCreate(BaseModel):
     description: str | None = None
     severity: str = "medium"
     category: str | None = None
+    risk_score: float | None = None
+
+
+def _bound_risk_score(score: float | None) -> float | None:
+    if score is None:
+        return None
+    return min(10.0, max(0.0, float(score)))
 
 
 class BulkStatusUpdate(BaseModel):
     case_ids: list[str]
-    status: str
+    status: Literal["open", "in_progress", "resolved", "closed", "false_positive"]
 
 
 class StepCreate(BaseModel):
@@ -263,6 +272,7 @@ async def create_case(
         description=body.description,
         severity=body.severity,
         category=body.category,
+        risk_score=_bound_risk_score(body.risk_score),
         tenant_id=tenant_uuid,
     )
     db.add(case)
@@ -344,6 +354,8 @@ async def update_case(
         case.false_positive = body.false_positive
     if body.escalation_required is not None:
         case.escalation_required = body.escalation_required
+    if body.risk_score is not None:
+        case.risk_score = _bound_risk_score(body.risk_score)
 
     await db.commit()
 
@@ -356,14 +368,18 @@ async def add_note(
     body: NoteCreate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     try:
         uid = uuid.UUID(case_id)
     except ValueError:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Invalid case ID")
 
+    tenant_uuid = uuid.UUID(tenant_id) if tenant_id else None
+
     note = AnalystNote(
         case_id=uid,
+        tenant_id=tenant_uuid,
         analyst=body.analyst,
         note=body.note,
         note_type=body.note_type,
@@ -373,6 +389,7 @@ async def add_note(
 
     event = CaseEvent(
         case_id=uid,
+        tenant_id=tenant_uuid,
         event_type="note_added",
         actor_name=body.analyst,
         description=f"Note added ({body.note_type})",
@@ -391,6 +408,7 @@ async def create_step(
     body: StepCreate,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     try:
         uid = uuid.UUID(case_id)
@@ -399,6 +417,7 @@ async def create_step(
 
     step = CaseInvestigationStep(
         case_id=uid,
+        tenant_id=uuid.UUID(tenant_id) if tenant_id else None,
         description=body.description,
         order=body.order,
     )

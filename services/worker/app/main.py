@@ -42,7 +42,23 @@ async def main():
 
     logger.info("Starting %d workers", len(workers))
 
-    tasks = [asyncio.create_task(w.start()) for w in workers]
+    async def _run_worker(worker, restart_delay: float = 5.0):
+        name = worker.__class__.__name__
+        while True:
+            try:
+                await worker.start()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception("Worker %s crashed: %s", name, exc)
+                try:
+                    await worker.stop()
+                except Exception:
+                    pass
+                logger.info("Restarting worker %s in %.1f seconds", name, restart_delay)
+                await asyncio.sleep(restart_delay)
+
+    tasks = [asyncio.create_task(_run_worker(w)) for w in workers]
 
     try:
         await asyncio.gather(*tasks)

@@ -17,6 +17,7 @@ if api_path not in sys.path:
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 from shared.models.base import Base
 from shared.models.osint import OsintTarget, OsintResult
 
@@ -41,6 +42,7 @@ def osint_app():
     app.include_router(osint.router)
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[validate_api_key] = lambda: "soc-key-001"
+    app.dependency_overrides[get_tenant_id] = lambda: "00000000-0000-0000-0000-000000000001"
     return app
 
 

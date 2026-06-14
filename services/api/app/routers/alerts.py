@@ -8,6 +8,7 @@ from starlette.status import HTTP_404_NOT_FOUND
 from app.db import get_db
 from shared.models.alert import Alert
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -19,6 +20,7 @@ async def get_recent_alerts(
     min_level: int = Query(default=0, ge=0, le=15),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     query = (
         select(Alert)
@@ -27,6 +29,8 @@ async def get_recent_alerts(
         .offset(offset)
         .limit(limit)
     )
+    if tenant_id:
+        query = query.where(Alert.tenant_id == uuid.UUID(tenant_id))
     result = await db.execute(query)
     alerts = result.scalars().all()
 

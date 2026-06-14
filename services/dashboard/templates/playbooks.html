@@ -97,9 +97,11 @@
                         </div>
                         <div class="flex gap-1 shrink-0">
                             <form action="/playbooks/{{ play.id }}/run" method="POST" hx-post="/playbooks/{{ play.id }}/run" hx-target="body">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="px-2 py-0.5 bg-accent-blue/15 hover:bg-accent-blue/25 border border-accent-blue/30 text-accent-blue rounded text-[9px] font-semibold transition-all">Run</button>
                             </form>
                             <form action="/playbooks/{{ play.id }}/delete" method="POST" hx-post="/playbooks/{{ play.id }}/delete" hx-target="body">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="px-2 py-0.5 bg-accent-red/15 hover:bg-accent-red/25 border border-accent-red/30 text-accent-red rounded text-[9px] font-semibold transition-all">Delete</button>
                             </form>
                         </div>

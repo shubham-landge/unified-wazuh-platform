@@ -2,7 +2,19 @@ import pytest
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 import jinja2
-from services.dashboard.app.main import app, templates
+from services.dashboard.app.main import app, templates, _sign_session
+
+
+def _signed_cookie(email: str, role: str = "analyst", tenant_id: str | None = None, csrf_token: str = "test-csrf-token") -> str:
+    from datetime import datetime, timezone
+    return _sign_session({
+        "sub": email,
+        "email": email,
+        "role": role,
+        "tenant_id": tenant_id,
+        "csrf_token": csrf_token,
+        "iat": datetime.now(timezone.utc).isoformat(),
+    })
 
 # Adjust templates directory loader for root-level test execution
 templates.env.loader = jinja2.FileSystemLoader("services/dashboard/templates")
@@ -117,22 +129,24 @@ def test_dashboard_settings_page_ti(client):
     assert "otx_api_key" in resp.text
 
 def test_dashboard_settings_save_ti(client):
+    client.cookies.set("session_token", _signed_cookie("admin@company.com", role="admin"))
     data = {
         "otx_api_key": "some_otx_key",
         "misp_url": "https://misp.local",
         "misp_api_key": "some_misp_key",
         "misp_verify_ssl": "on",
         "virustotal_api_key": "some_vt_key",
-        "ti_feed_poll_interval_seconds": "1800"
+        "ti_feed_poll_interval_seconds": "1800",
     }
-    resp = client.post("/settings", data=data)
+    resp = client.post("/settings", data=data, headers={"X-CSRF-Token": "test-csrf-token"})
     assert resp.status_code == 200
     assert "Settings updated successfully" in resp.text
 
 @patch("shared.connectors.ti_alienvault.AlienVaultOTXConnector.health")
 def test_dashboard_test_connector_otx(mock_health, client):
+    client.cookies.set("session_token", _signed_cookie("admin@company.com", role="admin"))
     mock_health.return_value = {"connected": True, "username": "mock_otx_user"}
-    resp = client.post("/settings/test-connector/otx", data={"otx_api_key": "testkey"})
+    resp = client.post("/settings/test-connector/otx", data={"otx_api_key": "testkey"}, headers={"X-CSRF-Token": "test-csrf-token"})
     assert resp.status_code == 200
     assert "Connection successful" in resp.json()["html"]
     assert "mock_otx_user" in resp.json()["html"]
@@ -151,7 +165,7 @@ def test_profile_page_requires_auth(client):
     assert "/login" in resp.headers["location"]
 
 def test_profile_page_renders_with_auth(client):
-    client.cookies.set("session_token", "analyst@company.com")
+    client.cookies.set("session_token", _signed_cookie("analyst@company.com", role="analyst"))
     resp = client.get("/profile")
     assert resp.status_code == 200
     assert "User Profile Settings" in resp.text
@@ -163,33 +177,33 @@ def test_users_page_admin_only(client):
     assert resp.status_code == 303
     
     # Test analyst user redirect (forbidden/redirect)
-    client.cookies.set("session_token", "analyst@company.com")
+    client.cookies.set("session_token", _signed_cookie("analyst@company.com", role="analyst"))
     resp = client.get("/users", follow_redirects=False)
     assert resp.status_code == 303
     
     # Test admin user renders
-    client.cookies.set("session_token", "admin@company.com")
+    client.cookies.set("session_token", _signed_cookie("admin@company.com", role="admin"))
     resp = client.get("/users")
     assert resp.status_code == 200
     assert "Platform User Directory" in resp.text
     assert "Provision User Account" in resp.text
 
 def test_report_schedules_page_loads(client):
-    client.cookies.set("session_token", "admin@company.com")
+    client.cookies.set("session_token", _signed_cookie("admin@company.com", role="admin"))
     resp = client.get("/reports")
     assert resp.status_code == 200
     assert "Scheduled Reports" in resp.text
     assert "New Report Schedule" in resp.text
 
 def test_create_schedule_submits_correctly(client):
-    client.cookies.set("session_token", "admin@company.com")
+    client.cookies.set("session_token", _signed_cookie("admin@company.com", role="admin"))
     data = {
         "report_type": "vulnerability",
         "frequency": "daily",
         "email_to": "admin@company.com",
-        "is_active": "on"
+        "is_active": "on",
     }
-    resp = client.post("/reports/schedules", data=data, follow_redirects=False)
+    resp = client.post("/reports/schedules", data=data, follow_redirects=False, headers={"X-CSRF-Token": "test-csrf-token"})
     assert resp.status_code == 303
     assert "/reports" in resp.headers["location"]
 
@@ -217,13 +231,13 @@ def test_feedback_page_requires_admin(mock_get_store, client):
     assert "/login" in resp.headers["location"]
     
     # Test analyst user redirect (forbidden/redirect)
-    client.cookies.set("session_token", "analyst@company.com")
+    client.cookies.set("session_token", _signed_cookie("analyst@company.com", role="analyst"))
     resp = client.get("/feedback", follow_redirects=False)
     assert resp.status_code == 303
     assert "/login" in resp.headers["location"]
     
     # Test admin user renders feedback page
-    client.cookies.set("session_token", "admin@company.com")
+    client.cookies.set("session_token", _signed_cookie("admin@company.com", role="admin"))
     resp = client.get("/feedback")
     assert resp.status_code == 200
     assert "AI Feedback Analytics Console" in resp.text
@@ -273,7 +287,7 @@ def test_mttr_dashboard_loads(mock_api, client):
         }
     }
 
-    client.cookies.set("session_token", "admin@company.com")
+    client.cookies.set("session_token", _signed_cookie("admin@company.com", role="admin"))
     resp = client.get("/mttr-dashboard")
     assert resp.status_code == 200
     assert "MTTR Analytics Dashboard" in resp.text
@@ -302,7 +316,7 @@ def test_attack_heatmap_loads(mock_api, client):
         }
     }
 
-    client.cookies.set("session_token", "admin@company.com")
+    client.cookies.set("session_token", _signed_cookie("admin@company.com", role="admin"))
     resp = client.get("/attack-heatmap")
     assert resp.status_code == 200
     assert "ATT&CK Heatmap" in resp.text
@@ -328,7 +342,7 @@ def test_mttr_stats_api(mock_api, client):
         "trend": []
     }
 
-    client.cookies.set("session_token", "admin@company.com")
+    client.cookies.set("session_token", _signed_cookie("admin@company.com", role="admin"))
     resp = client.get("/mttr-dashboard")
     assert resp.status_code == 200
     assert "3.5" in resp.text
@@ -342,15 +356,15 @@ def test_mttr_stats_api(mock_api, client):
 def test_submit_feedback(mock_get_store, mock_save_store, client):
     mock_get_store.return_value = {}
     
-    client.cookies.set("session_token", "analyst@company.com")
+    client.cookies.set("session_token", _signed_cookie("analyst@company.com", role="analyst"))
     data = {
         "rating": "not_helpful",
         "corrected_category": "recon",
         "corrected_severity": "low",
-        "comments": "Authorized port scan"
+        "comments": "Authorized port scan",
     }
-    
-    resp = client.post("/feedback/session-999", data=data)
+
+    resp = client.post("/feedback/session-999", data=data, headers={"X-CSRF-Token": "test-csrf-token"})
     assert resp.status_code == 200
     assert resp.json() == {"status": "success"}
     

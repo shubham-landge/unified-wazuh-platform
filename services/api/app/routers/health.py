@@ -69,19 +69,52 @@ async def readiness():
 
 @router.get("/wazuh/health")
 async def wazuh_health(_: str = Depends(validate_api_key)):
-    api = WazuhAPIConnector()
-    indexer = WazuhIndexerConnector()
-    api_health = await api.health()
-    indexer_health = await indexer.health()
-    await api.close()
-    await indexer.close()
+    managers = settings.parsed_wazuh_managers
+    indexers = settings.parsed_wazuh_indexers
+
+    manager_results = []
+    for manager in managers:
+        api = WazuhAPIConnector(
+            base_url=manager["url"],
+            user=manager["user"],
+            password=manager["password"],
+            label=manager["label"],
+        )
+        health = await api.health()
+        await api.close()
+        manager_results.append(
+            {
+                "label": manager["label"],
+                "url": manager["url"],
+                "connected": health.get("connected", False),
+                "details": health,
+            }
+        )
+
+    indexer_results = []
+    for indexer in indexers:
+        conn = WazuhIndexerConnector(
+            base_url=indexer["url"],
+            user=indexer["user"],
+            password=indexer["password"],
+            label=indexer["label"],
+        )
+        health = await conn.health()
+        await conn.close()
+        indexer_results.append(
+            {
+                "label": indexer["label"],
+                "url": indexer["url"],
+                "connected": health.get("connected", False),
+                "details": health,
+            }
+        )
+
     return {
-        "api_url": api.base_url,
-        "api_connected": api_health.get("connected", False),
-        "api_details": api_health,
-        "indexer_url": indexer.base_url,
-        "indexer_connected": indexer_health.get("connected", False),
-        "indexer_details": indexer_health,
+        "managers": manager_results,
+        "indexers": indexer_results,
+        "api_connected": all(m["connected"] for m in manager_results),
+        "indexer_connected": all(i["connected"] for i in indexer_results),
     }
 
 

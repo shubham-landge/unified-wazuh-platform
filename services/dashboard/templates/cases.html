@@ -130,6 +130,7 @@
             
             <!-- Creation Form -->
             <form hx-post="/cases" hx-target="body" hx-swap="outerHTML" @submit="createModalOpen = false" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="flex flex-col gap-1.5">
                     <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Case Title</label>
                     <input type="text" name="title" required placeholder="e.g. Host brute force escalation" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">

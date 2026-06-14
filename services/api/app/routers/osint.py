@@ -46,10 +46,9 @@ async def create_lookup(
     if target_type not in ALLOWED_TARGET_TYPES:
         raise HTTPException(status_code=400, detail="Invalid target_type")
 
-    if tenant_id:
-        tenant_uuid = uuid.UUID(tenant_id)
-    else:
-        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    if not tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant context required")
+    tenant_uuid = uuid.UUID(tenant_id)
 
     target = OsintTarget(
         tenant_id=tenant_uuid,

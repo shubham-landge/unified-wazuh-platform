@@ -81,9 +81,8 @@ async def create_run(
         import redis.asyncio as redis_async
         from shared.config import settings
         import json
-        r = await redis_async.from_url(settings.redis_url, decode_responses=True)
-        await r.lpush("agent_queue", json.dumps({"run_id": str(run.id)}))
-        await r.aclose()
+        async with redis_async.from_url(settings.redis_url, decode_responses=True) as r:
+            await r.lpush("agent_queue", json.dumps({"run_id": str(run.id)}))
     except Exception:
         pass
 

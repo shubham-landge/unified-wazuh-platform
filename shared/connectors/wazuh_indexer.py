@@ -9,10 +9,21 @@ logger = logging.getLogger(__name__)
 
 
 class WazuhIndexerConnector:
-    def __init__(self):
-        self.base_url = settings.wazuh_indexer_url.rstrip("/")
-        self.auth = (settings.wazuh_indexer_user, settings.wazuh_indexer_password.get_secret_value())
-        self.verify = settings.wazuh_indexer_verify_ssl
+    def __init__(
+        self,
+        base_url: str | None = None,
+        user: str | None = None,
+        password: str | None = None,
+        verify: bool | None = None,
+        label: str | None = None,
+    ):
+        self.base_url = (base_url or settings.wazuh_indexer_url).rstrip("/")
+        self.auth = (
+            user if user is not None else settings.wazuh_indexer_user,
+            password if password is not None else settings.wazuh_indexer_password.get_secret_value(),
+        )
+        self.verify = verify if verify is not None else settings.wazuh_indexer_verify_ssl
+        self.label = label
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -32,13 +43,14 @@ class WazuhIndexerConnector:
             data = resp.json()
             return {
                 "connected": True,
+                "label": self.label,
                 "cluster_name": data.get("cluster_name"),
                 "status": data.get("status"),
                 "nodes": data.get("number_of_nodes"),
             }
         except Exception as e:
             logger.warning("Indexer health check failed: %s", e)
-            return {"connected": False, "error": str(e)}
+            return {"connected": False, "label": self.label, "error": str(e)}
 
     async def search_alerts(
         self,

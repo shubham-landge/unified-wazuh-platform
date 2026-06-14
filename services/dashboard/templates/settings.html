@@ -72,6 +72,22 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42"/></svg>
                 Branding
             </button>
+
+            <!-- Managers Tab Button -->
+            <button @click="activeTab = 'managers'" 
+                    class="w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2.5"
+                    :class="activeTab === 'managers' ? 'bg-accent-blue/15 text-accent-blue border border-accent-blue/15' : 'text-secondary hover:text-white hover:bg-white/5 border border-transparent'">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 014.5-4.5h6.75a4.5 4.5 0 014.5 4.5"/></svg>
+                Managers
+            </button>
+
+            <!-- Indexers Tab Button -->
+            <button @click="activeTab = 'indexers'" 
+                    class="w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2.5"
+                    :class="activeTab === 'indexers' ? 'bg-accent-blue/15 text-accent-blue border border-accent-blue/15' : 'text-secondary hover:text-white hover:bg-white/5 border border-transparent'">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 3.75v3.75"/></svg>
+                Indexers
+            </button>
         </div>
 
         <!-- Right Content Tab Panels -->
@@ -88,6 +104,7 @@
                 </div>
                 
                 <form hx-post="/settings" hx-target="body" hx-swap="outerHTML" class="space-y-4">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="api_key" value="{{ settings.api_key }}">
                     <input type="hidden" name="ollama_model" value="{{ settings.ollama_model }}">
                     <input type="hidden" name="auto_triage" value="{{ settings.auto_triage }}">
@@ -127,6 +144,7 @@
                 </div>
 
                 <form hx-post="/settings" hx-target="body" hx-swap="outerHTML" class="space-y-4">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="api_key" value="{{ settings.api_key }}">
                     <input type="hidden" name="wazuh_host" value="{{ settings.wazuh_host }}">
                     <input type="hidden" name="retention_days" value="{{ settings.retention_days }}">
@@ -221,6 +239,7 @@
                 </div>
 
                 <form hx-post="/settings" hx-target="body" hx-swap="outerHTML" class="space-y-4">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="api_key" value="{{ settings.api_key }}">
                     <input type="hidden" name="wazuh_host" value="{{ settings.wazuh_host }}">
                     <input type="hidden" name="ollama_model" value="{{ settings.ollama_model }}">
@@ -374,7 +393,95 @@
                     </div>
                 </form>
             </div>
-            
+
+            <!-- 6. Managers Tab -->
+            <div x-show="activeTab === 'managers'" class="space-y-4">
+                <div class="flex justify-between items-center border-b border-white/5 pb-3">
+                    <div>
+                        <h3 class="text-xs font-bold text-white uppercase tracking-wider">Wazuh Managers</h3>
+                        <p class="text-[10px] text-muted">Configure multiple Wazuh manager endpoints.</p>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    {% for manager in managers %}
+                    <div class="flex items-center justify-between bg-white/5 border border-white/5 rounded-lg px-3 py-2">
+                        <div>
+                            <div class="text-xs font-semibold text-primary">{{ manager.label }}</div>
+                            <div class="text-[10px] text-muted font-mono">{{ manager.url }}</div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="manager-status text-[10px] text-muted" data-idx="{{ loop.index0 }}">●</span>
+                            <form hx-post="/settings/managers/{{ loop.index0 }}/test" hx-target="find .manager-status" hx-swap="none" class="inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[10px] font-semibold text-secondary hover:text-white">Test</button>
+                            </form>
+                            <form hx-post="/settings/managers/{{ loop.index0 }}/delete" hx-target="body" hx-swap="outerHTML" class="inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="px-2 py-1 bg-accent-red/15 hover:bg-accent-red/25 border border-accent-red/30 rounded text-[10px] font-semibold text-accent-red">Delete</button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <form hx-post="/settings/managers/add" hx-target="body" hx-swap="outerHTML" class="card-premium space-y-3">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <h4 class="text-xs font-bold text-white">Add Manager</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input type="text" name="label" placeholder="Label" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                        <input type="url" name="url" placeholder="https://wazuh-manager:55000" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                        <input type="text" name="user" placeholder="Username" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                        <input type="password" name="password" placeholder="Password" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                    </div>
+                    <button type="submit" class="px-4 py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold">Add Manager</button>
+                </form>
+            </div>
+
+            <!-- 7. Indexers Tab -->
+            <div x-show="activeTab === 'indexers'" class="space-y-4">
+                <div class="flex justify-between items-center border-b border-white/5 pb-3">
+                    <div>
+                        <h3 class="text-xs font-bold text-white uppercase tracking-wider">Wazuh Indexers</h3>
+                        <p class="text-[10px] text-muted">Configure multiple Wazuh indexer endpoints.</p>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    {% for indexer in indexers %}
+                    <div class="flex items-center justify-between bg-white/5 border border-white/5 rounded-lg px-3 py-2">
+                        <div>
+                            <div class="text-xs font-semibold text-primary">{{ indexer.label }}</div>
+                            <div class="text-[10px] text-muted font-mono">{{ indexer.url }}</div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="indexer-status text-[10px] text-muted" data-idx="{{ loop.index0 }}">●</span>
+                            <form hx-post="/settings/indexers/{{ loop.index0 }}/test" hx-target="find .indexer-status" hx-swap="none" class="inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[10px] font-semibold text-secondary hover:text-white">Test</button>
+                            </form>
+                            <form hx-post="/settings/indexers/{{ loop.index0 }}/delete" hx-target="body" hx-swap="outerHTML" class="inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="px-2 py-1 bg-accent-red/15 hover:bg-accent-red/25 border border-accent-red/30 rounded text-[10px] font-semibold text-accent-red">Delete</button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <form hx-post="/settings/indexers/add" hx-target="body" hx-swap="outerHTML" class="card-premium space-y-3">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <h4 class="text-xs font-bold text-white">Add Indexer</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input type="text" name="label" placeholder="Label" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                        <input type="url" name="url" placeholder="https://wazuh-indexer:9200" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                        <input type="text" name="user" placeholder="Username" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                        <input type="password" name="password" placeholder="Password" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
+                    </div>
+                    <button type="submit" class="px-4 py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold">Add Indexer</button>
+                </form>
+            </div>
+
         </div>
     </div>
 </div>

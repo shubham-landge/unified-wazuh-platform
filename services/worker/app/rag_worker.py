@@ -6,7 +6,9 @@ import redis.asyncio as redis
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from shared.config import settings
+from shared.models.knowledge_base import KnowledgeChunk
 from shared.rag.vector_store import chunk_and_ingest
+from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +63,14 @@ class RAGWorker:
                 )
 
             async with self.session_factory() as session:
+                # Skip seeding if any built-in playbook chunks already exist.
+                existing = await session.execute(
+                    select(KnowledgeChunk).where(KnowledgeChunk.source.ilike("soc_playbook%")).limit(1)
+                )
+                if existing.scalar_one_or_none():
+                    logger.info("Built-in KB chunks already present; skipping seed.")
+                    continue
+
                 for f in kb_dir.glob("*.md"):
                     text = f.read_text()
                     await chunk_and_ingest(

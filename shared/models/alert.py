@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Integer, DateTime, JSON, Text, BigInteger
+from sqlalchemy import String, Integer, DateTime, JSON, Text, BigInteger, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from shared.models.base import Base, TenantMixin
@@ -8,6 +8,7 @@ from shared.models.base import Base, TenantMixin
 
 class Alert(Base, TenantMixin):
     __tablename__ = "alerts"
+    __table_args__ = (Index("ix_alerts_tenant_created", "tenant_id", "created_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     wazuh_alert_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
@@ -39,3 +40,5 @@ class Alert(Base, TenantMixin):
     raw_alert_redacted: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     alert_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    manager_label: Mapped[str | None] = mapped_column(String(64), nullable=True)

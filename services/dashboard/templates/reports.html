@@ -55,6 +55,7 @@
             </h3>
             
             <form hx-post="/reports/generate" hx-target="body" hx-swap="outerHTML" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <!-- Report Type -->
                 <div class="flex flex-col gap-1.5">
                     <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Report Template</label>
