@@ -97,7 +97,9 @@ CREATE TABLE alerts (
     log_source TEXT,
     raw_alert_redacted JSONB,
     alert_timestamp TIMESTAMPTZ,
-    ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    manager_label TEXT
 );
 CREATE INDEX idx_alerts_tenant ON alerts(tenant_id);
 CREATE INDEX idx_alerts_rule_level ON alerts(rule_level);

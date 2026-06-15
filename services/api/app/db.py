@@ -4,17 +4,28 @@ from shared.config import settings
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=5,
+    max_overflow=5,
     pool_pre_ping=True,
+    pool_use_lifo=True,
 )
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 async def get_db() -> AsyncSession:
-    async with async_session() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+    session = async_session()
+    try:
+        yield session
+        await session.commit()
+    except Exception as e:
+        logger.warning("DB error: %s", e)
+        await session.rollback()
+        raise
+    finally:
+        await session.close()

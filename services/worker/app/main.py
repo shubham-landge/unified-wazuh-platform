@@ -57,6 +57,8 @@ async def main():
                     pass
                 logger.info("Restarting worker %s in %.1f seconds", name, restart_delay)
                 await asyncio.sleep(restart_delay)
+            else:
+                await asyncio.sleep(restart_delay)
 
     tasks = [asyncio.create_task(_run_worker(w)) for w in workers]
 

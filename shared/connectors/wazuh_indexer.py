@@ -30,7 +30,7 @@ class WazuhIndexerConnector:
         if not self._client:
             self._client = httpx.AsyncClient(
                 verify=self.verify,
-                timeout=httpx.Timeout(connect=10.0, read=30.0),
+                timeout=httpx.Timeout(30.0),
                 auth=self.auth,
             )
         return self._client

@@ -1,9 +1,13 @@
 import ipaddress
-from fastapi import Request, HTTPException
+import logging
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.status import HTTP_403_FORBIDDEN
+from starlette.requests import Request
 
 from shared.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Paths exempt from CIDR restriction (healthcheck, API docs, OpenAPI schema)
 _EXEMPT_PREFIXES = ("/health", "/docs", "/redoc", "/openapi.json")
@@ -13,7 +17,6 @@ class DashboardAccessMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
-        # Allow API documentation through without CIDR check
         if any(path.startswith(p) for p in _EXEMPT_PREFIXES):
             return await call_next(request)
 
@@ -22,7 +25,10 @@ class DashboardAccessMiddleware(BaseHTTPMiddleware):
         try:
             ip_obj = ipaddress.ip_address(client_ip)
         except ValueError:
-            raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail=f"Invalid client IP: {client_ip}")
+            return JSONResponse(
+                status_code=HTTP_403_FORBIDDEN,
+                content={"detail": f"Invalid client IP: {client_ip}"},
+            )
 
         for cidr_str in settings.dashboard_allowed_cidrs.split(","):
             cidr_str = cidr_str.strip()
@@ -34,7 +40,8 @@ class DashboardAccessMiddleware(BaseHTTPMiddleware):
             except ValueError:
                 continue
 
-        raise HTTPException(
+        logger.warning("Access denied for IP %s (allowed: %s)", client_ip, settings.dashboard_allowed_cidrs)
+        return JSONResponse(
             status_code=HTTP_403_FORBIDDEN,
-            detail=f"Access denied from {client_ip}",
+            content={"detail": f"Access denied from {client_ip}"},
         )

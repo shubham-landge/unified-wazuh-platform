@@ -48,24 +48,25 @@ async def user_feedback_negative_rate(rule_id: int | None, db_session=None) -> f
     if db_session is None or rule_id is None:
         return 0.0
     try:
-        from shared.models.feedback import UserFeedback
-        from shared.models.ai_triage_result import AiTriageResult
-        from sqlalchemy import select, func
+        async with db_session.begin_nested():
+            from shared.models.feedback import UserFeedback
+            from shared.models.ai_triage_result import AiTriageResult
+            from sqlalchemy import select, func
 
-        total = await db_session.execute(
-            select(func.count(UserFeedback.id))
-            .join(AiTriageResult, UserFeedback.triage_result_id == AiTriageResult.id)
-            .where(AiTriageResult.category == str(rule_id))
-        )
-        negative = await db_session.execute(
-            select(func.count(UserFeedback.id))
-            .join(AiTriageResult, UserFeedback.triage_result_id == AiTriageResult.id)
-            .where(AiTriageResult.category == str(rule_id), UserFeedback.rating <= 2)
-        )
-        total_count = total.scalar() or 0
-        if total_count == 0:
-            return 0.0
-        return (negative.scalar() or 0) / total_count
+            total = await db_session.execute(
+                select(func.count(UserFeedback.id))
+                .join(AiTriageResult, UserFeedback.triage_result_id == AiTriageResult.id)
+                .where(AiTriageResult.category == str(rule_id))
+            )
+            negative = await db_session.execute(
+                select(func.count(UserFeedback.id))
+                .join(AiTriageResult, UserFeedback.triage_result_id == AiTriageResult.id)
+                .where(AiTriageResult.category == str(rule_id), UserFeedback.rating <= 2)
+            )
+            total_count = total.scalar() or 0
+            if total_count == 0:
+                return 0.0
+            return (negative.scalar() or 0) / total_count
     except Exception as e:
         logger.warning("Failed to compute user_feedback_negative_rate: %s", e)
         return 0.0

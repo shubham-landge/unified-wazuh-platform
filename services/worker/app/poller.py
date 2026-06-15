@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import uuid
 from datetime import datetime, timezone
 from dateutil import parser as dateutil_parser
 import redis.asyncio as redis
@@ -63,15 +64,16 @@ class AlertPoller:
             seen_hashes: set[str] = set()
             for raw, label in all_raw_alerts:
                 try:
-                    alert = await self._normalize_alert(session, raw, label, seen_hashes)
-                    if alert:
-                        session.add(alert)
-                        await session.flush()
-                        await self.redis_client.lpush(
-                            "triage_queue",
-                            json.dumps({"alert_id": str(alert.id), "timestamp": datetime.now(timezone.utc).isoformat()}),
-                        )
-                        new_count += 1
+                    async with session.begin_nested():
+                        alert = await self._normalize_alert(session, raw, label, seen_hashes)
+                        if alert:
+                            session.add(alert)
+                            await session.flush()
+                            await self.redis_client.lpush(
+                                "triage_queue",
+                                json.dumps({"alert_id": str(alert.id), "timestamp": datetime.now(timezone.utc).isoformat()}),
+                            )
+                            new_count += 1
                 except Exception as e:
                     logger.warning("Failed to process alert: %s", e)
                     continue
@@ -129,17 +131,24 @@ class AlertPoller:
         data = raw.get("data", {})
         src_ip = raw.get("srcip") or data.get("srcip")
         dst_ip = raw.get("dstip") or data.get("dstip")
+        mitre = rule.get("mitre", {})
+
+        def _join(v):
+            if isinstance(v, list):
+                return ", ".join(str(x) for x in v if x)
+            return str(v) if v is not None else None
 
         alert = Alert(
+            tenant_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
             wazuh_alert_id=str(wazuh_alert_id),
             manager_label=manager_label,
-            rule_id=rule.get("id"),
+            rule_id=int(rule["id"]) if rule.get("id") is not None else None,
             rule_description=rule.get("description"),
-            rule_level=rule.get("level"),
+            rule_level=int(rule["level"]) if rule.get("level") is not None else None,
             rule_groups=rule.get("groups", []),
             rule_firedtimes=rule.get("firedtimes"),
-            mitre_tactic=rule.get("mitre", {}).get("tactic"),
-            mitre_technique=rule.get("mitre", {}).get("technique"),
+            mitre_tactic=_join(mitre.get("tactic")),
+            mitre_technique=_join(mitre.get("technique")),
             agent_id=str(agent.get("id")) if agent.get("id") else None,
             agent_name=agent.get("name"),
             agent_ip=agent.get("ip"),

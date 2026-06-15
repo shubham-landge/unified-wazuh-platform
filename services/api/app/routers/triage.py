@@ -129,6 +129,7 @@ async def run_triage(
         suggested_soc_action=result_data.get("recommended_soc_action"),
         success=result_data.get("success", True),
         error_message=result_data.get("error"),
+        tenant_id=alert.tenant_id,
     )
     db.add(triage_result)
 

@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY services/dashboard/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+COPY shared/ shared/
 COPY services/dashboard/app/ app/
 COPY services/dashboard/static/ static/
 COPY services/dashboard/templates/ templates/
