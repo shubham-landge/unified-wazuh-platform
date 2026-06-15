@@ -708,9 +708,30 @@
             }
         }
 
-        // Hook into HTMX requests to show indicator loading states or trigger success actions
+        // Heartbeat — keep session & HTTP pool fresh during inactivity
+        setInterval(function() {
+            fetch('/health').catch(function() {});
+        }, 300_000);
+
         document.body.addEventListener('htmx:beforeRequest', function(evt) {
             // Can be used to show loading animations
+        });
+
+        document.body.addEventListener('htmx:beforeSwap', function(evt) {
+            // When HTMX follows a redirect (e.g. 303 → /login), force a full
+            // reload instead of swapping the login page HTML into the body.
+            if (evt.detail.xhr.status >= 300 && evt.detail.xhr.status < 400) {
+                evt.preventDefault();
+                window.location.reload();
+            }
+        });
+
+        document.body.addEventListener('htmx:responseError', function(evt) {
+            // Full page reload on server errors or connection loss
+            if (evt.detail.xhr.status >= 500 || evt.detail.xhr.status === 0) {
+                window.addGlobalToast("error", "Connection lost – reloading…");
+                setTimeout(function() { window.location.reload(); }, 1500);
+            }
         });
 
         document.body.addEventListener('htmx:afterOnLoad', function(evt) {
