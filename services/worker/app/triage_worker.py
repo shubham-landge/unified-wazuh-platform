@@ -14,6 +14,7 @@ from shared.models.case_event import CaseEvent
 from shared.models.case_investigation_step import CaseInvestigationStep
 from shared.connectors.llm_provider import get_provider
 from shared.connectors.llm_router import TieredRouter
+from shared import noise_reduction
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,29 @@ class TriageWorker:
                     logger.warning("Alert %s not found", alert_id)
                     return
 
-                provider = await TieredRouter().get_provider(alert=alert, tenant_id=str(alert.tenant_id), db_session=session)
+                # ── Noise-reduction pre-triage gate (keep/drop/downgrade) ──
+                # Runs before the LLM to protect the CPU triage budget. Collapses
+                # duplicate bursts and drops known-noise classes.
+                decision = await noise_reduction.evaluate(
+                    session, alert, str(alert.tenant_id) if alert.tenant_id else None
+                )
+                if not decision.should_triage:
+                    await session.commit()  # persist incident attachment / counts
+                    logger.info(
+                        "Triage suppressed for alert %s: %s", alert_id, decision.reason
+                    )
+                    if self.redis_client:
+                        await self.redis_client.incr("triage_suppressed_total")
+                    return
+                if decision.action == noise_reduction.DOWNGRADE:
+                    logger.info("Alert %s downgraded to fast tier: %s", alert_id, decision.reason)
+
+                provider = await TieredRouter().get_provider(
+                    alert=alert,
+                    tenant_id=str(alert.tenant_id),
+                    db_session=session,
+                    force_fast=decision.force_fast_tier,
+                )
                 tier = "full" if provider.name().startswith(("openai", "gemini", "claude")) or "7b" in provider.name() else "fast"
                 logger.info("Triaging alert %s with %s (%s tier)", alert_id, provider.name(), tier)
 

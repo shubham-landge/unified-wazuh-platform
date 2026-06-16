@@ -117,6 +117,23 @@ class Settings(BaseSettings):
     triage_confidence_threshold: float = 0.5
     triage_enabled: bool = True
     mask_sensitive_data: bool = True
+
+    # ── Noise reduction (pre-triage stage) ──
+    # Deterministic keep/drop/downgrade BEFORE the LLM, to protect CPU-only
+    # triage budget. See docs/operations/DEPLOYMENT-PLAN.md §4-5.
+    noise_reduction_enabled: bool = True
+    # Minimum Wazuh rule level eligible for AI triage (decision: level >= 7).
+    triage_min_level: int = 7
+    # Rule groups whose alerts are dropped from AI triage (still stored in Wazuh).
+    # Comma-separated substrings matched against rule_groups.
+    noise_drop_rule_groups: str = ""
+    # Specific rule IDs to always drop from AI triage. Comma-separated ints.
+    noise_drop_rule_ids: str = ""
+    # Rule IDs to downgrade — triaged on the fast tier only, never escalated to 7B.
+    noise_downgrade_rule_ids: str = ""
+    # After this many duplicate alerts collapse into one incident within the
+    # correlation window, suppress re-triage of further duplicates.
+    noise_dedup_suppress_after: int = 3
     osint_maigret_url: str = "http://maigret:8080"
     osint_sandbox_timeout: int = 120
     osint_enabled: bool = False

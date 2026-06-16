@@ -73,8 +73,13 @@ async def user_feedback_negative_rate(rule_id: int | None, db_session=None) -> f
 
 
 class TieredRouter:
-    async def get_provider(self, alert=None, tenant_id: str | None = None, db_session=None) -> LLMProvider:
+    async def get_provider(self, alert=None, tenant_id: str | None = None, db_session=None, force_fast: bool = False) -> LLMProvider:
         strategy = settings.llm_tier_strategy
+
+        # Noise-reduction downgrade pins the alert to the fast tier, bypassing
+        # the score so it can never escalate to the (slower, CPU-costly) 7B tier.
+        if force_fast:
+            return self._build_fast_provider()
 
         if strategy == "fast":
             return self._build_fast_provider()
