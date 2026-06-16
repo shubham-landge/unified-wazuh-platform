@@ -17,8 +17,8 @@ class TestTieredRouter:
         self.router = TieredRouter()
 
     @pytest.mark.parametrize("strategy,expected_model", [
-        ("fast", "qwen2.5-coder:3b"),
-        ("full", "qwen2.5-coder:7b"),
+        ("fast", "qwen2.5:3b-instruct"),
+        ("full", "qwen2.5:7b-instruct"),
     ])
     @pytest.mark.asyncio
     async def test_strategy_override(self, strategy, expected_model):

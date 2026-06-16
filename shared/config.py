@@ -39,8 +39,10 @@ class Settings(BaseSettings):
 
     llm_provider: str = "ollama"
     ollama_base_url: str = "http://ollama:11434"
-    ollama_model: str = "qwen2.5-coder:7b"
-    ollama_fast_model: str = "qwen2.5-coder:3b"
+    # Deep-investigation / long-context tier (escalation only on CPU-only deploys).
+    ollama_model: str = "qwen2.5:7b-instruct"
+    # Primary triage tier — small instruct model, CPU-friendly default.
+    ollama_fast_model: str = "qwen2.5:3b-instruct"
 
     openai_api_key: Optional[SecretStr] = None
     openai_model: str = "gpt-4o"
@@ -229,9 +231,9 @@ class Settings(BaseSettings):
     # ── Tiered LLM Routing (Phase 3B) ──
     llm_tier_strategy: str = "auto"  # "fast" | "full" | "auto"
     llm_tier_fast_provider: str = "ollama"
-    llm_tier_fast_model: str = "qwen2.5-coder:3b"
+    llm_tier_fast_model: str = "qwen2.5:3b-instruct"
     llm_tier_full_provider: str = "ollama"
-    llm_tier_full_model: str = "qwen2.5-coder:7b"
+    llm_tier_full_model: str = "qwen2.5:7b-instruct"
     llm_tier_level_threshold: int = 10
     llm_tier_score_threshold: int = 4
     llm_tier_burst_window_minutes: int = 10
