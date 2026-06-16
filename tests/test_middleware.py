@@ -57,7 +57,8 @@ async def test_rate_limit_middleware():
 @pytest.mark.asyncio
 async def test_dashboard_access_middleware_logic():
     from app.middleware.dashboard_access import DashboardAccessMiddleware
-    from fastapi import Request, HTTPException
+    from fastapi import Request
+    from starlette.responses import JSONResponse
     from unittest.mock import AsyncMock, MagicMock
 
     mock_app = AsyncMock()
@@ -74,12 +75,12 @@ async def test_dashboard_access_middleware_logic():
     result = await middleware.dispatch(mock_request_exempt, AsyncMock())
     assert result is not None
 
+    # Starlette BaseHTTPMiddleware cannot reliably raise HTTPException from
+    # dispatch(), so a denied request returns a 403 JSONResponse instead.
     mock_request_denied = make_request("/alerts/recent", "203.0.113.5")
-    try:
-        await middleware.dispatch(mock_request_denied, AsyncMock())
-        assert False, "Expected HTTPException for denied IP"
-    except HTTPException as e:
-        assert e.status_code == 403
+    denied = await middleware.dispatch(mock_request_denied, AsyncMock())
+    assert isinstance(denied, JSONResponse)
+    assert denied.status_code == 403
 
     mock_request_allowed = make_request("/alerts/recent", "10.0.0.5")
     mock_call_next = AsyncMock(return_value="passed")
