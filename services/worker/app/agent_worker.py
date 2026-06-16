@@ -30,6 +30,10 @@ class AgentWorker:
         self.orchestrator.register_agent("notify", handlers.notify)
         self.orchestrator.register_agent("review", handlers.review)
         self.orchestrator.register_agent("lead", handlers.lead)
+        self.orchestrator.register_agent("correlation", handlers.correlation)
+        self.orchestrator.register_agent("response_planner", handlers.response_planner)
+        self.orchestrator.register_agent("policy_guard", handlers.policy_guard)
+        self.orchestrator.register_agent("evidence_pack", handlers.evidence_pack)
         logger.info("Registered %d agent handlers", len(self.orchestrator._registry))
 
     async def start(self):
