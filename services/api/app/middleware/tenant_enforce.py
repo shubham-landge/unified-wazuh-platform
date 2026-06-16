@@ -84,3 +84,20 @@ class TenantEnforcementMiddleware(BaseHTTPMiddleware):
 def get_tenant_id(request: Request) -> str | None:
     """Extract tenant_id from request state (set by TenantEnforcementMiddleware)."""
     return getattr(request.state, "tenant_id", None)
+
+
+def require_tenant_uuid(tenant_id: str | None):
+    """Resolve the request tenant to a UUID, rejecting requests with no tenant context.
+
+    Replaces the insecure nil-UUID fallback: a missing tenant must not silently
+    write to a shared 00000000-... bucket (cross-tenant leak). Also guards against a
+    malformed tenant string reaching uuid.UUID() and raising an unhandled 500.
+    """
+    import uuid as _uuid
+
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant context required")
+    try:
+        return _uuid.UUID(tenant_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid tenant context")

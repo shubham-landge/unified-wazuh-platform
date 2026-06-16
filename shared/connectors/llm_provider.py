@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from shared.config import settings
+from shared.connectors.circuit_breaker import CircuitBreaker
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,39 @@ SENSITIVE_PATTERNS = [
 def mask_sensitive_data(text: str) -> str:
     for pattern, replacement in SENSITIVE_PATTERNS:
         text = pattern.sub(replacement, text)
+    return text
+
+
+# Prompt-injection guards: character-escape patterns that attackers can use
+# to break out of the LLM prompt.
+_INJECTION_ESCAPES = [
+    (re.compile(r'(\w+)\s*[:=]\s*```'), r'\1: [BLOCK_OPEN]'),
+    (re.compile(r'```'), '[CODE_BLOCK]'),
+    (re.compile(r'\bsystem\s*[:=]\s*(?:"[^"]*"|\'[^\']*\')'), '[SYSTEM_OVERRIDE]'),
+    (re.compile(r'\bignore\s+(?:all\s+)?(?:previous|above|below|prior)\s+instructions\b', re.I), '[IGNORE_ATTEMPT]'),
+    (re.compile(r'\bforget\s+(?:everything|all|previous)\b', re.I), '[FORGET_ATTEMPT]'),
+    (re.compile(r'\b(?:you\s+are|act\s+as|pretend)\s+(?:now\s+)?a?\s*(?:helpful|free|unconstrained)\b', re.I), '[ROLE_PLAY]'),
+    (re.compile(r'\bdo\s+not\s+(?:follow|obey|respect)\b', re.I), '[DEFIANCE]'),
+]
+
+
+def sanitize_llm_input(field_value: str | None) -> str:
+    """Sanitize a potentially attacker-controlled field before LLM consumption.
+
+    Strips prompt-injection escape sequences and wraps the value in safe
+    delimiters to prevent jailbreaking.
+    """
+    if field_value is None:
+        return ""
+    text = str(field_value)
+    for pattern, replacement in _INJECTION_ESCAPES:
+        text = pattern.sub(replacement, text)
+    # Remove any remaining triple-backtick or unusual Unicode control chars
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\u200b\u200c\u200d\ufeff]', '', text)
+    # Truncate very long fields to prevent token overflow injection
+    max_len = getattr(settings, 'llm_input_max_length', 2000)
+    if len(text) > max_len:
+        text = text[:max_len] + " [TRUNCATED]"
     return text
 
 
@@ -97,8 +131,12 @@ class OllamaProvider(LLMProvider):
     def __init__(self, model: str = None):
         self.base_url = settings.ollama_base_url.rstrip("/")
         self.model = model or settings.ollama_model
+        self._cb = CircuitBreaker(name="ollama", failure_threshold=3, recovery_timeout=60.0)
 
     async def analyze(self, system_prompt: str, user_prompt: str, **kwargs) -> dict:
+        # Sanitise attacker-controlled fields before the LLM sees them
+        user_prompt = sanitize_llm_input(user_prompt)
+        system_prompt = sanitize_llm_input(system_prompt)
         masked_user = mask_sensitive_data(user_prompt) if settings.mask_sensitive_data else user_prompt
         payload = {
             "model": self.model,
@@ -110,12 +148,14 @@ class OllamaProvider(LLMProvider):
             "options": {"temperature": kwargs.get("temperature", 0.1)},
         }
 
-        try:
+        async def _call():
             async with httpx.AsyncClient(timeout=300.0) as client:
                 resp = await client.post(f"{self.base_url}/api/chat", json=payload)
                 resp.raise_for_status()
-                data = resp.json()
+                return resp.json()
 
+        try:
+            data = await self._cb.call(_call)
             content = data.get("message", {}).get("content", "")
             result = parse_llm_response(content)
             result["model"] = self.model

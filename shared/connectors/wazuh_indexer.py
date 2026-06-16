@@ -4,6 +4,7 @@ from typing import Any
 from datetime import datetime, timedelta, timezone
 
 from shared.config import settings
+from shared.connectors.circuit_breaker import CircuitBreaker
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ class WazuhIndexerConnector:
         self.verify = verify if verify is not None else settings.wazuh_indexer_verify_ssl
         self.label = label
         self._client: httpx.AsyncClient | None = None
+        self._cb = CircuitBreaker(name=f"wazuh_indexer:{label or 'default'}", failure_threshold=3, recovery_timeout=60.0)
 
     async def _get_client(self) -> httpx.AsyncClient:
         if not self._client:
@@ -35,19 +37,24 @@ class WazuhIndexerConnector:
             )
         return self._client
 
+    async def _cb_call(self, factory):
+        return await self._cb.call(factory)
+
     async def health(self) -> dict:
         try:
-            client = await self._get_client()
-            resp = await client.get(f"{self.base_url}/_cluster/health")
-            resp.raise_for_status()
-            data = resp.json()
-            return {
-                "connected": True,
-                "label": self.label,
-                "cluster_name": data.get("cluster_name"),
-                "status": data.get("status"),
-                "nodes": data.get("number_of_nodes"),
-            }
+            async def _do():
+                client = await self._get_client()
+                resp = await client.get(f"{self.base_url}/_cluster/health")
+                resp.raise_for_status()
+                data = resp.json()
+                return {
+                    "connected": True,
+                    "label": self.label,
+                    "cluster_name": data.get("cluster_name"),
+                    "status": data.get("status"),
+                    "nodes": data.get("number_of_nodes"),
+                }
+            return await self._cb_call(_do)
         except Exception as e:
             logger.warning("Indexer health check failed: %s", e)
             return {"connected": False, "label": self.label, "error": str(e)}
@@ -59,30 +66,30 @@ class WazuhIndexerConnector:
         size: int = 100,
     ) -> list[dict]:
         try:
-            client = await self._get_client()
-            since = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).isoformat()
-
-            query = {
-                "query": {
-                    "bool": {
-                        "filter": [
-                            {"range": {"@timestamp": {"gte": since}}}
-                        ]
-                    }
-                },
-                "sort": [{"@timestamp": {"order": "desc"}}],
-                "size": size,
-            }
-
-            resp = await client.post(
-                f"{self.base_url}/{index}/_search",
-                json=query,
-                headers={"Content-Type": "application/json"},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            hits = data.get("hits", {}).get("hits", [])
-            return [h.get("_source", {}) for h in hits]
+            async def _do():
+                client = await self._get_client()
+                since = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).isoformat()
+                query = {
+                    "query": {
+                        "bool": {
+                            "filter": [
+                                {"range": {"@timestamp": {"gte": since}}}
+                            ]
+                        }
+                    },
+                    "sort": [{"@timestamp": {"order": "desc"}}],
+                    "size": size,
+                }
+                resp = await client.post(
+                    f"{self.base_url}/{index}/_search",
+                    json=query,
+                    headers={"Content-Type": "application/json"},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                hits = data.get("hits", {}).get("hits", [])
+                return [h.get("_source", {}) for h in hits]
+            return await self._cb_call(_do)
         except Exception as e:
             logger.error("Failed to search alerts: %s", e)
             return []

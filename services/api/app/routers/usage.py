@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.middleware.auth import validate_api_key
 from app.middleware.auth_jwt import get_current_user_optional, TokenData
-from app.middleware.tenant_enforce import get_tenant_id
+from app.middleware.tenant_enforce import get_tenant_id, require_tenant_uuid
 from shared.auth import has_permission
 from shared.models.tenant import Tenant
 from shared.models.usage import TenantUsage, UsageRecord
@@ -136,10 +136,7 @@ async def record_usage_event(
     _: str = Depends(validate_api_key),
     tenant_id: str | None = Depends(get_tenant_id),
 ):
-    if not tenant_id:
-        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
-    else:
-        tenant_uuid = uuid.UUID(tenant_id)
+    tenant_uuid = require_tenant_uuid(tenant_id)
 
     record = UsageRecord(
         tenant_id=tenant_uuid,

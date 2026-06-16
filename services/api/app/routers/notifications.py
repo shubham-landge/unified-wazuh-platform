@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
-from app.middleware.tenant_enforce import get_tenant_id
+from app.middleware.tenant_enforce import get_tenant_id, require_tenant_uuid
 from shared.models.notification import (
     NotificationChannel,
     NotificationRule,
@@ -67,10 +67,7 @@ async def create_channel(
     _: str = Depends(validate_api_key),
     tenant_id: str | None = Depends(get_tenant_id),
 ):
-    if tenant_id:
-        tenant_uuid = uuid.UUID(tenant_id)
-    else:
-        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    tenant_uuid = require_tenant_uuid(tenant_id)
     
     channel = NotificationChannel(**body.model_dump(), tenant_id=tenant_uuid)
     db.add(channel)
@@ -101,10 +98,7 @@ async def create_rule(
     _: str = Depends(validate_api_key),
     tenant_id: str | None = Depends(get_tenant_id),
 ):
-    if tenant_id:
-        tenant_uuid = uuid.UUID(tenant_id)
-    else:
-        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    tenant_uuid = require_tenant_uuid(tenant_id)
     
     rule = NotificationRule(**body.model_dump(), tenant_id=tenant_uuid)
     db.add(rule)

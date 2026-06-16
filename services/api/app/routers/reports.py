@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db, async_session
 from app.middleware.auth import validate_api_key
-from app.middleware.tenant_enforce import get_tenant_id
+from app.middleware.tenant_enforce import get_tenant_id, require_tenant_uuid
 from shared.config import settings
 from shared.models.report import Report
 from shared.report_generator import ReportGenerator
@@ -136,10 +136,7 @@ async def create_report(
         raise HTTPException(status_code=400, detail="Unsupported report format")
 
     now = datetime.now(timezone.utc)
-    if tenant_id:
-        tenant_uuid = uuid.UUID(tenant_id)
-    else:
-        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    tenant_uuid = require_tenant_uuid(tenant_id)
 
     report = Report(
         tenant_id=tenant_uuid,

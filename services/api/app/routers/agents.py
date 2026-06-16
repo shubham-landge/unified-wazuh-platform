@@ -8,7 +8,7 @@ from starlette.status import HTTP_202_ACCEPTED, HTTP_404_NOT_FOUND
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
-from app.middleware.tenant_enforce import get_tenant_id
+from app.middleware.tenant_enforce import get_tenant_id, require_tenant_uuid
 from shared.models.agent import AgentDefinition, AgentRun, AgentTask
 
 logger = logging.getLogger(__name__)
@@ -64,10 +64,7 @@ async def create_run(
     if not defn:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Agent definition not found")
 
-    if tenant_id:
-        tenant_uuid = uuid.UUID(tenant_id)
-    else:
-        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    tenant_uuid = require_tenant_uuid(tenant_id)
 
     run = AgentRun(
         definition_id=body.definition_id,

@@ -257,6 +257,10 @@ class Settings(BaseSettings):
     llm_tier_known_bad_ips: str = ""  # comma-separated
     llm_tier_complex_techniques: str = "T1569.002,T1059.001,T1021.001,T1485,T1490"  # lateral movement, ransomware, etc.
 
+    # ── Dashboard Admin Credentials ──
+    dashboard_admin_email: str = ""
+    dashboard_admin_password: SecretStr = SecretStr("")
+
     # ── Credential Leak Monitoring ──
     credential_leak_monitor_enabled: bool = False
     credential_leak_hibp_api_key: Optional[SecretStr] = None
@@ -265,3 +269,28 @@ class Settings(BaseSettings):
     credential_leak_check_interval_seconds: int = 86400
 
 settings = Settings()
+
+
+def require_tenant_uuid():
+    """Resolve the configured default tenant or raise if unset.
+
+    Server-side ingestion paths (poller, credential-leak worker) that have
+    no request tenant context **must** have a configured default tenant.
+    """
+    import uuid
+
+    raw = settings.api_key_default_tenant
+    if not raw:
+        raise ValueError(
+            "API_KEY_DEFAULT_TENANT is not configured. "
+            "Set this environment variable to a valid tenant UUID for server-side ingestion."
+        )
+    try:
+        return uuid.UUID(str(raw))
+    except (ValueError, TypeError) as exc:
+        raise ValueError(
+            f"API_KEY_DEFAULT_TENANT '{raw}' is not a valid UUID."
+        ) from exc
+
+
+default_tenant_uuid = require_tenant_uuid

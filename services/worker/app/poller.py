@@ -8,7 +8,7 @@ from dateutil import parser as dateutil_parser
 import redis.asyncio as redis
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
-from shared.config import settings
+from shared.config import settings, default_tenant_uuid
 from shared.models.alert import Alert
 from shared.connectors.wazuh_indexer import WazuhIndexerConnector
 
@@ -139,7 +139,7 @@ class AlertPoller:
             return str(v) if v is not None else None
 
         alert = Alert(
-            tenant_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            tenant_id=default_tenant_uuid(),
             wazuh_alert_id=str(wazuh_alert_id),
             manager_label=manager_label,
             rule_id=int(rule["id"]) if rule.get("id") is not None else None,

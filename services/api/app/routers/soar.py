@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
-from app.middleware.tenant_enforce import get_tenant_id
+from app.middleware.tenant_enforce import get_tenant_id, require_tenant_uuid
 from shared.models.soar import SoarPlaybook, SoarTask, SoarExecution
 
 router = APIRouter(prefix="/soar", tags=["soar"])
@@ -71,10 +71,7 @@ async def create_playbook(
     _: str = Depends(validate_api_key),
     tenant_id: str | None = Depends(get_tenant_id),
 ):
-    if tenant_id:
-        tenant_uuid = uuid.UUID(tenant_id)
-    else:
-        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    tenant_uuid = require_tenant_uuid(tenant_id)
 
     playbook = SoarPlaybook(
         **body.model_dump(),
@@ -109,10 +106,7 @@ async def create_task(
     _: str = Depends(validate_api_key),
     tenant_id: str | None = Depends(get_tenant_id),
 ):
-    if tenant_id:
-        tenant_uuid = uuid.UUID(tenant_id)
-    else:
-        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    tenant_uuid = require_tenant_uuid(tenant_id)
 
     task = SoarTask(
         **body.model_dump(),
@@ -147,10 +141,7 @@ async def create_execution(
     _: str = Depends(validate_api_key),
     tenant_id: str | None = Depends(get_tenant_id),
 ):
-    if tenant_id:
-        tenant_uuid = uuid.UUID(tenant_id)
-    else:
-        tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    tenant_uuid = require_tenant_uuid(tenant_id)
 
     execution = SoarExecution(
         **body.model_dump(),

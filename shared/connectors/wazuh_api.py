@@ -3,6 +3,7 @@ import logging
 from typing import Any
 
 from shared.config import settings
+from shared.connectors.circuit_breaker import CircuitBreaker
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ class WazuhAPIConnector:
         )
         self.verify = verify if verify is not None else settings.wazuh_api_verify_ssl
         self.label = label
+        self._cb = CircuitBreaker(name=f"wazuh_api:{label or 'default'}", failure_threshold=3, recovery_timeout=60.0)
         self._client: httpx.AsyncClient | None = None
         self._token: str | None = None
 
@@ -58,12 +60,18 @@ class WazuhAPIConnector:
         self._token = None
         return await self._get_client()
 
+    async def _cb_call(self, factory):
+        """Execute a coroutine factory under circuit breaker protection."""
+        return await self._cb.call(factory)
+
     async def health(self) -> dict:
         try:
-            client = await self._get_client()
-            resp = await client.get(f"{self.base_url}/")
-            resp.raise_for_status()
-            return {"connected": True, "label": self.label, "status_code": resp.status_code}
+            async def _do():
+                client = await self._get_client()
+                resp = await client.get(f"{self.base_url}/")
+                resp.raise_for_status()
+                return {"connected": True, "label": self.label, "status_code": resp.status_code}
+            return await self._cb_call(_do)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 try:
@@ -82,14 +90,16 @@ class WazuhAPIConnector:
 
     async def get_agents(self, limit: int = 100, offset: int = 0) -> list[dict]:
         try:
-            client = await self._get_client()
-            resp = await client.get(
-                f"{self.base_url}/agents",
-                params={"limit": limit, "offset": offset},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("data", {}).get("affected_items", [])
+            async def _do():
+                client = await self._get_client()
+                resp = await client.get(
+                    f"{self.base_url}/agents",
+                    params={"limit": limit, "offset": offset},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                return data.get("data", {}).get("affected_items", [])
+            return await self._cb_call(_do)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 try:
@@ -112,11 +122,13 @@ class WazuhAPIConnector:
 
     async def get_agent_groups(self) -> list[str]:
         try:
-            client = await self._get_client()
-            resp = await client.get(f"{self.base_url}/agents/groups")
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("data", {}).get("affected_items", [])
+            async def _do():
+                client = await self._get_client()
+                resp = await client.get(f"{self.base_url}/agents/groups")
+                resp.raise_for_status()
+                data = resp.json()
+                return data.get("data", {}).get("affected_items", [])
+            return await self._cb_call(_do)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 try:
@@ -136,14 +148,16 @@ class WazuhAPIConnector:
 
     async def get_rules(self, limit: int = 100) -> list[dict]:
         try:
-            client = await self._get_client()
-            resp = await client.get(
-                f"{self.base_url}/rules",
-                params={"limit": limit},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("data", {}).get("affected_items", [])
+            async def _do():
+                client = await self._get_client()
+                resp = await client.get(
+                    f"{self.base_url}/rules",
+                    params={"limit": limit},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                return data.get("data", {}).get("affected_items", [])
+            return await self._cb_call(_do)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 try:

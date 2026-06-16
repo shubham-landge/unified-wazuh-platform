@@ -7,7 +7,10 @@ from httpx import ASGITransport, AsyncClient
 
 from app.db import get_db
 from app.middleware.auth import validate_api_key
+from app.middleware.tenant_enforce import get_tenant_id
 from app.routers import notifications, soar, threat_intel, ueba
+
+_TEST_TENANT = "11111111-1111-1111-1111-111111111111"
 
 
 def _empty_result():
@@ -34,6 +37,7 @@ def domain_app():
         app.include_router(router)
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[validate_api_key] = lambda: "soc-key-001"
+    app.dependency_overrides[get_tenant_id] = lambda: _TEST_TENANT
     return app
 
 

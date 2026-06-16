@@ -771,6 +771,10 @@ async def settings_page(request: Request):
 
 @app.post("/settings")
 async def save_settings(request: Request):
+    current_user = get_session_user(request)
+    if not current_user or current_user.get("role") != "admin":
+        return JSONResponse({"status": "error", "message": "Forbidden"}, status_code=403)
+
     form_data = await request.form()
     new_settings = {k: v for k, v in form_data.items()}
 
@@ -1382,32 +1386,30 @@ async def login_submit(request: Request):
     email = form.get("email", "").strip()
     password = form.get("password", "").strip()
 
-    # Dev-only escape hatch for local testing without seeded API users.
-    dev_allowed = os.getenv("DASHBOARD_DEV_ALLOW_HARDCODED", "").lower() in ("1", "true", "yes")
-    if dev_allowed and email == "admin@company.com" and password == "admin123":
-        resp = RedirectResponse("/", status_code=303)
-        session_payload = {
-            "sub": email,
-            "email": email,
-            "role": "admin",
-            "tenant_id": None,
-            "csrf_token": secrets.token_urlsafe(32),
-            "iat": datetime.now(timezone.utc).isoformat(),
-        }
-        resp.set_cookie(SESSION_COOKIE_NAME, _sign_session(session_payload), httponly=True, max_age=SESSION_MAX_AGE_SECONDS)
-        return resp
-    if dev_allowed and email == "analyst@company.com" and password == "analyst123":
-        resp = RedirectResponse("/", status_code=303)
-        session_payload = {
-            "sub": email,
-            "email": email,
-            "role": "analyst",
-            "tenant_id": None,
-            "csrf_token": secrets.token_urlsafe(32),
-            "iat": datetime.now(timezone.utc).isoformat(),
-        }
-        resp.set_cookie(SESSION_COOKIE_NAME, _sign_session(session_payload), httponly=True, max_age=SESSION_MAX_AGE_SECONDS)
-        return resp
+    # Environment-configured admin credentials (primary path).
+    admin_email = settings.dashboard_admin_email
+    admin_password = settings.dashboard_admin_password.get_secret_value() if settings.dashboard_admin_password else ""
+
+    if admin_email and admin_password:
+        if email == admin_email and password == admin_password:
+            resp = RedirectResponse("/", status_code=303)
+            session_payload = {
+                "sub": email,
+                "email": email,
+                "role": "admin",
+                "tenant_id": None,
+                "csrf_token": secrets.token_urlsafe(32),
+                "iat": datetime.now(timezone.utc).isoformat(),
+            }
+            resp.set_cookie(SESSION_COOKIE_NAME, _sign_session(session_payload), httponly=True, max_age=SESSION_MAX_AGE_SECONDS)
+            return resp
+
+    # Block login if admin credentials are not configured and no API is available.
+    # This prevents unconfigured dashboards from being accessed.
+    if not admin_email and not admin_password:
+        dev_allowed = os.getenv("DASHBOARD_DEV_ALLOW_HARDCODED", "").lower() in ("1", "true", "yes")
+        if not dev_allowed:
+            return templates.TemplateResponse("login.html", {"request": request, "error": "Dashboard admin credentials not configured. Set ADMIN_EMAIL and ADMIN_PASSWORD environment variables."})
 
     try:
         client = _http_client or httpx.AsyncClient(timeout=_HTTP_TIMEOUT)

@@ -26,3 +26,9 @@ class Case(Base, TenantMixin):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+# Re-export so `from shared.models.case import CaseEvent` resolves regardless of
+# import order (previously relied on a fragile side effect). No circular import:
+# case_event only depends on shared.models.base.
+from shared.models.case_event import CaseEvent  # noqa: E402,F401

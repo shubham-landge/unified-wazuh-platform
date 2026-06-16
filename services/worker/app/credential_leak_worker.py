@@ -128,10 +128,8 @@ class CredentialLeakWorker:
 
     @staticmethod
     def _default_tenant_id():
-        try:
-            return uuid.UUID(settings.tenant_id)
-        except Exception:
-            return uuid.UUID("00000000-0000-0000-0000-000000000001")
+        from shared.config import default_tenant_uuid
+        return default_tenant_uuid()
 
     async def stop(self):
         await self.engine.dispose()
