@@ -22,7 +22,25 @@ if command -v dnf &>/dev/null; then
     sudo dnf install -y docker git curl python3.12 python3.12-pip
 elif command -v apt-get &>/dev/null; then
     sudo apt-get update -y
-    sudo apt-get install -y docker.io docker-compose-plugin git curl python3
+    sudo apt-get install -y docker.io git curl python3 ca-certificates
+    if ! docker compose version &>/dev/null; then
+        if sudo apt-get install -y docker-compose-plugin; then
+            true
+        else
+            echo "   docker-compose-plugin package unavailable; installing Compose v2 CLI plugin..."
+            sudo mkdir -p /usr/local/lib/docker/cli-plugins
+            ARCH="$(uname -m)"
+            case "$ARCH" in
+                x86_64|amd64) COMPOSE_ARCH="x86_64" ;;
+                aarch64|arm64) COMPOSE_ARCH="aarch64" ;;
+                *) echo "❌ Unsupported architecture for Compose plugin: $ARCH"; exit 1 ;;
+            esac
+            sudo curl -fsSL \
+                "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-${COMPOSE_ARCH}" \
+                -o /usr/local/lib/docker/cli-plugins/docker-compose
+            sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+        fi
+    fi
 else
     echo "❌ Unsupported OS. Install Docker + Git manually, then re-run with SKIP_DEPS=1"
     [ "${SKIP_DEPS:-0}" = "1" ] || exit 1
