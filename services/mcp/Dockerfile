@@ -21,6 +21,7 @@ COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 
 COPY shared/ shared/
+COPY services/api/app/ app/
 COPY services/mcp/ mcp/
 
 ENV PYTHONPATH=/app
