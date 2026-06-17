@@ -56,6 +56,12 @@ TRIAGE_KEPT = Gauge("soc_triage_kept_total", "Total triage decisions kept by noi
 TRIAGE_TIER_FAST = Gauge("soc_triage_tier_fast_total", "Total triage calls routed to fast tier", registry=REGISTRY)
 TRIAGE_TIER_FULL = Gauge("soc_triage_tier_full_total", "Total triage calls routed to full tier", registry=REGISTRY)
 
+INCIDENT_MTTD = Gauge("soc_incident_mttd_seconds", "Incident mean time to detect in seconds", registry=REGISTRY)
+INCIDENT_MTTR = Gauge("soc_incident_mttr_seconds", "Incident mean time to resolve in seconds", registry=REGISTRY)
+TIME_TO_FULL_ENRICHMENT = Gauge("soc_time_to_full_enrichment_seconds", "Mean time to full enrichment in seconds", registry=REGISTRY)
+BREAKOUT_INCIDENTS = Gauge("soc_breakout_incidents_total", "Total breakout incidents", registry=REGISTRY)
+
+
 
 def _try_redis_queue_depth() -> int | None:
     try:
@@ -125,6 +131,17 @@ async def metrics(
         TRIAGE_KEPT.set(float(r.get("triage_kept_total") or 0))
         TRIAGE_TIER_FAST.set(float(r.get("triage_tier_fast_total") or 0))
         TRIAGE_TIER_FULL.set(float(r.get("triage_tier_full_total") or 0))
+        
+        breakout = r.get("breakout_incidents_total") or 0
+        mttd = r.get("incident_mttd_seconds") or 0
+        mttr = r.get("incident_mttr_seconds") or 0
+        enrichment = r.get("time_to_full_enrichment_seconds") or 0
+        
+        INCIDENT_MTTD.set(float(mttd))
+        INCIDENT_MTTR.set(float(mttr))
+        TIME_TO_FULL_ENRICHMENT.set(float(enrichment))
+        BREAKOUT_INCIDENTS.set(float(breakout))
+        
         r.close()
     except Exception as exc:
         logger.debug("Failed to read triage metrics from Redis: %s", exc)

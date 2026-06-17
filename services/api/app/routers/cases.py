@@ -127,6 +127,28 @@ async def get_case(
     notes_result = await db.execute(notes_query)
     notes = notes_result.scalars().all()
 
+    sla_due_at = None
+    kill_chain_stage = "unknown"
+    stage_history = []
+    cross_domain = False
+    if case.alert_id:
+        try:
+            from sqlalchemy import text
+            stmt = text("SELECT kill_chain_stage, stage_history, sla_due_at, cross_domain FROM alert_incidents WHERE id = :alert_id")
+            res = await db.execute(stmt, {"alert_id": case.alert_id})
+            row = res.first()
+            if row:
+                if row[0] is not None:
+                    kill_chain_stage = row[0]
+                if row[1] is not None:
+                    stage_history = row[1]
+                if row[2] is not None:
+                    sla_due_at = row[2].isoformat()
+                if row[3] is not None:
+                    cross_domain = bool(row[3])
+        except Exception:
+            pass
+
     return {
         "status": "success",
         "case": {
@@ -144,6 +166,10 @@ async def get_case(
             "created_at": case.created_at.isoformat(),
             "updated_at": case.updated_at.isoformat(),
             "closed_at": case.closed_at.isoformat() if case.closed_at else None,
+            "kill_chain_stage": kill_chain_stage,
+            "stage_history": stage_history,
+            "sla_due_at": sla_due_at,
+            "cross_domain": cross_domain,
             "notes": [
                 {
                     "id": str(n.id),

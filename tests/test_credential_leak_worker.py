@@ -46,7 +46,8 @@ async def test_upsert_leak_adds_new():
     mock_session.add = lambda obj: added.append(obj)
 
     breach = {"Name": "NewBreach", "BreachDate": "2023-06-01", "DataClasses": ["Email", "Password"]}
-    await worker._upsert_leak(mock_session, "user@example.com", "email", breach)
+    with patch("services.worker.app.credential_leak_worker.CredentialLeakWorker._default_tenant_id", return_value=uuid.uuid4()):
+        await worker._upsert_leak(mock_session, "user@example.com", "email", breach)
 
     assert len(added) == 1
     leak = added[0]

@@ -196,6 +196,15 @@
                         ATT&CK Heatmap
                     </a>
 
+                    <!-- Coverage Map -->
+                    <a href="/coverage-map" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group {{ 'bg-accent-blue/10 text-accent-blue border border-accent-blue/15' if page == 'coverage-map' else 'text-secondary hover:text-white hover:bg-white/5 border border-transparent' }}"
+                       hx-get="/coverage-map" hx-target="body" hx-push-url="true">
+                        <svg class="w-5 h-5 shrink-0 group-hover:scale-105 transition-transform" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        Coverage Map
+                    </a>
+
                     <!-- Tenant Context (shown for admins) -->
                     {% if current_user and current_user.role == 'admin' and current_user.tenant_name %}
                     <div class="px-3 py-2.5 rounded-lg text-sm font-medium text-muted flex items-center gap-2">

@@ -23,9 +23,11 @@ class TestTieredRouter:
     @pytest.mark.asyncio
     async def test_strategy_override(self, strategy, expected_model):
         with patch("shared.config.settings.llm_tier_strategy", strategy):
-            provider = await self.router.get_provider(alert=None)
-            assert isinstance(provider, OllamaProvider)
-            assert expected_model in provider.name()
+            with patch("shared.config.settings.llm_tier_fast_model", "notmythos:mini"):
+                with patch("shared.config.settings.llm_tier_full_model", "notmythos:8b"):
+                    provider = await self.router.get_provider(alert=None)
+                    assert isinstance(provider, OllamaProvider)
+                    assert expected_model in provider.name()
 
     @pytest.mark.asyncio
     async def test_auto_strategy_low_level_uses_fast(self):
@@ -41,8 +43,9 @@ class TestTieredRouter:
 
         with patch("shared.config.settings.llm_tier_strategy", "auto"):
             with patch("shared.config.settings.llm_tier_level_threshold", 10):
-                provider = await self.router.get_provider(alert=alert)
-                assert "mini" in provider.name()
+                with patch("shared.config.settings.llm_tier_fast_model", "notmythos:mini"):
+                    provider = await self.router.get_provider(alert=alert)
+                    assert "mini" in provider.name()
 
     @pytest.mark.asyncio
     async def test_auto_strategy_high_level_uses_full(self):
@@ -94,9 +97,10 @@ class TestTieredRouter:
         with patch("shared.config.settings.llm_tier_strategy", "auto"):
             with patch("shared.config.settings.llm_tier_level_threshold", 10):
                 with patch("shared.config.settings.llm_tier_score_threshold", 4):
-                    provider = await self.router.get_provider(alert=alert)
-                    # score = 3 (level) - 2 (burst) = 1 < 4, so fast
-                    assert "mini" in provider.name()
+                    with patch("shared.config.settings.llm_tier_fast_model", "notmythos:mini"):
+                        provider = await self.router.get_provider(alert=alert)
+                        # score = 3 (level) - 2 (burst) = 1 < 4, so fast
+                        assert "mini" in provider.name()
 
     def test_known_bad_ip_boosts_score(self):
         alert = MagicMock()
