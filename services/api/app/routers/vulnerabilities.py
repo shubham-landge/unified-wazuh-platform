@@ -7,7 +7,7 @@ from starlette.status import HTTP_404_NOT_FOUND
 from app.db import get_db
 from shared.models.vulnerability import Vulnerability
 from app.middleware.auth import validate_api_key
-from app.middleware.tenant_enforce import get_tenant_id
+from app.middleware.tenant_enforce import get_tenant_id, require_tenant_uuid
 
 router = APIRouter(prefix="/vulnerabilities", tags=["vulnerabilities"])
 
@@ -85,11 +85,10 @@ async def get_vulnerability(
     except ValueError:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Invalid vulnerability ID")
 
-    query = select(Vulnerability).where(Vulnerability.id == uid)
-    if tenant_id:
-        import uuid
-        tenant_uuid = uuid.UUID(tenant_id)
-        query = query.where(Vulnerability.tenant_id == tenant_uuid)
+    tenant_uuid = require_tenant_uuid(tenant_id)
+    query = select(Vulnerability).where(
+        Vulnerability.id == uid, Vulnerability.tenant_id == tenant_uuid
+    )
 
     result = await db.execute(query)
     vuln = result.scalar_one_or_none()

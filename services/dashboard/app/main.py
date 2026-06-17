@@ -771,6 +771,9 @@ async def settings_page(request: Request):
 
 @app.post("/settings")
 async def save_settings(request: Request):
+    current_user = get_session_user(request)
+    if not current_user or current_user.get("role") != "admin":
+        return JSONResponse({"status": "error", "message": "Forbidden"}, status_code=403)
     form_data = await request.form()
     new_settings = {k: v for k, v in form_data.items()}
 

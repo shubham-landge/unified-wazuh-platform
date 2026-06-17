@@ -8,7 +8,7 @@ from starlette.status import HTTP_404_NOT_FOUND
 from app.db import get_db
 from shared.models.alert import Alert
 from app.middleware.auth import validate_api_key
-from app.middleware.tenant_enforce import get_tenant_id
+from app.middleware.tenant_enforce import get_tenant_id, require_tenant_uuid
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -62,16 +62,21 @@ async def get_alert(
     alert_id: str,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
+    tenant_uuid = require_tenant_uuid(tenant_id)
+
     try:
         uid = uuid.UUID(alert_id)
     except ValueError:
         uid = alert_id
 
     if isinstance(uid, uuid.UUID):
-        query = select(Alert).where(Alert.id == uid)
+        query = select(Alert).where(Alert.id == uid, Alert.tenant_id == tenant_uuid)
     else:
-        query = select(Alert).where(Alert.wazuh_alert_id == alert_id)
+        query = select(Alert).where(
+            Alert.wazuh_alert_id == alert_id, Alert.tenant_id == tenant_uuid
+        )
 
     result = await db.execute(query)
     alert = result.scalar_one_or_none()

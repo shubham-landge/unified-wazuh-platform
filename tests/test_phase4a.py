@@ -58,7 +58,9 @@ class TestTimelineAPI:
         app.include_router(cases.router)
         app.dependency_overrides[get_db] = lambda: db
         from app.middleware.auth import validate_api_key
+        from app.middleware.tenant_enforce import get_tenant_id
         app.dependency_overrides[validate_api_key] = lambda: "test-key"
+        app.dependency_overrides[get_tenant_id] = lambda: "00000000-0000-0000-0000-000000000001"
         return app
 
     @pytest.fixture
@@ -131,7 +133,9 @@ class TestStepsAPI:
         app.include_router(cases.router)
         app.dependency_overrides[get_db] = lambda: db
         from app.middleware.auth import validate_api_key
+        from app.middleware.tenant_enforce import get_tenant_id
         app.dependency_overrides[validate_api_key] = lambda: "test-key"
+        app.dependency_overrides[get_tenant_id] = lambda: "00000000-0000-0000-0000-000000000001"
         return app
 
     @pytest.fixture
@@ -214,7 +218,9 @@ class TestAutoLogging:
         app.include_router(cases.router)
         app.dependency_overrides[get_db] = lambda: db
         from app.middleware.auth import validate_api_key
+        from app.middleware.tenant_enforce import get_tenant_id
         app.dependency_overrides[validate_api_key] = lambda: "test-key"
+        app.dependency_overrides[get_tenant_id] = lambda: "00000000-0000-0000-0000-000000000001"
         return app
 
     @pytest.fixture
@@ -269,7 +275,9 @@ class TestBulkStatus:
         app.include_router(cases.router)
         app.dependency_overrides[get_db] = lambda: db
         from app.middleware.auth import validate_api_key
+        from app.middleware.tenant_enforce import get_tenant_id
         app.dependency_overrides[validate_api_key] = lambda: "test-key"
+        app.dependency_overrides[get_tenant_id] = lambda: "00000000-0000-0000-0000-000000000001"
         return app
 
     @pytest.fixture
