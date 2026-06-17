@@ -1,7 +1,7 @@
 # SkillOpt — Self-Learning Loop Design
 
-> **Status**: Design document; `prompt_refiner.py` is not yet implemented.  
-> **Updated**: 2026-06-17  
+> **Status**: Implemented — `services/worker/app/prompt_refiner.py` runs the SkillOpt loop on low-rated feedback.  
+> **Updated**: 2026-06-18  
 > **Scope**: How the platform turns analyst feedback into better prompts, models, and autonomy decisions without engineering intervention.
 
 ---
