@@ -40,9 +40,10 @@ class Settings(BaseSettings):
     llm_provider: str = "ollama"
     ollama_base_url: str = "http://ollama:11434"
     # Deep-investigation / long-context tier (escalation only on CPU-only deploys).
-    ollama_model: str = "qwen2.5:7b-instruct"
-    # Primary triage tier — small instruct model, CPU-friendly default.
-    ollama_fast_model: str = "qwen2.5:3b-instruct"
+    # Full-investigation tier — 128K context, cybersecurity-specialized.
+    ollama_model: str = "CyberCrew/notmythos-8b"
+    # Fast / noise-gate tier — 3b instruct model, CPU-friendly default.
+    ollama_fast_model: str = "qwen2.5-coder:3b"
 
     openai_api_key: Optional[SecretStr] = None
     openai_model: str = "gpt-4o"
@@ -248,9 +249,9 @@ class Settings(BaseSettings):
     # ── Tiered LLM Routing (Phase 3B) ──
     llm_tier_strategy: str = "auto"  # "fast" | "full" | "auto"
     llm_tier_fast_provider: str = "ollama"
-    llm_tier_fast_model: str = "notmythos:mini"     # 398MB, 32K context, cybersecurity-specialized
+    llm_tier_fast_model: str = "qwen2.5-coder:3b"   # 1.9GB, fast noise-gate tier
     llm_tier_full_provider: str = "ollama"
-    llm_tier_full_model: str = "notmythos:8b"       # 2.0GB, 128K context, cybersecurity-specialized
+    llm_tier_full_model: str = "CyberCrew/notmythos-8b"  # 2.0GB, 128K context, cybersecurity-specialized
     llm_tier_level_threshold: int = 10
     llm_tier_score_threshold: int = 4
     llm_tier_burst_window_minutes: int = 10
