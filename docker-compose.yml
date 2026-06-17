@@ -128,6 +128,28 @@ services:
       - soc-network
     # Scale with: docker compose up -d --scale worker=2
 
+  # ─── OSINT: Maigret username search ───
+  maigret:
+    build:
+      context: .
+      dockerfile: services/maigret/Dockerfile
+    container_name: soc-maigret
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MAIGRET_TIMEOUT: ${OSINT_SANDBOX_TIMEOUT:-90}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "8080:8080"
+    logging: *default-logging
+    networks:
+      - soc-network
+
   # ─── Dashboard ───
   dashboard:
     build:

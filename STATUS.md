@@ -13,7 +13,7 @@
 | Track | Tool | What was built | Status |
 |---|---|---|---|
 | Security / Resilience | Claude | Middleware hardening, signed sessions, CSRF, tenant filters, circuit breakers, prompt-injection guard | 📝 dev |
-| MCP Server + Connectors | Codex | FastMCP server, Jira connector, Sigma worker, OSINT/credential wiring | 📝 dev |
+| MCP Server + Connectors | Codex | HTTP MCP server (`services/mcp/server.py`) with 8 tools + tests; maigret container wired in compose; Jira/Sigma still pending | ✅ main |
 | Orchestration & Agents | OpenCode | Wazuh-Openclaw-Autopilot handlers (correlation, response_planner, policy_guard, evidence_pack), autonomy_level, policy gating for soar_run/case_create | ✅ main |
 | Self-Learning / Observability | Antigravity | few_shot RAG, prompt refiner, meta agent, kanban view, metrics expansion, MITRE dashboard | 📝 dev |
 
@@ -85,7 +85,7 @@
 
 ---
 
-## Test Suite: 296 passing, 0 failing
+## Test Suite: 309 passing, 0 failing
 
 All tests run fully mocked — no Docker, no DB, no Redis required.
 
