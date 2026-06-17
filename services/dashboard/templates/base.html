@@ -128,7 +128,7 @@
                             Alerts
                         </div>
                         <span class="text-xs px-1.5 py-0.2 bg-accent-red/20 text-red-400 font-semibold rounded-full border border-accent-red/30"
-                              hx-get="/alerts" hx-select=".alerts-count" hx-trigger="every 30s" hx-swap="outerHTML">New</span>
+                              >New</span>
                     </a>
 
                     <!-- Cases -->
@@ -727,30 +727,46 @@
         }
 
         // Heartbeat — keep session & HTTP pool fresh during inactivity
-        setInterval(function() {
-            fetch('/health').catch(function() {});
-        }, 300_000);
-
-        document.body.addEventListener('htmx:beforeRequest', function(evt) {
-            // Can be used to show loading animations
-        });
-
-        document.body.addEventListener('htmx:beforeSwap', function(evt) {
-            // When HTMX follows a redirect (e.g. 303 → /login), force a full
-            // reload instead of swapping the login page HTML into the body.
-            if (evt.detail.xhr.status >= 300 && evt.detail.xhr.status < 400) {
-                evt.preventDefault();
-                window.location.reload();
+        // ── Cleanup component intervals before HTMX navigations ──
+        document.body.addEventListener('htmx:beforeSwap', function() {
+            if (window._componentIntervals) {
+                window._componentIntervals.forEach(function(id) { clearInterval(id); });
+                window._componentIntervals = [];
             }
         });
 
-        document.body.addEventListener('htmx:responseError', function(evt) {
-            // Full page reload on server errors or connection loss
-            if (evt.detail.xhr.status >= 500 || evt.detail.xhr.status === 0) {
-                window.addGlobalToast("error", "Connection lost – reloading…");
+        // ── Session redirect → full reload (with toast) ──
+        document.body.addEventListener('htmx:beforeSwap', function(evt) {
+            if (evt.detail.xhr.status >= 300 && evt.detail.xhr.status < 400) {
+                evt.preventDefault();
+                window.addGlobalToast("warning", "Session expired – redirecting to login…");
                 setTimeout(function() { window.location.reload(); }, 1500);
             }
         });
+
+        // ── Session expiry warning (5 min before 8h timeout) ──
+        (function() {
+            const SESSION_MAX_MS = 28800 * 1000;
+            setTimeout(function() {
+                window.addGlobalToast("warning", "Session expires in 5 minutes. Save your work before closing.");
+            }, SESSION_MAX_MS - 300000);
+        })();
+
+        // ── HTMX error recovery with exponential backoff, max 3 retries ──
+        let _reloadRetries = 0;
+        document.body.addEventListener('htmx:responseError', function(evt) {
+            if (evt.detail.xhr.status >= 500 || evt.detail.xhr.status === 0) {
+                if (_reloadRetries >= 3) {
+                    window.addGlobalToast("error", "Connection lost. Please refresh the page manually.");
+                    return;
+                }
+                _reloadRetries++;
+                const delay = Math.min(2000 * Math.pow(2, _reloadRetries), 15000);
+                window.addGlobalToast("error", "Connection lost – retrying in " + (delay/1000) + "s…");
+                setTimeout(function() { window.location.reload(); }, delay);
+            }
+        });
+        document.body.addEventListener('htmx:afterSwap', function() { _reloadRetries = 0; });
 
         document.body.addEventListener('htmx:afterOnLoad', function(evt) {
             // Toast support after partial loads

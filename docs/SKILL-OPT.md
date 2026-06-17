@@ -1,4 +1,4 @@
-# SkillOpt — Self-Learning Loop Design
+# SkillOpt — Self-Learning Loop Design (prompt_refiner.py: IMPLEMENTED at services/worker/app/prompt_refiner.py)
 
 > **Status**: Implemented — `services/worker/app/prompt_refiner.py` runs the SkillOpt loop on low-rated feedback.  
 > **Updated**: 2026-06-18  

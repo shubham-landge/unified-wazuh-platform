@@ -86,7 +86,8 @@
                 </h3>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4" hx-get="/agents/runs" hx-trigger="every 5s" hx-swap="innerHTML">
+            <div id="agents-runs-container" class="grid grid-cols-1 md:grid-cols-4 gap-4" hx-get="/agents/runs" hx-trigger="every 30s" hx-swap="innerHTML">
+                <div id="agents-runs-error" class="hidden col-span-4 text-center text-red-400 p-4 text-sm">Live updates paused. <button class="underline" hx-get="/agents/runs" hx-target="#agents-runs-container">Retry</button></div>
                 <div class="space-y-3 bg-surface p-3 rounded-lg border border-white/5">
                     <h4 class="text-xs font-bold text-muted uppercase tracking-wider border-b border-white/5 pb-2">Pending</h4>
                     <div class="space-y-2">

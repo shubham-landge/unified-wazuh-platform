@@ -228,52 +228,30 @@
 
 <!-- Load Chart Data and Trigger Script -->
 <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        // Serialise alerts and cases safely for Chart.js helpers
+    (function() {
         const alertsData = [
             {% for alert in alerts %}
-            {
-                "id": "{{ alert.id }}",
-                "rule_level": {{ alert.rule_level }},
-                "timestamp": "{{ alert.timestamp or '' }}"
-            },
+            { "id": "{{ alert.id }}", "rule_level": {{ alert.rule_level }}, "timestamp": "{{ alert.timestamp or '' }}" },
             {% endfor %}
         ];
-
         const casesData = [
             {% for case in cases %}
-            {
-                "id": "{{ case.id }}",
-                "severity": "{{ case.severity }}",
-                "status": "{{ case.status }}"
-            },
+            { "id": "{{ case.id }}", "severity": "{{ case.severity }}", "status": "{{ case.status }}" },
             {% endfor %}
         ];
-
-        // Init charts
-        if (typeof initAlertTimelineChart === 'function') {
-            initAlertTimelineChart('alertsTimelineChart', alertsData);
-        }
-        if (typeof initSeverityDistributionChart === 'function') {
-            initSeverityDistributionChart('severityChart', casesData);
-        }
-
         const playbookRunsData = [
             {% for run in playbook_runs %}
-            {
-                "id": "{{ run.id }}",
-                "status": "{{ run.status }}"
-            },
+            { "id": "{{ run.id }}", "status": "{{ run.status }}" },
             {% endfor %}
         ];
-
-        if (typeof initPlaybookRunsChart === 'function') {
-            initPlaybookRunsChart('playbookRunsChart', playbookRunsData);
+        if (window.Chart) {
+            Object.values(Chart.instances).forEach(function(i) { i.destroy(); });
         }
-        if (typeof initComplianceStatusChart === 'function') {
-            initComplianceStatusChart('complianceStatusChart');
-        }
-    });
+        if (typeof initAlertTimelineChart === 'function') initAlertTimelineChart('alertsTimelineChart', alertsData);
+        if (typeof initSeverityDistributionChart === 'function') initSeverityDistributionChart('severityChart', casesData);
+        if (typeof initPlaybookRunsChart === 'function') initPlaybookRunsChart('playbookRunsChart', playbookRunsData);
+        if (typeof initComplianceStatusChart === 'function') initComplianceStatusChart('complianceStatusChart');
+    })();
 </script>
 <script src="/static/charts.js"></script>
 {% endblock %}

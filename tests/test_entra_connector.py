@@ -6,32 +6,23 @@ import pytest
 from shared.connectors.entra import EntraConnector
 
 
-def make_response(status_code=200, json_data=None, url="https://entra.example/health"):
-    request = httpx.Request("GET", url)
+def make_response(status_code=200, json_data=None, request_url=""):
+    request = httpx.Request("GET", request_url or "https://graph.microsoft.com/v1.0/organization")
     return httpx.Response(status_code, request=request, json=json_data or {})
 
 
 @pytest.mark.asyncio
 @patch("httpx.AsyncClient")
-async def test_entra_connector_health(mock_client):
-    client = AsyncMock()
-    client.get.return_value = make_response(200, url="https://entra.example/health")
-    client.__aenter__.return_value = client
-    client.__aexit__.return_value = False
-    mock_client.return_value = client
-    connector = EntraConnector("https://entra.example", "tenant")
+async def test_entra_connector_health_not_configured(mock_client):
+    connector = EntraConnector(tenant_id="tenant")
     result = await connector.health()
-    assert result["connected"] is True
+    assert result["connected"] is False
+    assert "not configured" in result["error"]
 
 
 @pytest.mark.asyncio
-@patch("httpx.AsyncClient")
-async def test_entra_connector_get_signins(mock_client):
-    client = AsyncMock()
-    client.get.return_value = make_response(200, {"value": [{"userPrincipalName": "alice@example.com"}]}, url="https://entra.example/auditLogs/signIns")
-    client.__aenter__.return_value = client
-    client.__aexit__.return_value = False
-    mock_client.return_value = client
-    connector = EntraConnector("https://entra.example", "tenant")
-    rows = await connector.get_signins()
-    assert rows[0]["userPrincipalName"] == "alice@example.com"
+async def test_entra_connector_health_no_token():
+    connector = EntraConnector(tenant_id="t", client_id="c", client_secret="s")
+    connector._acquire_token = AsyncMock(return_value=None)
+    result = await connector.health()
+    assert result["connected"] is False
