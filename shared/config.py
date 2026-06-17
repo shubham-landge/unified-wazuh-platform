@@ -254,6 +254,15 @@ class Settings(BaseSettings):
     llm_tier_full_model: str = "CyberCrew/notmythos-8b"  # 2.0GB, 128K context, cybersecurity-specialized
     llm_tier_level_threshold: int = 10
     llm_tier_score_threshold: int = 4
+
+    # ── Cloud escalation tier (deep analysis for the hardest cases) ──
+    # Local qwen (fast) → notmythos (full) stay always-on CPU tiers. Escalation is
+    # opt-in: only cross-domain/advancing incidents or very high routing scores go
+    # to the cloud, so the CPU-only baseline holds and cloud cost stays bounded.
+    llm_tier_escalation_enabled: bool = False
+    llm_tier_escalation_provider: str = "gemini"
+    llm_tier_escalation_model: str = "gemini-2.5-flash"
+    llm_tier_escalation_score_threshold: int = 7
     llm_tier_burst_window_minutes: int = 10
     llm_tier_known_bad_ips: str = ""  # comma-separated
     llm_tier_complex_techniques: str = "T1569.002,T1059.001,T1021.001,T1485,T1490"  # lateral movement, ransomware, etc.

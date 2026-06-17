@@ -173,6 +173,9 @@ class OllamaProvider(LLMProvider):
                 {"role": "user", "content": masked_user},
             ],
             "stream": False,
+            # Constrain decoding to valid JSON so triage responses parse reliably
+            # on the CPU-only models, which otherwise wrap JSON in prose.
+            "format": "json",
             "options": {
                 "temperature": temp,
                 "top_p": top_p,
@@ -240,3 +243,26 @@ def get_provider() -> LLMProvider:
     else:
         logger.warning("Unknown LLM provider %s, falling back to Ollama", provider_name)
         return OllamaProvider()
+
+
+def build_provider(provider_name: str, model: str | None = None) -> LLMProvider:
+    """Construct a provider by name + optional model override.
+
+    Used by the tiered router to materialise the fast / full / escalation tiers,
+    which may each point at a different provider (e.g. local Ollama for fast/full,
+    cloud Gemini for escalation).
+    """
+    name = (provider_name or "ollama").lower()
+    if name == "ollama":
+        return OllamaProvider(model=model)
+    elif name == "openai":
+        from shared.connectors.llm_openai import OpenAIProvider
+        return OpenAIProvider(model=model) if model else OpenAIProvider()
+    elif name == "gemini":
+        from shared.connectors.llm_gemini import GeminiProvider
+        return GeminiProvider(model=model)
+    elif name == "claude":
+        from shared.connectors.llm_claude import ClaudeProvider
+        return ClaudeProvider(model=model) if model else ClaudeProvider()
+    logger.warning("Unknown provider %s for tier; using Ollama", provider_name)
+    return OllamaProvider(model=model)
