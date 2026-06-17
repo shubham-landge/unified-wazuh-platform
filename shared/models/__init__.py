@@ -36,3 +36,4 @@ from shared.models.ticketing import TicketingConfig, TicketLink
 from shared.models.usage import TenantUsage, UsageRecord
 from shared.models.approval import ApprovalRequest
 from shared.models.entity import Entity, AlertEntity, IncidentEntity
+from shared.models.wazuh_health import WazuhHealthSnapshot

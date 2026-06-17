@@ -1064,3 +1064,33 @@ ALTER TABLE agent_definitions ADD COLUMN IF NOT EXISTS autonomy_level VARCHAR(16
 CREATE INDEX IF NOT EXISTS idx_alerts_tenant_created ON alerts (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_cases_tenant_created ON cases (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_triage_tenant_created ON ai_triage_results (tenant_id, created_at DESC);
+
+-- ─── Wazuh Environment Health snapshots (overlay observability) ───
+-- Written by wazuh_health_worker each poll; powers the Wazuh Environment view,
+-- Prometheus gauges, and threshold alerts on Wazuh's own health.
+CREATE TABLE IF NOT EXISTS wazuh_health_snapshots (
+    id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id                 UUID,
+    manager_label             VARCHAR(64) DEFAULT 'default',
+    captured_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    agents_active             INTEGER DEFAULT 0,
+    agents_disconnected       INTEGER DEFAULT 0,
+    agents_never_connected    INTEGER DEFAULT 0,
+    agents_pending            INTEGER DEFAULT 0,
+    agents_total              INTEGER DEFAULT 0,
+    cluster_status            VARCHAR(24) DEFAULT 'unknown',
+    manager_all_running       BOOLEAN DEFAULT true,
+    analysisd_eps             DOUBLE PRECISION DEFAULT 0,
+    analysisd_queue_pct       DOUBLE PRECISION DEFAULT 0,
+    events_dropped            INTEGER DEFAULT 0,
+    indexer_status            VARCHAR(16) DEFAULT 'unknown',
+    indexer_unassigned_shards INTEGER DEFAULT 0,
+    ingestion_lag_seconds     DOUBLE PRECISION,
+    self_poller_lag_seconds   DOUBLE PRECISION,
+    self_triage_queue_depth   INTEGER DEFAULT 0,
+    overall_status            VARCHAR(16) DEFAULT 'healthy',
+    issues                    JSONB DEFAULT '[]',
+    raw                       JSONB DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_wazuh_health_captured ON wazuh_health_snapshots (captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wazuh_health_label_captured ON wazuh_health_snapshots (manager_label, captured_at DESC);

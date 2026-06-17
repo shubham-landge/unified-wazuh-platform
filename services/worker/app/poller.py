@@ -28,6 +28,10 @@ class AlertPoller:
         while True:
             try:
                 await self.poll()
+                # Heartbeat for the Wazuh-health self-SLA monitor.
+                await self.redis_client.set(
+                    "poller:last_run", datetime.now(timezone.utc).isoformat()
+                )
             except Exception as e:
                 logger.error("Poll cycle failed: %s", e, exc_info=True)
             await asyncio.sleep(settings.poll_interval_seconds)

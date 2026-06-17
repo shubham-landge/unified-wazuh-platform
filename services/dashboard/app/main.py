@@ -1281,6 +1281,22 @@ async def health_page(request: Request):
     })
 
 
+@app.get("/wazuh-environment", response_class=HTMLResponse)
+async def wazuh_environment_page(request: Request):
+    redirect = require_login(request)
+    if redirect:
+        return redirect
+    env = await api_request("GET", "/wazuh/environment")
+    snapshot = env.get("snapshot") if isinstance(env, dict) else None
+    return templates.TemplateResponse("wazuh_health.html", {
+        "request": request,
+        "snapshot": snapshot,
+        "page": "wazuh-environment",
+        "current_user": get_session_user(request),
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    })
+
+
 @app.get("/health/status", response_class=HTMLResponse)
 async def health_status_partial(request: Request):
     wazuh_health = await api_request("GET", "/wazuh/health")

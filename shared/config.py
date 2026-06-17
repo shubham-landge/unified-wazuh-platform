@@ -297,6 +297,18 @@ class Settings(BaseSettings):
     # Comma-separated list of agent types allowed to run in "full" autonomy (no human gate).
     agent_full_autonomy_types: str = "triage,correlation"
 
+    # ── Wazuh Environment Health Monitoring ──
+    # The overlay watches Wazuh itself (agents, manager/cluster, indexer/ingestion)
+    # plus our own pipeline, and raises alerts when Wazuh's own health degrades.
+    wazuh_health_enabled: bool = True
+    wazuh_health_poll_interval_seconds: int = 120
+    # Warn when this fraction of enrolled agents are disconnected (0.2 = 20%).
+    wazuh_health_agent_disconnect_pct_warn: float = 0.2
+    # Warn when newest alert is older than this many seconds (ingestion stalled).
+    wazuh_health_ingestion_lag_warn_seconds: int = 600
+    # Warn when analysisd dropped at least this many events since last poll.
+    wazuh_health_events_dropped_warn: int = 100
+
     # ── Triggers (Suna-inspired cron + webhook automation) ──
     # Cron triggers: spawn agent sessions on schedule.
     # Format: cron_expression;agent_type;description  (comma-separated list)

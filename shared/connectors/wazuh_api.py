@@ -178,6 +178,96 @@ class WazuhAPIConnector:
             logger.error("Failed to fetch rules: %s", e)
             return []
 
+    async def _get_json(self, path: str, params: dict | None = None) -> dict:
+        """GET a JSON endpoint with circuit-breaker + one re-auth retry.
+
+        Returns the parsed JSON body (full envelope). Raises on failure so
+        callers can decide how to degrade.
+        """
+        async def _do():
+            client = await self._get_client()
+            resp = await client.get(f"{self.base_url}{path}", params=params or {})
+            resp.raise_for_status()
+            return resp.json()
+
+        try:
+            return await self._cb_call(_do)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                client = await self._reauthenticate()
+                resp = await client.get(f"{self.base_url}{path}", params=params or {})
+                resp.raise_for_status()
+                return resp.json()
+            raise
+
+    async def get_agents_summary(self) -> dict:
+        """Agent connectivity counts: active / disconnected / never_connected / pending."""
+        try:
+            data = await self._get_json("/agents/summary/status")
+            d = data.get("data", {})
+            # Wazuh returns either flat counts or a 'connection' sub-dict by version.
+            conn = d.get("connection", d)
+            return {
+                "active": conn.get("active", 0),
+                "disconnected": conn.get("disconnected", 0),
+                "never_connected": conn.get("never_connected", 0),
+                "pending": conn.get("pending", 0),
+                "total": conn.get("total", 0),
+                "label": self.label,
+            }
+        except Exception as e:
+            logger.warning("Failed to fetch agent summary: %s", e)
+            return {"active": 0, "disconnected": 0, "never_connected": 0,
+                    "pending": 0, "total": 0, "label": self.label, "error": str(e)}
+
+    async def get_cluster_health(self) -> dict:
+        """Cluster node health. Tolerates single-node (cluster disabled) managers."""
+        try:
+            status = await self._get_json("/cluster/status")
+            enabled = status.get("data", {}).get("enabled", "no") == "yes"
+            if not enabled:
+                return {"enabled": False, "status": "standalone", "nodes": 1, "label": self.label}
+            hc = await self._get_json("/cluster/healthcheck")
+            nodes = hc.get("data", {}).get("affected_items", [])
+            return {"enabled": True, "status": "ok" if nodes else "unknown",
+                    "nodes": len(nodes), "label": self.label}
+        except Exception as e:
+            logger.warning("Failed to fetch cluster health: %s", e)
+            return {"enabled": False, "status": "error", "nodes": 0,
+                    "label": self.label, "error": str(e)}
+
+    async def get_manager_stats(self) -> dict:
+        """analysisd throughput: events received/dropped and queue usage."""
+        try:
+            data = await self._get_json("/manager/stats/analysisd")
+            items = data.get("data", {}).get("affected_items", [])
+            stats = items[0] if items else {}
+            return {
+                "events_received": stats.get("total_events_decoded", stats.get("events_received", 0)),
+                "events_dropped": stats.get("events_dropped", 0),
+                "event_queue_usage": stats.get("event_queue_usage", 0.0),
+                "rule_matching_queue_usage": stats.get("rule_matching_queue_usage", 0.0),
+                "label": self.label,
+            }
+        except Exception as e:
+            logger.warning("Failed to fetch manager stats: %s", e)
+            return {"events_received": 0, "events_dropped": 0, "event_queue_usage": 0.0,
+                    "rule_matching_queue_usage": 0.0, "label": self.label, "error": str(e)}
+
+    async def get_manager_status(self) -> dict:
+        """Daemon run-state map; flags any daemon not 'running'."""
+        try:
+            data = await self._get_json("/manager/status")
+            daemons = data.get("data", {}).get("affected_items", [{}])
+            daemon_map = daemons[0] if daemons else {}
+            stopped = [name for name, state in daemon_map.items() if state != "running"]
+            return {"daemons": daemon_map, "all_running": not stopped,
+                    "stopped": stopped, "label": self.label}
+        except Exception as e:
+            logger.warning("Failed to fetch manager status: %s", e)
+            return {"daemons": {}, "all_running": False, "stopped": [],
+                    "label": self.label, "error": str(e)}
+
     async def close(self):
         if self._client:
             await self._client.aclose()
