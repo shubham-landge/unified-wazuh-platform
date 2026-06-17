@@ -277,6 +277,28 @@ class Settings(BaseSettings):
     credential_leak_monitored_domains: str = ""  # comma-separated
     credential_leak_check_interval_seconds: int = 86400
 
+    # ── Agent Personas ──
+    # Path to agents/ directory containing persona markdown files.
+    # Each file declares: agent_type, autonomy_level, model_tier, risk_class, tools.
+    agents_personas_path: str = "/app/agents"
+    # Default autonomy level applied to any agent type without an explicit persona file.
+    # Values: read-only | approval | full
+    agent_default_autonomy_level: str = "read-only"
+    # Comma-separated list of agent types allowed to run in "full" autonomy (no human gate).
+    agent_full_autonomy_types: str = "triage,correlation"
+
+    # ── Triggers (Suna-inspired cron + webhook automation) ──
+    # Cron triggers: spawn agent sessions on schedule.
+    # Format: cron_expression;agent_type;description  (comma-separated list)
+    # Example: "0 2 * * *;meta_agent;Nightly missed-detection scan"
+    triggers_cron: str = ""
+    # Webhook triggers: spawn agents when an external event fires.
+    # Format: path_secret;agent_type;description  (comma-separated list)
+    # Example: "siem-webhook-a1b2c3;triage;External SIEM webhook"
+    triggers_webhooks: str = ""
+    # Auto-approve actions from agents at or above this autonomy level.
+    triggers_auto_approve_autonomy: str = "full"
+
 settings = Settings()
 
 
