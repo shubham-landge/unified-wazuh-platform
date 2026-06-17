@@ -19,6 +19,8 @@ from shared.models.case_event import CaseEvent
 from shared.models.soar import SoarExecution, SoarPlaybook
 from shared.models.ueba import UebaAnomaly
 from shared.orchestrator.engine import HandlerContext
+from shared.correlation import extract_entities, stitch_incident, compute_killchain_stage
+from shared.orchestrator.enrichment import enrich_incident
 
 logger = logging.getLogger(__name__)
 
@@ -524,11 +526,11 @@ async def lead(input_data: dict, ctx: HandlerContext) -> dict:
 
 
 async def correlation(input_data: dict, ctx: HandlerContext) -> dict:
-    """Group related alerts into one incident bundle.
+    """Group related alerts into one cross-domain incident bundle.
 
-    Looks for an existing open AlertIncident keyed by the strongest common
-    attribute across the supplied alert IDs and either creates a new incident
-    or appends to the existing one.
+    Phase 9: uses entity-based stitching (shared/correlation/stitch.py)
+    instead of the old endpoint-only group_key. Also runs parallel
+    enrichment (TI, asset, user-risk, UEBA, RAG) before returning.
     """
     alert_ids = input_data.get("alert_ids") or [input_data.get("alert_id")]
     alert_ids = [a for a in alert_ids if a]
@@ -544,61 +546,47 @@ async def correlation(input_data: dict, ctx: HandlerContext) -> dict:
     if not alerts:
         raise ValueError(f"No alerts found for ids {alert_ids}")
 
-    # Prefer a common grouping attribute; fall back to a deterministic compound key.
     first = alerts[0]
-    group_key_parts = []
-    if first.source_ip:
-        group_key_parts.append(f"src:{first.source_ip}")
-    if first.user_name:
-        group_key_parts.append(f"user:{first.user_name}")
-    if first.mitre_technique:
-        group_key_parts.append(f"technique:{first.mitre_technique}")
-    if first.agent_id:
-        group_key_parts.append(f"agent:{first.agent_id}")
-    group_key = "|".join(group_key_parts) if group_key_parts else f"rule:{first.rule_id}"
+    tenant_id = ctx.run.tenant_id
 
-    # Look for an existing open incident with the same grouping key.
-    result = await ctx.session.execute(
-        select(AlertIncident)
-        .where(
-            AlertIncident.group_key == group_key,
-            AlertIncident.status == "open",
+    # Phase 9: cross-domain entity-based stitching
+    incident = await stitch_incident(ctx.session, first, tenant_id)
+
+    for extra_alert in alerts[1:]:
+        if not hasattr(extra_alert, "rule_level"):
+            continue
+        existing = await ctx.session.execute(
+            select(AlertIncident).where(AlertIncident.id == incident.id)
         )
-        .order_by(AlertIncident.created_at.desc())
-        .limit(1)
-    )
-    incident = result.scalar_one_or_none()
-
-    if incident:
-        incident.alert_count += len(alerts)
+        incident = existing.scalar_one_or_none() or incident
+        incident.alert_count = max(incident.alert_count, len(alerts))
         incident.last_alert_at = datetime.now(timezone.utc)
-        if first.severity in ("critical", "high"):
-            incident.severity = first.severity
-        await ctx.session.flush()
-    else:
-        incident = AlertIncident(
-            tenant_id=ctx.run.tenant_id,
-            group_key=group_key,
-            rule_id=first.rule_id,
-            rule_description=first.rule_description,
-            agent_id=first.agent_id,
-            source_ip=first.source_ip,
-            alert_count=len(alerts),
-            severity=first.severity,
-            status="open",
-            first_alert_at=datetime.now(timezone.utc),
-            last_alert_at=datetime.now(timezone.utc),
-            notes=input_data.get("notes"),
-        )
-        ctx.session.add(incident)
-        await ctx.session.flush()
 
-    few_shot = await _few_shot("correlation", input_data)
+    await ctx.session.flush()
+
+    await compute_killchain_stage(ctx.session, incident)
+
+    # Set SLA timer for advancing incidents
+    from shared.correlation.killchain import is_advancing
+    if is_advancing(incident.kill_chain_stage) and not incident.sla_due_at:
+        incident.sla_due_at = datetime.now(timezone.utc) + timedelta(minutes=72)
+
+    await ctx.session.flush()
+
+    # Phase 9: parallel enrichment fan-out
+    evidence = await enrich_incident(ctx.session, incident)
+    few_shot = evidence.few_shot_examples or await _few_shot("correlation", input_data)
 
     return {
         "incident_id": str(incident.id),
-        "group_key": group_key,
         "alert_count": incident.alert_count,
+        "cross_domain": incident.cross_domain,
+        "source_domains": incident.source_domains,
+        "kill_chain_stage": incident.kill_chain_stage,
+        "sla_due_at": incident.sla_due_at.isoformat() if incident.sla_due_at else None,
+        "stage_history": incident.stage_history,
+        "evidence": evidence.to_dict(),
+        "few_shot": few_shot,
         "severity": incident.severity,
         "status": incident.status,
         "alert_ids": [str(a.id) for a in alerts],

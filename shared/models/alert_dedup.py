@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Integer, Text
+from sqlalchemy import String, DateTime, Integer, Text, Boolean, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 from shared.models.base import Base, NullableTenantMixin
@@ -34,6 +34,13 @@ class AlertIncident(Base, NullableTenantMixin):
     correlation_window_minutes: Mapped[int] = mapped_column(Integer, default=120)
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    cross_domain: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_domains: Mapped[list] = mapped_column(JSON, default=list)
+    kill_chain_stage: Mapped[str] = mapped_column(String(24), default="unknown")
+    stage_history: Mapped[list] = mapped_column(JSON, default=list)
+    sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

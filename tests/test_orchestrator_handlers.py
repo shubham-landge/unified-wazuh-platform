@@ -315,13 +315,15 @@ class TestCorrelationHandler:
         alert.rule_id = 123
         alert.rule_description = "Login anomaly"
         alert.severity = "high"
+        alert.rule_level = 12
+        alert.source_type = "endpoint"
+        alert.created_at = datetime.now(timezone.utc)
 
         alert_result = MagicMock()
         alert_result.scalar_one_or_none.return_value = alert
-        incident_result = MagicMock()
-        incident_result.scalar_one_or_none.return_value = None
+
         mock_session = AsyncMock()
-        mock_session.execute = AsyncMock(side_effect=[alert_result, incident_result])
+        mock_session.execute = AsyncMock(side_effect=[alert_result])
         mock_session.flush = AsyncMock()
         added = []
         mock_session.add = lambda obj: added.append(obj)
@@ -331,13 +333,37 @@ class TestCorrelationHandler:
         mock_task = MagicMock()
         ctx = HandlerContext(session=mock_session, run=mock_run, task=mock_task)
 
-        result = await handlers.correlation({"alert_ids": [str(alert.id)]}, ctx)
+        mock_incident = MagicMock(spec=AlertIncident)
+        mock_incident.id = uuid.uuid4()
+        mock_incident.alert_count = 1
+        mock_incident.cross_domain = False
+        mock_incident.source_domains = ["endpoint"]
+        mock_incident.kill_chain_stage = "unknown"
+        mock_incident.stage_history = []
+        mock_incident.sla_due_at = None
+        mock_incident.severity = "high"
+        mock_incident.status = "open"
 
-        assert result["group_key"] == "src:10.0.0.1|user:alice|technique:T1078"
-        assert result["alert_count"] == 1
-        assert result["severity"] == "high"
-        assert len(added) == 1
-        assert isinstance(added[0], AlertIncident)
+        mock_evidence = MagicMock()
+        mock_evidence.few_shot_examples = []
+        mock_evidence.to_dict.return_value = {"enriched_at": "2026-01-01T00:00:00"}
+
+        with patch("shared.orchestrator.handlers.stitch_incident", new_callable=AsyncMock) as mock_stitch:
+            with patch("shared.orchestrator.handlers.enrich_incident", new_callable=AsyncMock) as mock_enrich:
+                with patch("shared.orchestrator.handlers.compute_killchain_stage", new_callable=AsyncMock) as mock_kc:
+                    mock_stitch.return_value = mock_incident
+                    mock_enrich.return_value = mock_evidence
+                    mock_kc.return_value = "unknown"
+
+                    result = await handlers.correlation({"alert_ids": [str(alert.id)]}, ctx)
+
+                    assert result["incident_id"] is not None
+                    assert result["alert_count"] == 1
+                    assert result["severity"] == "high"
+                    assert result["cross_domain"] == False
+                    assert result["source_domains"] == ["endpoint"]
+                    mock_stitch.assert_awaited_once()
+                    mock_enrich.assert_awaited_once()
 
 
 class TestResponsePlannerHandler:

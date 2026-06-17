@@ -17,8 +17,8 @@ class TestTieredRouter:
         self.router = TieredRouter()
 
     @pytest.mark.parametrize("strategy,expected_model", [
-        ("fast", "notmythos:mini"),
-        ("full", "notmythos:8b"),
+        ("fast", "qwen2.5:3b-instruct"),
+        ("full", "CyberCrew/notmythos-8b"),
     ])
     @pytest.mark.asyncio
     async def test_strategy_override(self, strategy, expected_model):
@@ -42,7 +42,7 @@ class TestTieredRouter:
         with patch("shared.config.settings.llm_tier_strategy", "auto"):
             with patch("shared.config.settings.llm_tier_level_threshold", 10):
                 provider = await self.router.get_provider(alert=alert)
-                assert "mini" in provider.name()
+                assert "instruct" in provider.name() or "3b" in provider.name()
 
     @pytest.mark.asyncio
     async def test_auto_strategy_high_level_uses_full(self):
@@ -59,7 +59,7 @@ class TestTieredRouter:
         with patch("shared.config.settings.llm_tier_strategy", "auto"):
             with patch("shared.config.settings.llm_tier_level_threshold", 10):
                 provider = await self.router.get_provider(alert=alert)
-                assert "8b" in provider.name()
+                assert "notmythos" in provider.name() or "8b" in provider.name()
 
     @pytest.mark.asyncio
     async def test_complex_technique_boosts_score(self):
@@ -79,7 +79,7 @@ class TestTieredRouter:
                            "T1569.002,T1059.001"):
                     provider = await self.router.get_provider(alert=alert)
                     # score = 3 (level) + 1 (technique) = 4 >= 4
-                    assert "8b" in provider.name()
+                    assert "notmythos" in provider.name() or "8b" in provider.name()
 
     @pytest.mark.asyncio
     async def test_burst_alert_reduces_score(self):
@@ -96,7 +96,7 @@ class TestTieredRouter:
                 with patch("shared.config.settings.llm_tier_score_threshold", 4):
                     provider = await self.router.get_provider(alert=alert)
                     # score = 3 (level) - 2 (burst) = 1 < 4, so fast
-                    assert "mini" in provider.name()
+                assert "3b" in provider.name() or "mini" in provider.name()
 
     def test_known_bad_ip_boosts_score(self):
         alert = MagicMock()

@@ -42,3 +42,7 @@ class Alert(Base, TenantMixin):
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     manager_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    source_type: Mapped[str] = mapped_column(String(24), default="endpoint")  # endpoint | identity | cloud | network | saas
+    principal: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    session_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
