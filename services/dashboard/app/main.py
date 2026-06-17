@@ -1665,6 +1665,20 @@ async def attack_heatmap(request: Request):
     })
 
 
+@app.get("/coverage-map", response_class=HTMLResponse)
+async def coverage_map_page(request: Request):
+    redirect = require_login(request)
+    if redirect:
+        return redirect
+    from shared.source_registry import get_registered_sources, get_mitre_coverage
+    return templates.TemplateResponse("coverage_map.html", {
+        "request": request,
+        "sources": get_registered_sources(),
+        "coverage": get_mitre_coverage(),
+        "page": "coverage-map",
+    })
+
+
 # --- AI Triage Feedback Console Routes ---
 
 @app.post("/feedback/{triage_id}")

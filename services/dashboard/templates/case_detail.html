@@ -8,10 +8,43 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/></svg>
             Back to Case Manager
         </a>
-        <div class="text-[10px] text-muted font-mono">
-            Created: {{ case.created_at[:19].replace('T', ' ') }}
+        <div class="flex items-center gap-3 text-[10px] font-mono">
+            {% if case.sla_due_at %}
+            <div class="flex items-center gap-1 bg-accent-red/10 border border-accent-red/20 text-accent-red px-2 py-0.5 rounded text-[10px] font-bold">
+                <span>SLA:</span>
+                <span id="sla-timer" data-due="{{ case.sla_due_at }}">Calculating...</span>
+            </div>
+            {% endif %}
+            {% if case.kill_chain_stage %}
+            <div class="text-accent-yellow font-bold uppercase">Kill Chain: {{ case.kill_chain_stage }}</div>
+            {% endif %}
+            <div class="text-muted">Created: {{ case.created_at[:19].replace('T', ' ') }}</div>
         </div>
     </div>
+
+    <script>
+        (function() {
+            const timerEl = document.getElementById('sla-timer');
+            if (!timerEl) return;
+            const dueStr = timerEl.getAttribute('data-due');
+            if (!dueStr) return;
+            const dueTime = new Date(dueStr).getTime();
+            function updateTimer() {
+                const now = new Date().getTime();
+                const diff = dueTime - now;
+                if (diff <= 0) {
+                    timerEl.textContent = 'EXPIRED';
+                    return;
+                }
+                const hours = Math.floor(diff / (1000 * 60 * 60));
+                const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+                timerEl.textContent = `${hours}h ${minutes}m ${seconds}s`;
+            }
+            updateTimer();
+            setInterval(updateTimer, 1000);
+        })();
+    </script>
 
     <!-- Case Identity Block -->
     <div class="card-premium bg-gradient-to-r from-surface to-elevated/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -56,6 +89,71 @@
                 Close Case
             </button>
             {% endif %}
+        </div>
+    </div>
+
+    <!-- Kill Chain Progression Bar -->
+    <div class="card-premium">
+        <div class="flex items-center justify-between mb-4 pb-2 border-b border-white/5">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider">MITRE ATT&CK Kill Chain Progression</h3>
+            {% if case.cross_domain %}
+            <span class="text-[10px] bg-accent-red/20 border border-accent-red text-accent-red font-bold px-2 py-0.5 rounded animate-pulse">Advancing Cross-Domain Threat</span>
+            {% endif %}
+        </div>
+        <div class="flex items-center justify-between w-full relative py-2">
+            <div class="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[2px] bg-white/5 z-0"></div>
+            
+            <div class="flex flex-col items-center z-10 flex-1">
+                <div class="w-7 h-7 rounded-full flex items-center justify-center font-bold text-[10px] border-2 transition-all 
+                    {% if case.kill_chain_stage in ['initial_access', 'persistence', 'priv_esc', 'lateral', 'lateral_movement', 'exfil', 'exfiltration', 'impact'] %}
+                    bg-accent-blue/20 border-accent-blue text-white shadow-[0_0_10px_rgba(59,130,246,0.5)]
+                    {% else %}
+                    bg-surface border-white/10 text-muted
+                    {% endif %}">
+                    1
+                </div>
+                <span class="text-[9px] mt-1.5 font-bold uppercase tracking-wider 
+                    {% if case.kill_chain_stage == 'initial_access' %}text-accent-blue{% else %}text-muted{% endif %}">Initial Access</span>
+            </div>
+            
+            <div class="flex flex-col items-center z-10 flex-1">
+                <div class="w-7 h-7 rounded-full flex items-center justify-center font-bold text-[10px] border-2 transition-all 
+                    {% if case.kill_chain_stage in ['persistence', 'priv_esc', 'lateral', 'lateral_movement', 'exfil', 'exfiltration', 'impact'] %}
+                    bg-accent-yellow/20 border-accent-yellow text-white shadow-[0_0_10px_rgba(234,179,8,0.5)]
+                    {% else %}
+                    bg-surface border-white/10 text-muted
+                    {% endif %}">
+                    2
+                </div>
+                <span class="text-[9px] mt-1.5 font-bold uppercase tracking-wider 
+                    {% if case.kill_chain_stage in ['persistence', 'priv_esc'] %}text-accent-yellow{% else %}text-muted{% endif %}">Persistence / Esc</span>
+            </div>
+            
+            <div class="flex flex-col items-center z-10 flex-1">
+                <div class="w-7 h-7 rounded-full flex items-center justify-center font-bold text-[10px] border-2 transition-all 
+                    {% if case.kill_chain_stage in ['lateral', 'lateral_movement', 'exfil', 'exfiltration', 'impact'] %}
+                    bg-accent-orange/20 border-orange-500 text-white shadow-[0_0_10px_rgba(249,115,22,0.5)]
+                    {% else %}
+                    bg-surface border-white/10 text-muted
+                    {% endif %}">
+                    3
+                </div>
+                <span class="text-[9px] mt-1.5 font-bold uppercase tracking-wider 
+                    {% if case.kill_chain_stage in ['lateral', 'lateral_movement'] %}text-orange-500{% else %}text-muted{% endif %}">Lateral Movement</span>
+            </div>
+            
+            <div class="flex flex-col items-center z-10 flex-1">
+                <div class="w-7 h-7 rounded-full flex items-center justify-center font-bold text-[10px] border-2 transition-all 
+                    {% if case.kill_chain_stage in ['exfil', 'exfiltration', 'impact'] %}
+                    bg-accent-red/20 border-accent-red text-white shadow-[0_0_10px_rgba(239,68,68,0.5)]
+                    {% else %}
+                    bg-surface border-white/10 text-muted
+                    {% endif %}">
+                    4
+                </div>
+                <span class="text-[9px] mt-1.5 font-bold uppercase tracking-wider 
+                    {% if case.kill_chain_stage in ['exfil', 'exfiltration', 'impact'] %}text-accent-red{% else %}text-muted{% endif %}">Exfiltration / Impact</span>
+            </div>
         </div>
     </div>
 
