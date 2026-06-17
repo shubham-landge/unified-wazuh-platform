@@ -1,7 +1,9 @@
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from unittest.mock import patch
 
+import httpx
 import pytest
 
 from services.mcp import server as mcp_server
@@ -67,10 +69,53 @@ class FakeCtx:
         return False
 
 
+def make_response(status_code: int, json_data: dict | list | None = None, url: str = "https://wazuh.example"):
+    request = httpx.Request("GET", url)
+    if json_data is None:
+        return httpx.Response(status_code, request=request)
+    content = mcp_server.json.dumps(json_data).encode("utf-8")
+    return httpx.Response(status_code, request=request, content=content, headers={"Content-Type": "application/json"})
+
+
+def make_httpx_client(*responses):
+    client = AsyncMock()
+    response_iter = iter(responses)
+
+    async def _post(url, *args, **kwargs):
+        if "authenticate" in url:
+            return make_response(200, {"data": {"token": "token-1"}}, url=url)
+        return next(response_iter)
+
+    async def _request(method, url, *args, **kwargs):
+        return next(response_iter)
+
+    client.post.side_effect = _post
+    client.request.side_effect = _request
+    client.get.side_effect = _request
+    client.__aenter__.return_value = client
+    client.__aexit__.return_value = False
+    return client
+
+
 @pytest.mark.asyncio
 async def test_tools_registered():
     tools = getattr(mcp_server.server, "tools", {})
-    assert {"list_alerts", "get_triage", "get_agents", "list_rules", "get_stats", "list_vulnerabilities", "create_case", "run_playbook"}.issubset(set(tools))
+    assert {
+        "list_alerts",
+        "get_triage",
+        "get_agents",
+        "list_rules",
+        "get_stats",
+        "list_vulnerabilities",
+        "create_case",
+        "run_playbook",
+        "query_indexer",
+        "get_agent_info",
+        "list_agents",
+        "manager_status",
+        "search_rules",
+        "get_syscollector",
+    }.issubset(set(tools))
 
 
 @pytest.mark.asyncio
@@ -201,3 +246,89 @@ async def test_create_case_and_gated_playbook(monkeypatch):
     gated = await mcp_server._run_playbook(session, None, None, None, False, None)
     assert created["status"] == "success"
     assert gated["success"] is False
+
+
+@pytest.mark.asyncio
+@patch("httpx.AsyncClient")
+async def test_query_indexer_returns_results(mock_client):
+    client = make_httpx_client(
+        make_response(200, {"hits": {"total": {"value": 1}, "hits": [{"_source": {"rule_id": 1, "message": "alert"}}]}}, url="https://indexer.example/wazuh-alerts-*/_search")
+    )
+    mock_client.return_value = client
+    result = await mcp_server.call_tool(
+        mcp_server.ToolRequest(
+            tool="query_indexer",
+            params={"index": "wazuh-alerts-*", "query": {"query": {"match_all": {}}}, "size": 10},
+        )
+    )
+    assert result["status_code"] == 200
+    assert result["count"] == 1
+    assert result["results"][0]["rule_id"] == 1
+
+
+@pytest.mark.asyncio
+@patch("httpx.AsyncClient")
+async def test_list_agents_returns_filtered(mock_client):
+    client = make_httpx_client(
+        make_response(
+            200,
+            {
+                "data": {
+                    "affected_items": [
+                        {"id": "001", "status": "active", "name": "agent-1"},
+                        {"id": "002", "status": "disconnected", "name": "agent-2"},
+                    ]
+                }
+            },
+            url="https://wazuh.example/agents",
+        ),
+    )
+    mock_client.return_value = client
+    result = await mcp_server.call_tool(
+        mcp_server.ToolRequest(tool="list_agents", params={"status": "active", "limit": 50, "offset": 0})
+    )
+    assert result["status_code"] == 200
+    assert result["count"] == 1
+    assert result["agents"][0]["status"] == "active"
+
+
+@pytest.mark.asyncio
+@patch("httpx.AsyncClient")
+async def test_manager_status_returns_connected(mock_client):
+    client = make_httpx_client(
+        make_response(200, {"data": {"status": "running"}}, url="https://wazuh.example/manager/status"),
+    )
+    mock_client.return_value = client
+    result = await mcp_server.call_tool(mcp_server.ToolRequest(tool="manager_status", params={}))
+    assert result["status_code"] == 200
+    assert result["connected"] is True
+    assert result["status"]["data"]["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_tool_missing_required_param_returns_400():
+    result = await mcp_server.call_tool(mcp_server.ToolRequest(tool="get_agent_info", params={}))
+    assert result["status_code"] == 400
+    assert result["success"] is False
+
+
+@pytest.mark.asyncio
+@patch("httpx.AsyncClient")
+async def test_wazuh_api_unreachable_returns_502(mock_client):
+    client = AsyncMock()
+
+    async def _post(url, *args, **kwargs):
+        return make_response(200, {"data": {"token": "token-1"}}, url=url)
+
+    async def _request(method, url, *args, **kwargs):
+        raise httpx.ConnectError("unreachable", request=httpx.Request(method, url))
+
+    client.post.side_effect = _post
+    client.request.side_effect = _request
+    client.__aenter__.return_value = client
+    client.__aexit__.return_value = False
+    mock_client.return_value = client
+
+    result = await mcp_server.call_tool(mcp_server.ToolRequest(tool="get_agent_info", params={"agent_id": "001"}))
+    assert result["status_code"] == 502
+    assert result["success"] is False

@@ -2,7 +2,7 @@
 
 > **Project Board**: https://github.com/users/shubham-landge/projects/1
 > **Repository**: https://github.com/shubham-landge/unified-wazuh-platform
-> **Updated**: 2026-06-13
+> **Updated**: 2026-06-17
 
 ---
 
@@ -61,6 +61,7 @@
 | Track | Tool | What was built | Status |
 |---|---|---|---|
 | OSINT Integration | Codex | Maigret connector, OSINT lookup API, OSINT worker, OSINT dashboard page | ✅ main |
+| MCP / Wazuh Direct Tools | Codex | Direct Wazuh API and Indexer MCP tools with circuit breaker and dispatcher | ✅ main |
 | Multi-Agent Orchestration | Claude | Agent definition/run/task models, orchestration engine, agent worker, agents dashboard | ✅ main |
 | Human-Approved Actions | Antigravity | ApprovalRequest model, approvals API, approval worker with expiry, approvals dashboard UI | ✅ main |
 | Ticketing Integrations | OpenCode | ServiceNow + Jira connectors, ticketing config/model API, ticketing sync worker, ticketing settings dashboard | ✅ main |

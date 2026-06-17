@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import sys
 import uuid
@@ -8,6 +9,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import httpx
+from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, select
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +41,7 @@ except Exception:
 from app.db import async_session
 from app.routers.cases import CaseCreate, create_case as api_create_case
 from shared.config import settings
+from shared.connectors.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 from shared.models.alert import Alert
 from shared.models.ai_triage_result import AiTriageResult
 from shared.models.asset import Asset
@@ -49,6 +53,21 @@ from shared.soar.engine import SOAREngine
 server = FastMCP("Unified Wazuh SOC Platform")
 mcp = server
 db_session_factory = async_session
+wazuh_api_breaker = CircuitBreaker(name="wazuh_api")
+wazuh_indexer_breaker = CircuitBreaker(name="wazuh_indexer")
+
+
+class ToolRequest(BaseModel):
+    tool: str
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolValidationError(ValueError):
+    pass
+
+
+class WazuhServiceError(RuntimeError):
+    pass
 
 
 def _session_context():
@@ -108,6 +127,130 @@ def _row(item: Any) -> dict[str, Any]:
             continue
         data[key] = _jsonable(value)
     return data
+
+
+def _require_param(params: dict[str, Any], name: str) -> Any:
+    value = params.get(name)
+    if value in (None, ""):
+        raise ToolValidationError(f"{name} is required")
+    return value
+
+
+def _first_item(data: Any) -> dict[str, Any] | None:
+    if isinstance(data, dict):
+        if "data" in data and isinstance(data["data"], dict):
+            for key in ("affected_items", "items", "results", "data"):
+                value = data["data"].get(key)
+                if isinstance(value, list) and value:
+                    first = value[0]
+                    if isinstance(first, dict):
+                        return first
+            if data["data"]:
+                return data["data"]
+        for key in ("affected_items", "items", "results", "data"):
+            value = data.get(key)
+            if isinstance(value, list) and value:
+                first = value[0]
+                if isinstance(first, dict):
+                    return first
+        return data
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        return data[0]
+    return None
+
+
+async def _wazuh_api_request(method: str, path: str, *, params: dict[str, Any] | None = None, json_body: dict[str, Any] | None = None) -> dict[str, Any]:
+    base_url = settings.wazuh_api_url.rstrip("/")
+    timeout = httpx.Timeout(10.0, read=30.0)
+    auth = (settings.wazuh_api_user, settings.wazuh_api_password.get_secret_value())
+
+    async with httpx.AsyncClient(verify=settings.wazuh_api_verify_ssl, timeout=timeout) as client:
+        try:
+            auth_resp = await client.post(
+                f"{base_url}/security/user/authenticate",
+                auth=auth,
+                headers={"Content-Type": "application/json"},
+            )
+            auth_resp.raise_for_status()
+            token = auth_resp.json()["data"]["token"]
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            }
+            response = await client.request(
+                method,
+                f"{base_url}{path}",
+                params=params,
+                json=json_body,
+                headers=headers,
+            )
+            if response.status_code == 401:
+                auth_resp = await client.post(
+                    f"{base_url}/security/user/authenticate",
+                    auth=auth,
+                    headers={"Content-Type": "application/json"},
+                )
+                auth_resp.raise_for_status()
+                token = auth_resp.json()["data"]["token"]
+                headers["Authorization"] = f"Bearer {token}"
+                response = await client.request(
+                    method,
+                    f"{base_url}{path}",
+                    params=params,
+                    json=json_body,
+                    headers=headers,
+                )
+            response.raise_for_status()
+            try:
+                return response.json()
+            except Exception:
+                return {"raw": response.text}
+        except httpx.HTTPStatusError as exc:
+            raise WazuhServiceError(str(exc)) from exc
+        except httpx.HTTPError as exc:
+            raise WazuhServiceError(str(exc)) from exc
+
+
+async def _wazuh_indexer_request(index: str, query: dict[str, Any]) -> dict[str, Any]:
+    base_url = settings.wazuh_indexer_url.rstrip("/")
+    timeout = httpx.Timeout(30.0)
+    auth = (settings.wazuh_indexer_user, settings.wazuh_indexer_password.get_secret_value())
+
+    async with httpx.AsyncClient(verify=settings.wazuh_indexer_verify_ssl, timeout=timeout, auth=auth) as client:
+        try:
+            response = await client.post(
+                f"{base_url}/{index}/_search",
+                json=query,
+                headers={"Content-Type": "application/json"},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as exc:
+            raise WazuhServiceError(str(exc)) from exc
+        except httpx.HTTPError as exc:
+            raise WazuhServiceError(str(exc)) from exc
+
+
+def _normalize_hits(data: dict[str, Any]) -> list[dict[str, Any]]:
+    hits = data.get("hits", {}) if isinstance(data, dict) else {}
+    if isinstance(hits, dict):
+        raw_hits = hits.get("hits", [])
+    else:
+        raw_hits = []
+    results: list[dict[str, Any]] = []
+    for hit in raw_hits:
+        if not isinstance(hit, dict):
+            continue
+        source = hit.get("_source")
+        if isinstance(source, dict):
+            results.append(source)
+            continue
+        results.append(hit)
+    return results
+
+
+async def _breaker_call(breaker: CircuitBreaker, func, *args, **kwargs):
+    return await breaker.call(func, *args, **kwargs)
 
 
 async def _list_alerts(session, limit: int, offset: int, min_level: int, tenant_id: str | None):
@@ -469,6 +612,96 @@ async def _run_playbook(
     return {"success": True, "results": await engine.run_for_alert(_row(alert))}
 
 
+async def _query_indexer(index: str, query: dict[str, Any], size: int = 100) -> dict[str, Any]:
+    payload = dict(query)
+    payload.setdefault("size", size)
+    data = await _breaker_call(wazuh_indexer_breaker, _wazuh_indexer_request, index, payload)
+    return {
+        "success": True,
+        "count": len(_normalize_hits(data)),
+        "results": _normalize_hits(data),
+        "raw": _jsonable(data),
+    }
+
+
+async def _get_agent_info(agent_id: str) -> dict[str, Any]:
+    data = await _breaker_call(wazuh_api_breaker, _wazuh_api_request, "GET", f"/agents/{agent_id}")
+    agent = _first_item(data) or data
+    return {
+        "success": True,
+        "agent": _jsonable(agent),
+        "raw": _jsonable(data),
+    }
+
+
+async def _list_agents(status: str | None = None, limit: int = 50, offset: int = 0) -> dict[str, Any]:
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if status:
+        params["status"] = status
+    data = await _breaker_call(wazuh_api_breaker, _wazuh_api_request, "GET", "/agents", params=params)
+    agents = data.get("data", {}).get("affected_items", []) if isinstance(data, dict) else []
+    if status:
+        agents = [agent for agent in agents if str(agent.get("status", "")).lower() == status.lower()]
+    return {
+        "success": True,
+        "count": len(agents),
+        "agents": _jsonable(agents),
+        "raw": _jsonable(data),
+    }
+
+
+async def _manager_status() -> dict[str, Any]:
+    data = await _breaker_call(wazuh_api_breaker, _wazuh_api_request, "GET", "/manager/status")
+    return {
+        "success": True,
+        "connected": True,
+        "status": _jsonable(data),
+    }
+
+
+async def _search_rules(group: str | None = None, level: int | None = None, description: str | None = None, limit: int = 100) -> dict[str, Any]:
+    params: dict[str, Any] = {"limit": limit}
+    if group:
+        params["group"] = group
+    if level is not None:
+        params["level"] = level
+    if description:
+        params["description"] = description
+    data = await _breaker_call(wazuh_api_breaker, _wazuh_api_request, "GET", "/rules", params=params)
+    rules = data.get("data", {}).get("affected_items", []) if isinstance(data, dict) else []
+    if group:
+        rules = [rule for rule in rules if group.lower() in str(rule.get("group", "")).lower() or group.lower() in str(rule.get("groups", "")).lower()]
+    if level is not None:
+        rules = [rule for rule in rules if int(rule.get("level", -1) or -1) == int(level)]
+    if description:
+        needle = description.lower()
+        rules = [rule for rule in rules if needle in str(rule.get("description", "")).lower()]
+    return {
+        "success": True,
+        "count": len(rules),
+        "rules": _jsonable(rules),
+        "raw": _jsonable(data),
+    }
+
+
+async def _get_syscollector(agent_id: str) -> dict[str, Any]:
+    data = await _breaker_call(wazuh_api_breaker, _wazuh_api_request, "GET", f"/syscollector/{agent_id}")
+    return {
+        "success": True,
+        "syscollector": _jsonable(data),
+    }
+
+
+TOOL_DISPATCH = {
+    "query_indexer": _query_indexer,
+    "get_agent_info": _get_agent_info,
+    "list_agents": _list_agents,
+    "manager_status": _manager_status,
+    "search_rules": _search_rules,
+    "get_syscollector": _get_syscollector,
+}
+
+
 @server.tool()
 async def list_alerts(
     limit: int = 50,
@@ -577,6 +810,76 @@ async def run_playbook(
             return await _run_playbook(session, alert_id, case_id, playbook_id, approved, tenant_id)
     except Exception as exc:
         return {"success": False, "error": str(exc)}
+
+
+@server.tool()
+async def query_indexer(index: str = "wazuh-alerts-*", query: dict[str, Any] | None = None, size: int = 100):
+    try:
+        if query is None:
+            raise ToolValidationError("query is required")
+        return await _query_indexer(index, query, size=size)
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@server.tool()
+async def get_agent_info(agent_id: str):
+    try:
+        return await _get_agent_info(agent_id)
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@server.tool()
+async def list_agents(limit: int = 50, offset: int = 0, status: str | None = None):
+    try:
+        return await _list_agents(status=status, limit=limit, offset=offset)
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@server.tool()
+async def manager_status():
+    try:
+        return await _manager_status()
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@server.tool()
+async def search_rules(
+    group: str | None = None,
+    level: int | None = None,
+    description: str | None = None,
+    limit: int = 100,
+):
+    try:
+        return await _search_rules(group=group, level=level, description=description, limit=limit)
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@server.tool()
+async def get_syscollector(agent_id: str):
+    try:
+        return await _get_syscollector(agent_id)
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+async def call_tool(request: ToolRequest) -> dict[str, Any]:
+    handler = TOOL_DISPATCH.get(request.tool)
+    if not handler:
+        return {"status_code": 404, "success": False, "error": f"Unknown tool: {request.tool}"}
+    try:
+        result = await handler(**request.params)
+        return {"status_code": 200, **result}
+    except (ToolValidationError, KeyError, TypeError) as exc:
+        return {"status_code": 400, "success": False, "error": str(exc)}
+    except (CircuitBreakerOpenError, WazuhServiceError) as exc:
+        return {"status_code": 502, "success": False, "error": str(exc)}
+    except Exception as exc:
+        return {"status_code": 500, "success": False, "error": str(exc)}
 
 
 def main():
