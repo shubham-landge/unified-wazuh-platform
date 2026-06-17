@@ -133,11 +133,39 @@ class OllamaProvider(LLMProvider):
         self.model = model or settings.ollama_model
         self._cb = CircuitBreaker(name="ollama", failure_threshold=3, recovery_timeout=60.0)
 
+    def _load_prompt_template(self, suffix: str = "triage") -> str:
+        """Load a per-model prompt template from the prompts directory.
+
+        Checks prompts/{model}_{suffix}.md, replacing any / with _ in the
+        model name (e.g. notmythos:8b -> notmythos_8b).
+        """
+        from pathlib import Path
+        safe_name = self.model.replace("/", "_").replace(":", "_")
+        prompt_path = Path(settings.prompts_path) / f"{safe_name}_{suffix}.md"
+        try:
+            if prompt_path.is_file():
+                return prompt_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            logger.debug("Failed to load prompt template %s: %s", prompt_path, exc)
+        return ""
+
     async def analyze(self, system_prompt: str, user_prompt: str, **kwargs) -> dict:
+        # Load per-model prompt template if available
+        template = self._load_prompt_template("triage")
+        if template:
+            system_prompt = f"{template}\n\n{system_prompt}"
+
         # Sanitise attacker-controlled fields before the LLM sees them
         user_prompt = sanitize_llm_input(user_prompt)
         system_prompt = sanitize_llm_input(system_prompt)
         masked_user = mask_sensitive_data(user_prompt) if settings.mask_sensitive_data else user_prompt
+
+        # Apply config-driven model parameters with kwargs override
+        temp = kwargs.get("temperature", settings.llm_model_temperature if hasattr(settings, "llm_model_temperature") else 0.35)
+        top_p = kwargs.get("top_p", settings.llm_model_top_p if hasattr(settings, "llm_model_top_p") else 0.9)
+        top_k = kwargs.get("top_k", settings.llm_model_top_k if hasattr(settings, "llm_model_top_k") else 40)
+        repeat_penalty = kwargs.get("repeat_penalty", settings.llm_model_repeat_penalty if hasattr(settings, "llm_model_repeat_penalty") else 1.15)
+
         payload = {
             "model": self.model,
             "messages": [
@@ -145,7 +173,12 @@ class OllamaProvider(LLMProvider):
                 {"role": "user", "content": masked_user},
             ],
             "stream": False,
-            "options": {"temperature": kwargs.get("temperature", 0.1)},
+            "options": {
+                "temperature": temp,
+                "top_p": top_p,
+                "top_k": top_k,
+                "repeat_penalty": repeat_penalty,
+            },
         }
 
         async def _call():
