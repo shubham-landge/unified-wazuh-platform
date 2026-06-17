@@ -840,6 +840,7 @@ CREATE TABLE agent_definitions (
     name TEXT NOT NULL UNIQUE,
     description TEXT,
     agent_type VARCHAR(64) NOT NULL,
+    autonomy_level VARCHAR(16) NOT NULL DEFAULT 'approval',  -- read-only | approval | full
     config JSONB DEFAULT '{}',
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -1054,3 +1055,6 @@ ALTER TABLE alert_incidents ADD COLUMN IF NOT EXISTS kill_chain_stage  VARCHAR(2
 ALTER TABLE alert_incidents ADD COLUMN IF NOT EXISTS stage_history     JSONB       DEFAULT '[]';
 ALTER TABLE alert_incidents ADD COLUMN IF NOT EXISTS sla_due_at        TIMESTAMPTZ;
 ALTER TABLE alert_incidents ADD COLUMN IF NOT EXISTS first_enriched_at TIMESTAMPTZ;
+
+-- Extend agent_definitions: autonomy level gate for orchestration policy guard.
+ALTER TABLE agent_definitions ADD COLUMN IF NOT EXISTS autonomy_level VARCHAR(16) NOT NULL DEFAULT 'approval';
