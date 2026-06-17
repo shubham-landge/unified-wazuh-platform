@@ -130,6 +130,38 @@ class TestTriageHandler:
         assert result["confidence"] == 0.8
         assert result["alert_id"] == str(alert.id)
 
+    @pytest.mark.asyncio
+    async def test_triage_injects_feedback_warning_for_noisy_rule(self):
+        alert = MagicMock()
+        alert.id = uuid.uuid4()
+        alert.rule_id = 5710
+
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = alert
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        ctx = HandlerContext(session=mock_session, run=MagicMock(), task=MagicMock())
+
+        captured = {}
+
+        async def fake_analyze(system_prompt, user_prompt, **kwargs):
+            captured["system_prompt"] = system_prompt
+            return {"success": True, "verdict": "benign", "severity": "low",
+                    "confidence": 0.6, "summary": "", "recommended_action": ""}
+
+        with patch("shared.orchestrator.handlers.get_provider") as mock_get_provider, \
+             patch("shared.connectors.llm_router.user_feedback_negative_rate",
+                   new=AsyncMock(return_value=0.5)):
+            provider = AsyncMock()
+            provider.analyze = fake_analyze
+            mock_get_provider.return_value = provider
+
+            await handlers.triage({"alert_id": str(alert.id)}, ctx)
+
+        assert "50%" in captured["system_prompt"]
+        assert "rigorous" in captured["system_prompt"].lower()
+
 
 class TestCaseCreateHandler:
     @pytest.mark.asyncio

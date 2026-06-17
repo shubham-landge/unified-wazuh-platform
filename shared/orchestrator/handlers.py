@@ -206,6 +206,24 @@ async def triage(input_data: dict, ctx: HandlerContext) -> dict:
         "with exactly these keys: verdict (malicious|suspicious|benign), severity (critical|high|medium|low), "
         "confidence (0.0-1.0), summary (string), recommended_action (string)."
     )
+
+    # Feedback-aware calibration: if analysts have historically rated this rule's
+    # verdicts poorly, warn the model so it scrutinizes this alert more carefully.
+    try:
+        from shared.connectors.llm_router import user_feedback_negative_rate
+
+        neg_rate = await user_feedback_negative_rate(
+            getattr(alert, "rule_id", None), ctx.session
+        )
+        if neg_rate >= 0.3:
+            system_prompt += (
+                f"\n\nNOTE: Analysts have disagreed with prior AI verdicts on this rule "
+                f"{round(neg_rate * 100)}% of the time. Be extra rigorous, avoid "
+                f"over-escalation, and explain your reasoning explicitly."
+            )
+    except Exception as exc:  # never let calibration break triage
+        logger.debug("feedback-rate calibration skipped: %s", exc)
+
     user_prompt = json.dumps(alert_dict, default=str)
 
     provider = get_provider()
@@ -351,6 +369,18 @@ async def case_create(input_data: dict, ctx: HandlerContext) -> dict:
     )
     ctx.session.add(case)
     await ctx.session.flush()
+
+    # Hand off to the ticketing worker for immediate Jira/ServiceNow sync.
+    # Best-effort: the worker also polls open cases, so this only reduces latency.
+    if settings.ticketing_sync_enabled:
+        try:
+            import redis.asyncio as _redis
+
+            r = _redis.from_url(settings.redis_url, decode_responses=True)
+            await r.rpush("ticketing:pending", str(case.id))
+            await r.aclose()
+        except Exception as exc:
+            logger.debug("ticketing enqueue skipped: %s", exc)
 
     return {
         "case_id": str(case.id),

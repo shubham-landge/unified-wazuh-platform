@@ -1058,3 +1058,9 @@ ALTER TABLE alert_incidents ADD COLUMN IF NOT EXISTS first_enriched_at TIMESTAMP
 
 -- Extend agent_definitions: autonomy level gate for orchestration policy guard.
 ALTER TABLE agent_definitions ADD COLUMN IF NOT EXISTS autonomy_level VARCHAR(16) NOT NULL DEFAULT 'approval';
+
+-- ─── Phase 9.x: composite indexes for tenant-scoped time-range queries ───
+-- The hot path on every list endpoint is "WHERE tenant_id = ? ORDER BY created_at DESC".
+CREATE INDEX IF NOT EXISTS idx_alerts_tenant_created ON alerts (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cases_tenant_created ON cases (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_triage_tenant_created ON ai_triage_results (tenant_id, created_at DESC);
