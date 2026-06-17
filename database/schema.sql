@@ -765,7 +765,7 @@ CREATE TABLE knowledge_chunks (
     tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
     source TEXT NOT NULL,
     chunk_text TEXT NOT NULL,
-    embedding vector(768),
+    embedding JSONB,
     metadata JSONB DEFAULT '{}',
     token_count INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
