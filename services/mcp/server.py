@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, select
 
@@ -880,6 +882,33 @@ async def call_tool(request: ToolRequest) -> dict[str, Any]:
         return {"status_code": 502, "success": False, "error": str(exc)}
     except Exception as exc:
         return {"status_code": 500, "success": False, "error": str(exc)}
+
+
+app = FastAPI(title="Unified Wazuh SOC Platform - MCP Server")
+
+
+@app.get("/tools")
+async def list_tools():
+    return {"tools": list(server.tools.keys()) + list(TOOL_DISPATCH.keys())}
+
+
+@app.post("/call")
+async def call_tool_http(request: Request):
+    body = await request.json()
+    tool = body.get("tool")
+    params = body.get("params", {})
+    handler = TOOL_DISPATCH.get(tool)
+    if not handler:
+        return JSONResponse(status_code=404, content={"success": False, "error": f"Unknown tool: {tool}"})
+    try:
+        result = await handler(**params)
+        return {"success": True, **result}
+    except (ToolValidationError, KeyError, TypeError) as exc:
+        return JSONResponse(status_code=400, content={"success": False, "error": str(exc)})
+    except (CircuitBreakerOpenError, WazuhServiceError) as exc:
+        return JSONResponse(status_code=502, content={"success": False, "error": str(exc)})
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(exc)})
 
 
 def main():
