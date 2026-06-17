@@ -28,7 +28,8 @@ async def test_prompt_refiner_refine_loop():
     ]
 
     mock_provider = AsyncMock()
-    mock_provider.analyze.return_value = {"summary": "refined prompt template"}
+    refined_prompt = "# Detection Logic\nLook for processes accessing lsass.exe\n\n# Investigation Steps\n1. Identify source process\n2. Check for lateral movement"
+    mock_provider.analyze.return_value = {"summary": refined_prompt}
 
     with patch("services.worker.app.prompt_refiner.get_provider", return_value=mock_provider):
         with patch("builtins.open", MagicMock()) as mock_open:
