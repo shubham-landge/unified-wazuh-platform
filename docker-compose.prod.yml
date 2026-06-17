@@ -123,3 +123,20 @@ services:
     read_only: true
     tmpfs:
       - /tmp:noexec,nosuid,size=200m
+
+  mcp:
+    environment:
+      - WAZUH_ENV=production
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.1"
+          memory: 128M
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=50m

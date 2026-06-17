@@ -150,6 +150,30 @@ services:
     networks:
       - soc-network
 
+  # ─── MCP Server ───
+  mcp:
+    build:
+      context: .
+      dockerfile: services/mcp/Dockerfile
+    container_name: soc-mcp
+    restart: unless-stopped
+    depends_on:
+      - api
+    env_file:
+      - .env
+    environment:
+      API_BASE_URL: http://api:8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/tools')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "9000:9000"
+    logging: *default-logging
+    networks:
+      - soc-network
+
   # ─── Dashboard ───
   dashboard:
     build:
