@@ -3,19 +3,6 @@
 > **Project Board**: https://github.com/users/shubham-landge/projects/1
 > **Repository**: https://github.com/shubham-landge/unified-wazuh-platform
 > **Updated**: 2026-06-17
-> **Branch**: main (all work merged)
-> **Status**: ALL PHASES COMPLETE ✅
-
----
-
-## Phase 7 — Multi-Tool Build Plan (Remaining Work)
-
-| Track | Tool | What was built | Status |
-|---|---|---|---|
-| Security / Resilience | Claude | Middleware hardening, signed sessions, CSRF, tenant filters, circuit breakers, prompt-injection guard | 📝 dev |
-| MCP Server + Connectors | Codex | HTTP MCP server (`services/mcp/server.py`) with 8 tools + tests; maigret container wired in compose; Jira/Sigma still pending | ✅ main |
-| Orchestration & Agents | OpenCode | Wazuh-Openclaw-Autopilot handlers (correlation, response_planner, policy_guard, evidence_pack), autonomy_level, policy gating for soar_run/case_create | ✅ main |
-| Self-Learning / Observability | Antigravity | few_shot RAG, prompt refiner, meta agent, kanban view, metrics expansion, MITRE dashboard | 📝 dev |
 
 ---
 
@@ -74,6 +61,7 @@
 | Track | Tool | What was built | Status |
 |---|---|---|---|
 | OSINT Integration | Codex | Maigret connector, OSINT lookup API, OSINT worker, OSINT dashboard page | ✅ main |
+| MCP / Wazuh Direct Tools | Codex | Direct Wazuh API and Indexer MCP tools with circuit breaker and dispatcher | ✅ main |
 | Multi-Agent Orchestration | Claude | Agent definition/run/task models, orchestration engine, agent worker, agents dashboard | ✅ main |
 | Human-Approved Actions | Antigravity | ApprovalRequest model, approvals API, approval worker with expiry, approvals dashboard UI | ✅ main |
 | Ticketing Integrations | OpenCode | ServiceNow + Jira connectors, ticketing config/model API, ticketing sync worker, ticketing settings dashboard | ✅ main |
@@ -85,7 +73,7 @@
 
 ---
 
-## Test Suite: 309 passing, 0 failing
+## Test Suite: 223 passing, 0 failing
 
 All tests run fully mocked — no Docker, no DB, no Redis required.
 

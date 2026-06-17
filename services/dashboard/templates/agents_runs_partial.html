@@ -1,0 +1,18 @@
+{% for run in runs %}
+<div class="p-3 bg-surface/50 border border-white/5 rounded-lg flex flex-col gap-1.5 hover:bg-white/5 transition-all cursor-pointer" @click="selectedRun = {{ run | tojson }}">
+    <div class="flex justify-between items-center">
+        <span class="font-mono text-[10px] text-accent-blue font-bold">#{{ run.id[:8] }}</span>
+        {% if run.status == 'completed' %}
+        <span class="badge-dot badge-dot-open">Completed</span>
+        {% elif run.status == 'running' %}
+        <span class="badge-dot badge-dot-medium">Running</span>
+        {% elif run.status == 'failed' %}
+        <span class="badge-dot badge-dot-critical">Failed</span>
+        {% else %}
+        <span class="badge-dot badge-dot-closed">Pending</span>
+        {% endif %}
+    </div>
+    <span class="text-xs font-semibold text-primary block">{{ run.agent_type }}</span>
+    <p class="text-[11px] text-secondary truncate">{{ run.result_summary or '—' }}</p>
+</div>
+{% endfor %}

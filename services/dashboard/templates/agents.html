@@ -77,61 +77,65 @@
         </div>
     </div>
 
-    <div x-show="activeTab === 'runs'" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="card-premium lg:col-span-2 space-y-4">
+    <div x-show="activeTab === 'runs'" class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div class="lg:col-span-3 space-y-4">
             <div class="flex justify-between items-center border-b border-white/5 pb-3">
                 <h3 class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
                     <svg class="w-4 h-4 text-accent-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     Execution History
                 </h3>
-                <span class="text-[10px] text-muted font-mono bg-deep px-2 py-1 rounded">{{ runs | length }} runs</span>
             </div>
 
-            {% if runs %}
-            <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse text-xs">
-                    <thead>
-                        <tr class="border-b border-white/5 text-[10px] text-muted uppercase tracking-wider">
-                            <th class="py-2.5 font-semibold">Run ID</th>
-                            <th class="py-2.5 font-semibold">Trigger</th>
-                            <th class="py-2.5 font-semibold">Status</th>
-                            <th class="py-2.5 font-semibold">Summary</th>
-                            <th class="py-2.5 font-semibold text-right">Details</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-white/5">
-                        {% for run in runs %}
-                        <tr class="hover:bg-white/5 transition-all">
-                            <td class="py-3 font-mono text-[10px] text-secondary">{{ run.id[:8] }}…</td>
-                            <td class="py-3">
-                                <span class="font-mono text-[10px] bg-deep px-2 py-0.5 rounded text-secondary">{{ run.trigger_type }}</span>
-                            </td>
-                            <td class="py-3">
-                                {% if run.status == 'completed' %}
-                                <span class="badge-dot badge-dot-open">Completed</span>
-                                {% elif run.status == 'running' %}
-                                <span class="badge-dot badge-dot-medium">Running</span>
-                                {% elif run.status == 'failed' %}
-                                <span class="badge-dot badge-dot-critical">Failed</span>
-                                {% else %}
-                                <span class="badge-dot badge-dot-closed">Pending</span>
-                                {% endif %}
-                            </td>
-                            <td class="py-3 text-secondary max-w-xs truncate">{{ run.result_summary or '—' }}</td>
-                            <td class="py-3 text-right">
-                                <button @click="selectedRun = {{ run | tojson }}" class="px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[10px] font-semibold text-secondary hover:text-white transition-all">View &rarr;</button>
-                            </td>
-                        </tr>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4" hx-get="/agents/runs" hx-trigger="every 5s" hx-swap="innerHTML">
+                <div class="space-y-3 bg-surface p-3 rounded-lg border border-white/5">
+                    <h4 class="text-xs font-bold text-muted uppercase tracking-wider border-b border-white/5 pb-2">Pending</h4>
+                    <div class="space-y-2">
+                        {% for run in runs if run.status == 'pending' or not run.status %}
+                        <div class="p-3 bg-surface/50 border border-white/5 rounded-lg flex flex-col gap-1.5 hover:bg-white/5 transition-all cursor-pointer" @click="selectedRun = {{ run | tojson }}">
+                            <span class="font-mono text-[10px] text-accent-blue font-bold">#{{ run.id[:8] }}</span>
+                            <span class="text-xs font-semibold text-primary block">{{ run.agent_type }}</span>
+                            <p class="text-[11px] text-secondary truncate">{{ run.result_summary or '—' }}</p>
+                        </div>
                         {% endfor %}
-                    </tbody>
-                </table>
+                    </div>
+                </div>
+                <div class="space-y-3 bg-surface p-3 rounded-lg border border-white/5">
+                    <h4 class="text-xs font-bold text-accent-blue uppercase tracking-wider border-b border-white/5 pb-2">Running</h4>
+                    <div class="space-y-2">
+                        {% for run in runs if run.status == 'running' %}
+                        <div class="p-3 bg-surface/50 border border-white/5 rounded-lg flex flex-col gap-1.5 hover:bg-white/5 transition-all cursor-pointer" @click="selectedRun = {{ run | tojson }}">
+                            <span class="font-mono text-[10px] text-accent-blue font-bold">#{{ run.id[:8] }}</span>
+                            <span class="text-xs font-semibold text-primary block">{{ run.agent_type }}</span>
+                            <p class="text-[11px] text-secondary truncate">{{ run.result_summary or '—' }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="space-y-3 bg-surface p-3 rounded-lg border border-white/5">
+                    <h4 class="text-xs font-bold text-green-500 uppercase tracking-wider border-b border-white/5 pb-2">Completed</h4>
+                    <div class="space-y-2">
+                        {% for run in runs if run.status == 'completed' %}
+                        <div class="p-3 bg-surface/50 border border-white/5 rounded-lg flex flex-col gap-1.5 hover:bg-white/5 transition-all cursor-pointer" @click="selectedRun = {{ run | tojson }}">
+                            <span class="font-mono text-[10px] text-accent-blue font-bold">#{{ run.id[:8] }}</span>
+                            <span class="text-xs font-semibold text-primary block">{{ run.agent_type }}</span>
+                            <p class="text-[11px] text-secondary truncate">{{ run.result_summary or '—' }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="space-y-3 bg-surface p-3 rounded-lg border border-white/5">
+                    <h4 class="text-xs font-bold text-red-500 uppercase tracking-wider border-b border-white/5 pb-2">Failed</h4>
+                    <div class="space-y-2">
+                        {% for run in runs if run.status == 'failed' %}
+                        <div class="p-3 bg-surface/50 border border-white/5 rounded-lg flex flex-col gap-1.5 hover:bg-white/5 transition-all cursor-pointer" @click="selectedRun = {{ run | tojson }}">
+                            <span class="font-mono text-[10px] text-accent-blue font-bold">#{{ run.id[:8] }}</span>
+                            <span class="text-xs font-semibold text-primary block">{{ run.agent_type }}</span>
+                            <p class="text-[11px] text-secondary truncate">{{ run.result_summary or '—' }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
             </div>
-            {% else %}
-            <div class="text-center py-12 text-muted">
-                <svg class="w-12 h-12 mx-auto mb-3 opacity-20" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                <p class="text-xs">No agent runs yet.</p>
-            </div>
-            {% endif %}
         </div>
 
         <div class="card-premium h-fit space-y-4">

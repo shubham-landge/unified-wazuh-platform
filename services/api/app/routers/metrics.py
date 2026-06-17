@@ -50,6 +50,12 @@ AGENT_QUEUE_DEPTH = Gauge(
     registry=REGISTRY,
 )
 
+# Noise-gate / triage-tier counters (set from Redis keys written by triage_worker)
+TRIAGE_SUPPRESSED = Gauge("soc_triage_suppressed_total", "Total triage decisions suppressed by noise gate", registry=REGISTRY)
+TRIAGE_KEPT = Gauge("soc_triage_kept_total", "Total triage decisions kept by noise gate", registry=REGISTRY)
+TRIAGE_TIER_FAST = Gauge("soc_triage_tier_fast_total", "Total triage calls routed to fast tier", registry=REGISTRY)
+TRIAGE_TIER_FULL = Gauge("soc_triage_tier_full_total", "Total triage calls routed to full tier", registry=REGISTRY)
+
 
 def _try_redis_queue_depth() -> int | None:
     try:
@@ -110,6 +116,18 @@ async def metrics(
     depth = _try_redis_queue_depth()
     if depth is not None:
         AGENT_QUEUE_DEPTH.set(depth)
+
+    # Triage noise-gate counters — read from Redis keys written by triage_worker
+    try:
+        import redis as _redis
+        r = _redis.from_url(settings.redis_url, decode_responses=True)
+        TRIAGE_SUPPRESSED.set(float(r.get("triage_suppressed_total") or 0))
+        TRIAGE_KEPT.set(float(r.get("triage_kept_total") or 0))
+        TRIAGE_TIER_FAST.set(float(r.get("triage_tier_fast_total") or 0))
+        TRIAGE_TIER_FULL.set(float(r.get("triage_tier_full_total") or 0))
+        r.close()
+    except Exception as exc:
+        logger.debug("Failed to read triage metrics from Redis: %s", exc)
 
     data = generate_latest(REGISTRY)
     return Response(content=data, media_type=CONTENT_TYPE_LATEST)
