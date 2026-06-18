@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import uuid
 from pathlib import Path
 import redis.asyncio as redis
 from sqlalchemy import select
@@ -65,7 +66,12 @@ class TriageWorker:
         if not alert_id:
             return
 
-        logger.info("Processing triage for alert %s", alert_id)
+        # Manual "Analyze" requests carry a pre-created pending row + force_fast.
+        manual = bool(msg.get("manual", False))
+        triage_id = msg.get("triage_id")
+        force_fast_req = bool(msg.get("force_fast", False))
+
+        logger.info("Processing triage for alert %s%s", alert_id, " (manual)" if manual else "")
 
         try:
             async with self.session_factory() as session:
@@ -73,30 +79,36 @@ class TriageWorker:
                 alert = result.scalar_one_or_none()
                 if not alert:
                     logger.warning("Alert %s not found", alert_id)
+                    await self._mark_manual_failed(triage_id, "Alert not found")
                     return
 
-                # ── Noise-reduction pre-triage gate (keep/drop/downgrade) ──
-                # Runs before the LLM to protect the CPU triage budget. Collapses
-                # duplicate bursts and drops known-noise classes.
-                decision = await noise_reduction.evaluate(
-                    session, alert, str(alert.tenant_id) if alert.tenant_id else None
-                )
-                if not decision.should_triage:
-                    await session.commit()  # persist incident attachment / counts
-                    logger.info(
-                        "Triage suppressed for alert %s: %s", alert_id, decision.reason
+                if manual:
+                    # Analyst explicitly asked for analysis: skip the noise gate
+                    # entirely and honour the requested tier.
+                    force_fast = force_fast_req
+                else:
+                    # ── Noise-reduction pre-triage gate (keep/drop/downgrade) ──
+                    # Runs before the LLM to protect the CPU triage budget.
+                    decision = await noise_reduction.evaluate(
+                        session, alert, str(alert.tenant_id) if alert.tenant_id else None
                     )
-                    if self.redis_client:
-                        await self.redis_client.incr("triage_suppressed_total")
-                    return
-                if decision.action == noise_reduction.DOWNGRADE:
-                    logger.info("Alert %s downgraded to fast tier: %s", alert_id, decision.reason)
+                    if not decision.should_triage:
+                        await session.commit()  # persist incident attachment / counts
+                        logger.info(
+                            "Triage suppressed for alert %s: %s", alert_id, decision.reason
+                        )
+                        if self.redis_client:
+                            await self.redis_client.incr("triage_suppressed_total")
+                        return
+                    if decision.action == noise_reduction.DOWNGRADE:
+                        logger.info("Alert %s downgraded to fast tier: %s", alert_id, decision.reason)
+                    force_fast = decision.force_fast_tier
 
                 provider = await TieredRouter().get_provider(
                     alert=alert,
                     tenant_id=str(alert.tenant_id),
                     db_session=session,
-                    force_fast=decision.force_fast_tier,
+                    force_fast=force_fast,
                 )
                 tier = "full" if provider.name().startswith(("openai", "gemini", "claude")) or "7b" in provider.name() else "fast"
                 logger.info("Triaging alert %s with %s (%s tier)", alert_id, provider.name(), tier)
@@ -118,9 +130,8 @@ class TriageWorker:
                     user_prompt=user_prompt,
                 )
 
-                triage = AiTriageResult(
-                    alert_id=alert.id,
-                    tenant_id=alert.tenant_id,
+                succeeded = result_data.get("success", True) is not False
+                fields = dict(
                     model_name=provider.name(),
                     prompt_text=user_prompt,
                     response_text=json.dumps(result_data),
@@ -137,10 +148,22 @@ class TriageWorker:
                     do_not_do=result_data.get("do_not_do", []),
                     escalation_required=result_data.get("escalation_required", False),
                     suggested_soc_action=result_data.get("recommended_soc_action"),
-                    success=result_data.get("success", True),
+                    success=succeeded,
                     error_message=result_data.get("error"),
+                    status="completed" if succeeded else "failed",
                 )
-                session.add(triage)
+
+                # Manual path updates the pending row the API created; poller path
+                # inserts a fresh row.
+                triage = None
+                if manual and triage_id:
+                    triage = await session.get(AiTriageResult, uuid.UUID(str(triage_id)))
+                if triage is not None:
+                    for k, v in fields.items():
+                        setattr(triage, k, v)
+                else:
+                    triage = AiTriageResult(alert_id=alert.id, tenant_id=alert.tenant_id, **fields)
+                    session.add(triage)
                 await session.flush()
 
                 from shared.models.model_run import ModelRun
@@ -235,12 +258,29 @@ class TriageWorker:
 
         except Exception as e:
             logger.error("Failed to process triage for alert %s: %s", alert_id, e, exc_info=True)
+            # Fail the manual pending row so the dashboard stops polling.
+            await self._mark_manual_failed(triage_id, str(e))
             # Push to dead-letter queue so no job is silently lost
             if self.redis_client:
                 await self.redis_client.lpush(
                     "triage_dlq",
                     json.dumps({"alert_id": alert_id, "error": str(e)}),
                 )
+
+    async def _mark_manual_failed(self, triage_id, error: str):
+        """Mark an API-created pending triage row as failed (manual path only)."""
+        if not triage_id:
+            return
+        try:
+            async with self.session_factory() as session:
+                row = await session.get(AiTriageResult, uuid.UUID(str(triage_id)))
+                if row is not None:
+                    row.status = "failed"
+                    row.success = False
+                    row.error_message = error[:500]
+                    await session.commit()
+        except Exception as exc:
+            logger.warning("Could not mark triage %s failed: %s", triage_id, exc)
 
     async def stop(self):
         if self.redis_client:

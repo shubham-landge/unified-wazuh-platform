@@ -117,6 +117,9 @@ class Settings(BaseSettings):
 
     triage_confidence_threshold: float = 0.5
     triage_enabled: bool = True
+    # Manual "Analyze" button is interactive — force the fast tier by default so
+    # the analyst gets a result quickly. Set false to let the router decide.
+    triage_manual_force_fast: bool = True
     mask_sensitive_data: bool = True
 
     # ── Noise reduction (pre-triage stage) ──

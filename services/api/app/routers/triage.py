@@ -10,7 +10,7 @@ from sqlalchemy import select, func
 from pydantic import BaseModel, Field
 from starlette.status import HTTP_202_ACCEPTED, HTTP_404_NOT_FOUND, HTTP_503_SERVICE_UNAVAILABLE, HTTP_400_BAD_REQUEST, HTTP_429_TOO_MANY_REQUESTS
 
-from app.db import get_db, async_session as _async_session_factory
+from app.db import get_db
 from shared.models.alert import Alert
 from shared.models.ai_triage_result import AiTriageResult
 from shared.models.feedback import UserFeedback
@@ -40,188 +40,29 @@ class FeedbackRequest(BaseModel):
     corrected_confidence: float | None = Field(None, ge=0, le=1)
 
 
-import asyncio
-
-_triage_background_tasks = set()
-
-# A pending triage older than this is considered dead (the background task was
-# lost to a restart/OOM) and is reaped to a failed state so the UI stops polling.
 _TRIAGE_PENDING_TIMEOUT_SECONDS = 600
 
 
-async def _run_triage_in_background(
-    alert_uid: uuid.UUID,
-    triage_uid: uuid.UUID,
-):
+async def _enqueue_triage(alert_id: str, triage_id: str, force_fast: bool) -> None:
+    """Hand the triage to the TriageWorker via Redis instead of running the LLM
+    in the API process. Survives API restarts and serializes inference on the
+    worker, which also applies noise-gating, UEBA, SOAR, and case creation."""
+    import redis.asyncio as redis
+
+    r = redis.from_url(settings.redis_url, decode_responses=True)
     try:
-        async with _async_session_factory() as bg_db:
-            result = await bg_db.execute(select(Alert).where(Alert.id == alert_uid))
-            alert = result.scalar_one_or_none()
-            if not alert:
-                return
+        await r.lpush(
+            "triage_queue",
+            json.dumps({
+                "alert_id": alert_id,
+                "triage_id": triage_id,
+                "manual": True,
+                "force_fast": force_fast,
+            }),
+        )
+    finally:
+        await r.aclose()
 
-            from shared.connectors.llm_router import TieredRouter
-
-            provider = await TieredRouter().get_provider(
-                alert=alert, tenant_id=str(alert.tenant_id), db_session=bg_db
-            )
-
-            from pathlib import Path
-            prompts_dir = Path(__file__).parent.parent / "prompts"
-            system_prompt_path = prompts_dir / "system_soc_triage.md"
-            try:
-                raw = system_prompt_path.read_text()
-                system_prompt = "\n".join(l for l in raw.splitlines() if not l.startswith("#")).strip()
-            except FileNotFoundError:
-                system_prompt = (
-                    "You are a defensive SOC triage copilot for Wazuh. "
-                    "Analyze the alert and return structured JSON only. "
-                    "Never recommend destructive actions."
-                )
-
-            alert_prompt_path = prompts_dir / "alert_triage.md"
-            try:
-                template = alert_prompt_path.read_text()
-                user_prompt = template.format(
-                    rule_description=alert.rule_description or "",
-                    rule_id=alert.rule_id or "",
-                    rule_level=alert.rule_level or "",
-                    rule_groups=", ".join(alert.rule_groups or []),
-                    agent_name=alert.agent_name or "",
-                    agent_ip=alert.agent_ip or "",
-                    source_ip=alert.source_ip or "",
-                    destination_ip=alert.destination_ip or "",
-                    user_name=alert.user_name or "",
-                    process_name=alert.process_name or "",
-                    file_name=alert.file_name or "",
-                    file_hash=alert.file_hash or "",
-                    event_id=alert.event_id or "",
-                    mitre_tactic=alert.mitre_tactic or "",
-                    mitre_technique=alert.mitre_technique or "",
-                    alert_timestamp=alert.alert_timestamp.isoformat() if alert.alert_timestamp else "",
-                )
-            except (FileNotFoundError, KeyError):
-                user_prompt = (
-                    f"Alert Rule: {alert.rule_description}\n"
-                    f"Rule ID: {alert.rule_id} | Level: {alert.rule_level}\n"
-                    f"Agent: {alert.agent_name} ({alert.agent_ip})\n"
-                    f"Source IP: {alert.source_ip} | User: {alert.user_name}\n"
-                    f"MITRE: {alert.mitre_tactic} / {alert.mitre_technique}\n"
-                )
-
-            # Enrich prompt with correlation context
-            try:
-                lookback = datetime.now(timezone.utc) - timedelta(hours=24)
-                related_count = 0
-                related_same_rule = 0
-                alert_frequency = "first"
-                if alert.source_ip:
-                    count_result = await bg_db.execute(
-                        select(func.count(Alert.id))
-                        .where(
-                            Alert.source_ip == alert.source_ip,
-                            Alert.alert_timestamp >= lookback,
-                            Alert.id != alert.id,
-                        )
-                    )
-                    related_count = count_result.scalar() or 0
-                    if alert.rule_id:
-                        rule_result = await bg_db.execute(
-                            select(func.count(Alert.id))
-                            .where(
-                                Alert.source_ip == alert.source_ip,
-                                Alert.rule_id == alert.rule_id,
-                                Alert.alert_timestamp >= lookback,
-                                Alert.id != alert.id,
-                            )
-                        )
-                        related_same_rule = rule_result.scalar() or 0
-                    if related_count > 20:
-                        alert_frequency = "very_frequent"
-                    elif related_count > 5:
-                        alert_frequency = "frequent"
-                    elif related_count > 0:
-                        alert_frequency = "repeated"
-
-                enrichment_lines = []
-                if related_count > 0:
-                    enrichment_lines.append(f"\n## Correlation Context\n- Related alerts from same source IP (24h): {related_count}")
-                    enrichment_lines.append(f"- Same rule ID from same IP (24h): {related_same_rule}")
-                    enrichment_lines.append(f"- Alert frequency pattern: {alert_frequency}")
-                if alert.mitre_tactic or alert.mitre_technique:
-                    enrichment_lines.append(f"\n## MITRE ATT&CK\n- Tactic: {alert.mitre_tactic or 'N/A'}")
-                    enrichment_lines.append(f"- Technique: {alert.mitre_technique or 'N/A'}")
-                if alert.agent_name:
-                    enrichment_lines.append(f"\n## Asset Context\n- Agent: {alert.agent_name} ({alert.agent_ip or 'N/A'})")
-                    enrichment_lines.append(f"- Agent ID: {alert.agent_id or 'Unknown'}")
-                if enrichment_lines:
-                    user_prompt = user_prompt.rstrip() + "\n" + "\n".join(enrichment_lines)
-            except Exception as e:
-                logger.debug("Failed to enrich triage prompt: %s", e)
-
-            try:
-                result_data = await provider.analyze(system_prompt=system_prompt, user_prompt=user_prompt)
-            except Exception as e:
-                result_data = {"success": False, "error": str(e)}
-
-            triage_result = await bg_db.get(AiTriageResult, triage_uid)
-            if not triage_result:
-                return
-
-            if result_data.get("success", True) is False:
-                triage_result.status = "failed"
-                triage_result.error_message = result_data.get("error", "LLM analysis failed")
-                triage_result.response_text = json.dumps(result_data)
-                triage_result.success = False
-                await bg_db.commit()
-                return
-
-            triage_result.status = "completed"
-            triage_result.model_name = provider.name()
-            triage_result.prompt_text = user_prompt
-            triage_result.response_text = json.dumps(result_data)
-            triage_result.summary = result_data.get("summary", alert.rule_description)
-            triage_result.category = result_data.get("category", "unknown")
-            triage_result.severity = result_data.get("severity", "medium")
-            triage_result.confidence = result_data.get("confidence", 0.5)
-            triage_result.false_positive_likelihood = result_data.get("false_positive_likelihood", 0.3)
-            triage_result.mitre_mapping = result_data.get("mitre_mapping", [])
-            triage_result.investigation_steps = result_data.get(
-                "recommended_investigation_steps",
-                result_data.get("investigation_steps", []),
-            )
-            triage_result.do_not_do = result_data.get("do_not_do", [])
-            triage_result.escalation_required = result_data.get("escalation_required", False)
-            triage_result.suggested_soc_action = result_data.get("recommended_soc_action")
-            triage_result.success = result_data.get("success", True)
-            triage_result.error_message = result_data.get("error")
-
-            from shared.models.model_run import ModelRun
-            from hashlib import sha256
-            model_run = ModelRun(
-                tenant_id=alert.tenant_id,
-                model_name=provider.name(),
-                prompt_hash=sha256(user_prompt.encode()).hexdigest()[:16],
-                input_tokens=result_data.get("tokens_input"),
-                output_tokens=result_data.get("tokens_output"),
-                latency_ms=result_data.get("latency_ms"),
-                success=result_data.get("success", True),
-            )
-            bg_db.add(model_run)
-            await bg_db.commit()
-
-    except Exception as e:
-        logger.exception("Background triage failed for alert %s: %s", alert_uid, e)
-        try:
-            async with _async_session_factory() as err_db:
-                triage_result = await err_db.get(AiTriageResult, triage_uid)
-                if triage_result:
-                    triage_result.status = "failed"
-                    triage_result.error_message = str(e)
-                    triage_result.success = False
-                    await err_db.commit()
-        except Exception:
-            logger.exception("Failed to mark triage as failed for %s", triage_uid)
 
 
 @router.post("/run", status_code=HTTP_202_ACCEPTED)
@@ -250,11 +91,10 @@ async def run_triage(
     await db.commit()
     await db.refresh(triage_result)
 
-    task = asyncio.create_task(
-        _run_triage_in_background(alert_uid, triage_result.id)
-    )
-    _triage_background_tasks.add(task)
-    task.add_done_callback(_triage_background_tasks.discard)
+    # Manual "Analyze" is interactive — default to the fast tier so the analyst
+    # gets an answer quickly (configurable via TRIAGE_MANUAL_FORCE_FAST).
+    force_fast = getattr(settings, "triage_manual_force_fast", True)
+    await _enqueue_triage(str(alert_uid), str(triage_result.id), force_fast)
 
     return {
         "status": "pending",

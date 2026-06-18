@@ -369,14 +369,15 @@ class TestSchemaValidation:
 class TestTriageUsesRouter:
     """Triage endpoints use TieredRouter."""
 
-    def test_tiered_router_imported_in_api_triage(self):
-        """TieredRouter should be imported in triage.py."""
+    def test_api_triage_enqueues_to_worker(self):
+        """The API triage router hands off to the worker queue (routing happens
+        in the worker, not the API process)."""
         import pathlib
         triage_path = pathlib.Path(__file__).parent.parent / "services" / "api" / "app" / "routers" / "triage.py"
         triage_code = triage_path.read_text()
 
-        assert "from shared.connectors.llm_router import TieredRouter" in triage_code
-        assert "TieredRouter().get_provider" in triage_code
+        assert "triage_queue" in triage_code
+        assert "_enqueue_triage" in triage_code
 
     def test_tiered_router_used_in_worker(self):
         """TieredRouter should be used in triage_worker."""
@@ -439,12 +440,13 @@ def test_is_burst_alert_time_window():
     assert is_burst_alert(alert)
 
 
-def test_api_router_imports_tiered_router():
+def test_api_router_enqueues_triage():
     import pathlib
     triage_path = pathlib.Path(__file__).parent.parent / "services" / "api" / "app" / "routers" / "triage.py"
     code = triage_path.read_text()
-    assert "TieredRouter" in code
-    assert "TieredRouter().get_provider" in code
+    # Routing/inference happens in the worker; the API only enqueues.
+    assert "triage_queue" in code
+    assert "_enqueue_triage" in code
 
 
 def test_schema_has_user_feedback():
