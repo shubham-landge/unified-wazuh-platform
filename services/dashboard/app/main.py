@@ -369,10 +369,28 @@ async def alerts_page(request: Request, level: int = 0):
 
 @app.get("/alerts/{alert_id}", response_class=HTMLResponse)
 async def alert_detail(request: Request, alert_id: str):
-    alert = await api_request("GET", f"/alerts/{alert_id}")
+    try:
+        resp = await api_request("GET", f"/alerts/{alert_id}", request=request)
+        alert = resp.get("alert", {})
+        if not alert or resp.get("status") == "error":
+            error_msg = resp.get("detail", "Alert not found or API unavailable")
+            return templates.TemplateResponse("alert_detail.html", {
+                "request": request,
+                "alert": {},
+                "page": "alerts",
+                "toast": {"type": "error", "message": error_msg},
+            })
+    except Exception:
+        logger.exception("Failed to fetch alert %s", alert_id)
+        return templates.TemplateResponse("alert_detail.html", {
+            "request": request,
+            "alert": {},
+            "page": "alerts",
+            "toast": {"type": "error", "message": "Could not connect to backend API"},
+        })
     return templates.TemplateResponse("alert_detail.html", {
         "request": request,
-        "alert": alert.get("alert", {}),
+        "alert": alert,
         "page": "alerts",
     })
 
@@ -554,6 +572,17 @@ async def run_triage(request: Request):
         "request": request,
         "result": res,
         "toast": {"type": "success", "message": "AI Triage analysis complete"}
+    })
+
+
+@app.get("/triage/{alert_id}")
+async def get_triage_result(request: Request, alert_id: str):
+    res = await api_request("GET", f"/triage/{alert_id}")
+    can_reanalyze = res.get("triage_id") is not None
+    return templates.TemplateResponse("triage_result_partial.html", {
+        "request": request,
+        "result": res,
+        "can_reanalyze": can_reanalyze,
     })
 
 

@@ -121,8 +121,12 @@
                             <td class="p-3 text-secondary font-mono" x-text="alert.agent_name || 'N/A'" @click="openAlert(alert.id)"></td>
                             <td class="p-3 text-secondary font-mono" x-text="alert.source_ip || 'N/A'" @click="openAlert(alert.id)"></td>
                             <td class="p-3" @click="openAlert(alert.id)">
-                                <span class="badge-dot" :class="alert.rule_level >= 10 ? 'badge-dot-open text-accent-green bg-accent-green/10' : 'badge-dot-closed text-muted bg-white/5'">
-                                    <span x-text="alert.rule_level >= 10 ? '🤖 Ready' : '—'"></span>
+                                <span class="badge-dot" :class="{
+                                    'badge-dot-open text-accent-green bg-accent-green/10': alert.rule_level >= 10,
+                                    'badge-dot text-accent-yellow bg-accent-yellow/10': alert.rule_level >= 7 && alert.rule_level < 10,
+                                    'badge-dot-closed text-muted bg-white/5': alert.rule_level < 7
+                                }">
+                                    <span x-text="alert.rule_level >= 10 ? '🤖 Ready' : (alert.rule_level >= 7 ? '🔵 LLM' : '—')"></span>
                                 </span>
                             </td>
                         </tr>
