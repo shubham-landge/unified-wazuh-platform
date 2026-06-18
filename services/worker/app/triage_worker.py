@@ -218,8 +218,8 @@ class TriageWorker:
 
                 # UEBA: update baselines and detect anomalies
                 try:
-                    from shared.ueba.detector import analyze_alert
-                    anomalies = await analyze_alert(session, alert)
+                    from shared.ueba.detector import process_alert
+                    anomalies = await process_alert(session, alert, str(alert.tenant_id) if alert.tenant_id else None)
                     if anomalies:
                         await session.commit()
                         logger.info("UEBA: %d anomalies for alert %s", len(anomalies), alert_id)
