@@ -115,6 +115,7 @@ CREATE TABLE ai_triage_results (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     alert_id UUID REFERENCES alerts(id) ON DELETE SET NULL,
+    status VARCHAR(20) DEFAULT 'completed',  -- pending | completed | failed (async triage)
     model_name TEXT NOT NULL,
     model_version TEXT,
     prompt_text TEXT,

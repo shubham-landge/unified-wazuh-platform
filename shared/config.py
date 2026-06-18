@@ -273,6 +273,22 @@ class Settings(BaseSettings):
     llm_model_top_k: int = 40
     llm_model_repeat_penalty: float = 1.15
 
+    # ── LLM Stability (CPU-only hardening) ──
+    # Keep the model resident in Ollama between requests. Without this the 8B
+    # unloads after ~5 min idle and every cold request pays a 1-2 min load
+    # penalty — the main source of latency variance. "-1" = keep forever,
+    # "30m" = keep 30 minutes. Set to "0" only if RAM-constrained.
+    ollama_keep_alive: str = "30m"
+    # Max concurrent LLM inferences. CPU-only Ollama serializes internally, so
+    # >1 just piles up timeouts and risks OOM from parallel model loads. Keep 1.
+    llm_max_concurrency: int = 1
+    # Cap generated tokens so a runaway response can't double the latency.
+    llm_num_predict: int = 1024
+    # Explicit context window (notmythos/qwen real ceiling is ~8192 on CPU).
+    llm_num_ctx: int = 8192
+    # Retries on transient timeout/connection errors before giving up.
+    llm_max_retries: int = 1
+
     # ── Prompt Template Loading ──
     prompts_path: str = "/app/prompts"  # directory for per-model .md prompt templates
 

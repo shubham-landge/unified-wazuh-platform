@@ -5,19 +5,20 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
-from shared.config import settings
+from shared.config import settings, default_tenant_uuid
 from shared.models.alert import Alert
 from shared.models.ai_triage_result import AiTriageResult
+from shared.models.agent import AgentDefinition, AgentRun, AgentTask
 from shared.rag.skill_memory import add_experience
-from shared.models.agent import AgentTask
 
 logger = logging.getLogger(__name__)
 
 INDEXER_TIMEOUT = 30.0
 REINDEX_TRIGGER_REDIS_KEY = "meta_agent:reindex_queue"
+META_AGENT_NAME = "Meta Agent"
 
 
 class MetaAgent:
@@ -25,8 +26,10 @@ class MetaAgent:
         self.engine = create_async_engine(settings.database_url, pool_size=5)
         self.session_factory = async_sessionmaker(self.engine, expire_on_commit=False)
         self._stopped = asyncio.Event()
+        self._meta_definition_id: uuid.UUID | None = None
 
     async def start(self):
+        await self._resolve_definition_id()
         while not self._stopped.is_set():
             try:
                 await self.scan_missed_detections()
@@ -40,6 +43,32 @@ class MetaAgent:
     async def stop(self):
         self._stopped.set()
         await self.engine.dispose()
+
+    async def _resolve_definition_id(self):
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(AgentDefinition).where(
+                    AgentDefinition.name == META_AGENT_NAME,
+                    AgentDefinition.is_active == True,
+                )
+            )
+            defn = result.scalar_one_or_none()
+            if not defn:
+                # Self-heal: AgentTask.run_id is NOT NULL REFERENCES agent_runs,
+                # so we must never invent a run_id. Create the definition if the
+                # migration seed hasn't run, guaranteeing a valid run linkage.
+                defn = AgentDefinition(
+                    name=META_AGENT_NAME,
+                    description="Nightly scan for missed detections (alerts with no triage).",
+                    agent_type="meta_agent",
+                    is_active=True,
+                )
+                session.add(defn)
+                await session.flush()
+                logger.info("Meta agent: seeded missing '%s' definition %s", META_AGENT_NAME, defn.id)
+                await session.commit()
+            self._meta_definition_id = defn.id
+            logger.info("Meta agent: resolved definition ID %s", defn.id)
 
     async def scan_missed_detections(self):
         async with self.session_factory() as session:
@@ -63,9 +92,22 @@ class MetaAgent:
             if not all_missed:
                 return
 
+            # A definition is always resolved at startup (self-healed if missing),
+            # so we can create a real run and never orphan a task's run_id FK.
+            run = AgentRun(
+                definition_id=self._meta_definition_id,
+                tenant_id=default_tenant_uuid(),
+                trigger_type="scheduled",
+                status="running",
+                started_at=datetime.now(timezone.utc),
+            )
+            session.add(run)
+            await session.flush()
+
             reindex_ids = []
             for alert in all_missed:
                 task = AgentTask(
+                    run_id=run.id,
                     agent_type="meta_agent",
                     input_data={
                         "alert_id": str(alert.id),
@@ -79,11 +121,19 @@ class MetaAgent:
                         "reindex": "pending",
                     },
                     status="completed",
+                    started_at=datetime.now(timezone.utc),
+                    completed_at=datetime.now(timezone.utc),
                 )
+                session.add(task)
+                await session.flush()
                 await add_experience(session, task)
 
                 if alert.rule_level and alert.rule_level >= 10:
                     reindex_ids.append(str(alert.id))
+
+            run.status = "completed"
+            run.completed_at = datetime.now(timezone.utc)
+            run.result_summary = f"Processed {len(all_missed)} missed detections ({len(reindex_ids)} high-severity flagged for re-triage)"
 
             await session.commit()
 

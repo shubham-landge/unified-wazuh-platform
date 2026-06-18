@@ -31,7 +31,7 @@ API_BASE = os.getenv("API_BASE_URL", "http://api:8000")
 templates = Jinja2Templates(directory="templates", autoescape=True)
 
 STORE_PATH = "app/dashboard_store.json"
-_HTTP_TIMEOUT = 10.0
+_HTTP_TIMEOUT = 300.0
 _http_client: httpx.AsyncClient | None = None
 
 # Settings keys that must never be persisted to the dashboard JSON store.
@@ -568,10 +568,25 @@ async def run_triage(request: Request):
         
     res = await api_request("POST", "/triage/run", json_data=payload)
     
+    if res.get("status") == "pending":
+        return templates.TemplateResponse("triage_result_partial.html", {
+            "request": request,
+            "result": {"status": "pending", "alert_id": payload.get("alert_id")},
+        })
+    
+    if res.get("status") == "error" or (
+        res.get("status") != "accepted" and res.get("triage_id") is None
+    ):
+        return templates.TemplateResponse("triage_result_partial.html", {
+            "request": request,
+            "result": {"status": "error", "detail": res.get("detail", "Triage analysis failed")},
+            "toast": {"type": "error", "message": res.get("detail", "Triage analysis failed")},
+        })
+    
     return templates.TemplateResponse("triage_result_partial.html", {
         "request": request,
         "result": res,
-        "toast": {"type": "success", "message": "AI Triage analysis complete"}
+        "toast": {"type": "success", "message": "AI Triage analysis complete"},
     })
 
 
@@ -1869,6 +1884,19 @@ async def agent_runs_page(request: Request):
         "page": "agents",
         "active_tab": "runs",
     })
+
+
+@app.post("/agents/run")
+async def trigger_agent_run(request: Request):
+    redirect = require_login(request)
+    if redirect:
+        return redirect
+    form = await request.form()
+    definition_id = form.get("definition_id")
+    trigger_ref = form.get("trigger_ref", "")
+    payload = {"definition_id": definition_id, "trigger_ref": trigger_ref}
+    await api_request("POST", "/agents/runs", json_data=payload)
+    return RedirectResponse(url="/agents", status_code=303)
 
 
 @app.get("/approvals", response_class=HTMLResponse)

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -10,6 +11,19 @@ from shared.config import settings
 from shared.connectors.circuit_breaker import CircuitBreaker
 
 logger = logging.getLogger(__name__)
+
+# Process-wide gate on concurrent local LLM inference. CPU-only Ollama can only
+# run one generation at a time; letting requests pile up causes timeouts and
+# parallel model loads (OOM). Lazily created so the limit binds per event loop.
+_LLM_SEMAPHORE: asyncio.Semaphore | None = None
+
+
+def _ollama_semaphore() -> asyncio.Semaphore:
+    global _LLM_SEMAPHORE
+    if _LLM_SEMAPHORE is None:
+        limit = max(1, getattr(settings, "llm_max_concurrency", 1))
+        _LLM_SEMAPHORE = asyncio.Semaphore(limit)
+    return _LLM_SEMAPHORE
 
 SENSITIVE_PATTERNS = [
     (re.compile(r'(?i)(password|secret|token|api_key|apikey|auth|credential)\s*[:=]\s*\S+'), r'\1: [REDACTED]'),
@@ -176,11 +190,18 @@ class OllamaProvider(LLMProvider):
             # Constrain decoding to valid JSON so triage responses parse reliably
             # on the CPU-only models, which otherwise wrap JSON in prose.
             "format": "json",
+            # Keep the model resident between requests — eliminates the cold-load
+            # latency spike that dominates variance on CPU-only deploys.
+            "keep_alive": getattr(settings, "ollama_keep_alive", "30m"),
             "options": {
                 "temperature": temp,
                 "top_p": top_p,
                 "top_k": top_k,
                 "repeat_penalty": repeat_penalty,
+                # Bound output + context so a runaway generation can't double
+                # latency or exceed the CPU context ceiling.
+                "num_predict": getattr(settings, "llm_num_predict", 1024),
+                "num_ctx": getattr(settings, "llm_num_ctx", 8192),
             },
         }
 
@@ -190,20 +211,33 @@ class OllamaProvider(LLMProvider):
                 resp.raise_for_status()
                 return resp.json()
 
-        try:
-            data = await self._cb.call(_call)
-            content = data.get("message", {}).get("content", "")
-            result = parse_llm_response(content)
-            result["model"] = self.model
-            result["tokens_input"] = data.get("prompt_eval_count", 0)
-            result["tokens_output"] = data.get("eval_count", 0)
-            return result
-        except httpx.TimeoutException:
-            logger.warning("Ollama request timed out for model %s", self.model)
-            return {"success": False, "error": "Request timed out"}
-        except Exception as e:
-            logger.error("Ollama request failed: %s", e)
-            return {"success": False, "error": str(e)}
+        # Serialize CPU-bound inference: concurrent calls just thrash one CPU and
+        # time out. The semaphore queues them so each runs cleanly in turn.
+        max_retries = getattr(settings, "llm_max_retries", 1)
+        last_error = None
+        async with _ollama_semaphore():
+            for attempt in range(max_retries + 1):
+                try:
+                    data = await self._cb.call(_call)
+                    content = data.get("message", {}).get("content", "")
+                    result = parse_llm_response(content)
+                    result["model"] = self.model
+                    result["tokens_input"] = data.get("prompt_eval_count", 0)
+                    result["tokens_output"] = data.get("eval_count", 0)
+                    return result
+                except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError) as e:
+                    last_error = e
+                    if attempt < max_retries:
+                        logger.warning("Ollama transient error (attempt %d/%d) for %s: %s",
+                                       attempt + 1, max_retries + 1, self.model, e)
+                        continue
+                    logger.warning("Ollama request failed after retries for model %s: %s", self.model, e)
+                    return {"success": False, "error": f"Ollama unavailable: {e}"}
+                except Exception as e:
+                    # Non-transient (circuit open, bad response): don't retry.
+                    logger.error("Ollama request failed: %s", e)
+                    return {"success": False, "error": str(e)}
+        return {"success": False, "error": f"Ollama unavailable: {last_error}"}
 
     async def health(self) -> dict:
         try:
