@@ -34,7 +34,7 @@ async def process_alert(
 
     for entity_type, entity_value in entities:
         bl_count = await update_baseline(
-            session, entity_type, entity_value, "alert_count", 1.0
+            session, entity_type, entity_value, "alert_count", 1.0, tenant_id=tenant_id
         )
         z = compute_z_score(bl_count, float(bl_count.n))
         if z >= 1.5:
@@ -66,7 +66,7 @@ async def process_alert(
 
         if hasattr(alert, "rule_level") and alert.rule_level:
             bl_level = await update_baseline(
-                session, entity_type, entity_value, "rule_level", float(alert.rule_level)
+                session, entity_type, entity_value, "rule_level", float(alert.rule_level), tenant_id=tenant_id
             )
             z_level = compute_z_score(bl_level, float(alert.rule_level))
             if z_level >= 2.0:
