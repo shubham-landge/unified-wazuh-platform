@@ -292,6 +292,16 @@ class Settings(BaseSettings):
     # Retries on transient timeout/connection errors before giving up.
     llm_max_retries: int = 1
 
+    # ── Triage DLQ ──
+    dlq_max_retries: int = 3
+    dlq_poll_interval: int = 5
+
+    # ── Semantic result cache (Phase P0-5) ──
+    triage_cache_enabled: bool = True
+    triage_cache_ttl_seconds: int = 1800
+    triage_cache_similarity_threshold: float = 0.92
+    triage_cache_skip_level: int = 12
+
     # ── Prompt Template Loading ──
     prompts_path: str = "/app/prompts"  # directory for per-model .md prompt templates
 

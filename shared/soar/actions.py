@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime, timezone
 
 import httpx
+from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +151,100 @@ async def _log(action: dict, ctx: ActionContext) -> dict:
     return {"success": True}
 
 
+async def _identity_disable_user(action: dict, ctx: ActionContext) -> dict:
+    from shared.orchestrator.handlers import containment_guard
+    from shared.models.alert import Alert
+
+    user_id = action.get("user_id")
+    if not user_id:
+        return {"success": False, "error": "user_id required"}
+
+    tenant_id = None
+    alert_id = ctx.alert.get("id")
+    if alert_id:
+        res = await ctx.session.execute(select(Alert).where(Alert.id == uuid.UUID(str(alert_id))))
+        alert = res.scalar_one_or_none()
+        if alert:
+            tenant_id = alert.tenant_id
+
+    guard = await containment_guard(
+        ctx.session,
+        tenant_id,
+        "disable_user",
+        {"user_id": user_id, "alert_id": alert_id},
+        rationale=f"SOAR requested disabling user {user_id} for alert {alert_id}",
+        risk_level="high",
+    )
+    if not guard["approved"]:
+        logger.warning("disable_user gated pending approval %s", guard.get("approval_id"))
+        return {"success": False, "requires_approval": True, "approval_id": guard.get("approval_id"), "error": guard["reason"]}
+
+    from shared.soar.actions_identity import disable_user
+    return await disable_user(user_id, reason=action.get("reason"), graph_token=action.get("graph_token"))
+
+
+async def _identity_revoke_sessions(action: dict, ctx: ActionContext) -> dict:
+    from shared.orchestrator.handlers import containment_guard
+    from shared.models.alert import Alert
+
+    user_id = action.get("user_id")
+    if not user_id:
+        return {"success": False, "error": "user_id required"}
+
+    tenant_id = None
+    alert_id = ctx.alert.get("id")
+    if alert_id:
+        res = await ctx.session.execute(select(Alert).where(Alert.id == uuid.UUID(str(alert_id))))
+        alert = res.scalar_one_or_none()
+        if alert:
+            tenant_id = alert.tenant_id
+
+    guard = await containment_guard(
+        ctx.session,
+        tenant_id,
+        "revoke_sessions",
+        {"user_id": user_id, "alert_id": alert_id},
+        rationale=f"SOAR requested revoking sessions for user {user_id}",
+        risk_level="high",
+    )
+    if not guard["approved"]:
+        return {"success": False, "requires_approval": True, "approval_id": guard.get("approval_id"), "error": guard["reason"]}
+
+    from shared.soar.actions_identity import revoke_sessions
+    return await revoke_sessions(user_id, graph_token=action.get("graph_token"))
+
+
+async def _identity_block_ip(action: dict, ctx: ActionContext) -> dict:
+    from shared.orchestrator.handlers import containment_guard
+    from shared.models.alert import Alert
+
+    ip_address = action.get("ip_address")
+    if not ip_address:
+        return {"success": False, "error": "ip_address required"}
+
+    tenant_id = None
+    alert_id = ctx.alert.get("id")
+    if alert_id:
+        res = await ctx.session.execute(select(Alert).where(Alert.id == uuid.UUID(str(alert_id))))
+        alert = res.scalar_one_or_none()
+        if alert:
+            tenant_id = alert.tenant_id
+
+    guard = await containment_guard(
+        ctx.session,
+        tenant_id,
+        "block_ip",
+        {"ip_address": ip_address, "alert_id": alert_id},
+        rationale=f"SOAR requested blocking IP {ip_address}",
+        risk_level="medium",
+    )
+    if not guard["approved"]:
+        return {"success": False, "requires_approval": True, "approval_id": guard.get("approval_id"), "error": guard["reason"]}
+
+    from shared.soar.actions_identity import block_ip
+    return await block_ip(ip_address, reason=action.get("reason"))
+
+
 _REGISTRY = {
     "create_case":          _create_case,
     "webhook":              _webhook,
@@ -158,4 +253,7 @@ _REGISTRY = {
     "enrich_threat_intel":  _enrich_threat_intel,
     "set_severity":         _set_severity,
     "log":                  _log,
+    "disable_user":         _identity_disable_user,
+    "revoke_sessions":      _identity_revoke_sessions,
+    "block_ip":             _identity_block_ip,
 }

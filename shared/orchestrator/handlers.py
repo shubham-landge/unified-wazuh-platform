@@ -4,6 +4,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy import desc, select
 
@@ -174,6 +175,50 @@ async def policy_guard(input_data: dict, ctx: HandlerContext) -> dict:
         "reason": "Action requires human approval",
         "action_type": action_type,
         "target_ref": target_ref,
+    }
+
+
+async def containment_guard(
+    session,
+    tenant_id: uuid.UUID | None,
+    action_type: str,
+    action_params: dict[str, Any],
+    rationale: str,
+    risk_level: str = "high",
+) -> dict[str, Any]:
+    """Mandatory approval gate for containment/executive actions.
+
+    Never auto-approves. Checks for an existing approved request; otherwise
+    creates a pending ApprovalRequest and returns `approved=False`.
+    """
+    target_ref = action_params.get("user_id") or action_params.get("ip_address") or action_params.get("alert_id") or action_params.get("case_id")
+
+    existing = await _check_existing_approval(session, tenant_id, action_type, target_ref)
+    if existing:
+        return {
+            "approved": True,
+            "approval_id": str(existing.id),
+            "reason": "Existing approved request found",
+        }
+
+    approval = ApprovalRequest(
+        tenant_id=tenant_id,
+        requested_by="soar:containment",
+        action_type=action_type,
+        action_params=action_params if isinstance(action_params, dict) else {},
+        target_ref=target_ref,
+        rationale=rationale,
+        risk_level=risk_level,
+        status="pending",
+        expires_at=datetime.now(timezone.utc) + timedelta(seconds=3600),
+    )
+    session.add(approval)
+    await session.flush()
+
+    return {
+        "approved": False,
+        "approval_id": str(approval.id),
+        "reason": "Containment action requires human approval",
     }
 
 

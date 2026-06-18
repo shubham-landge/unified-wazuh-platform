@@ -16,6 +16,8 @@ from shared.models.case_investigation_step import CaseInvestigationStep
 from shared.connectors.llm_provider import get_provider
 from shared.connectors.llm_router import TieredRouter
 from shared import noise_reduction
+from shared import triage_cache
+from shared import triage_rag
 
 logger = logging.getLogger(__name__)
 
@@ -38,18 +40,29 @@ def _load_system_prompt() -> str:
 
 TRIAGE_PROMPT_SYSTEM = _load_system_prompt()
 
+# Fail pending triage rows older than this many seconds if the worker dies or
+# the LLM never returns.
+_PENDING_REAPER_TIMEOUT_SECONDS = 600
+
 
 class TriageWorker:
     def __init__(self):
         self.engine = create_async_engine(settings.database_url, pool_size=5)
         self.session_factory = async_sessionmaker(self.engine, expire_on_commit=False)
         self.redis_client: redis.Redis | None = None
+        self._shutdown = False
 
     async def start(self):
         self.redis_client = await redis.from_url(settings.redis_url, decode_responses=True)
         logger.info("Triage worker started. Waiting for alerts...")
 
-        while True:
+        await asyncio.gather(
+            self._run_queue_loop(),
+            self._run_reaper_loop(),
+        )
+
+    async def _run_queue_loop(self):
+        while not self._shutdown:
             try:
                 item = await self.redis_client.brpop("triage_queue", timeout=5)
                 if item:
@@ -60,6 +73,39 @@ class TriageWorker:
             except Exception as e:
                 logger.error("Triage worker error: %s", e, exc_info=True)
                 await asyncio.sleep(1)
+
+    async def _run_reaper_loop(self):
+        """Periodically fail triage rows stuck in 'pending' too long."""
+        while not self._shutdown:
+            try:
+                await asyncio.sleep(60)
+                await self._reap_stale_pending()
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.error("Reaper loop error: %s", exc)
+
+    async def _reap_stale_pending(self):
+        from datetime import datetime, timedelta, timezone
+        from sqlalchemy import update
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=_PENDING_REAPER_TIMEOUT_SECONDS)
+        async with self.session_factory() as session:
+            stmt = (
+                update(AiTriageResult)
+                .where(
+                    AiTriageResult.status == "pending",
+                    AiTriageResult.created_at < cutoff,
+                )
+                .values(
+                    status="failed",
+                    success=False,
+                    error_message="Reaper: triage timed out",
+                )
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            if result.rowcount:
+                logger.warning("Reaper failed %d stale pending triage row(s)", result.rowcount)
 
     async def process_message(self, msg: dict):
         alert_id = msg.get("alert_id")
@@ -125,10 +171,21 @@ class TriageWorker:
                     f"MITRE: {alert.mitre_tactic} / {alert.mitre_technique}\n"
                 )
 
-                result_data = await provider.analyze(
-                    system_prompt=TRIAGE_PROMPT_SYSTEM,
-                    user_prompt=user_prompt,
-                )
+                # ── Semantic result cache (skip LLM for near-duplicates) ──
+                cached_verdict = await triage_cache.lookup(self.redis_client, alert)
+                if cached_verdict:
+                    logger.info("Triage cache hit for alert %s", alert_id)
+                    result_data = cached_verdict
+                    result_data["model_name"] = f"{provider.name()}-cached"
+                else:
+                    # ── RAG augmentation: retrieve similar past verdicts ──
+                    rag_context = await triage_rag.build_triage_context(session, alert, k=3)
+                    system_prompt = TRIAGE_PROMPT_SYSTEM + rag_context if rag_context else TRIAGE_PROMPT_SYSTEM
+
+                    result_data = await provider.analyze(
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                    )
 
                 succeeded = result_data.get("success", True) is not False
                 fields = dict(
@@ -216,6 +273,20 @@ class TriageWorker:
 
                 await session.commit()
 
+                # Persist the triage verdict for future RAG retrieval and cache it
+                # for near-duplicate alerts.
+                try:
+                    verdict_for_rag = {
+                        "triage_id": str(triage.id),
+                        **fields,
+                    }
+                    if not result_data.get("_cached"):
+                        await triage_cache.store(self.redis_client, alert, verdict_for_rag)
+                    await triage_rag.persist_triage_verdict(session, alert, verdict_for_rag)
+                    await session.commit()
+                except Exception as cache_err:
+                    logger.warning("Triage cache/RAG persist failed for alert %s: %s", alert_id, cache_err)
+
                 # UEBA: update baselines and detect anomalies
                 try:
                     from shared.ueba.detector import process_alert
@@ -283,6 +354,7 @@ class TriageWorker:
             logger.warning("Could not mark triage %s failed: %s", triage_id, exc)
 
     async def stop(self):
+        self._shutdown = True
         if self.redis_client:
             await self.redis_client.close()
         await self.engine.dispose()
