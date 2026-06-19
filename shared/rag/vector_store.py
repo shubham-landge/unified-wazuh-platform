@@ -42,12 +42,13 @@ async def search_knowledge(query: str, db: AsyncSession, top_k: int = 5) -> list
             "chunk_text": c.chunk_text[:500],
             "similarity": round(s, 4),
             "created_at": c.created_at.isoformat() if c.created_at else None,
+            "metadata": c.extra_meta,
         }
         for s, c in scored[:top_k]
     ]
 
 
-async def ingest_knowledge(source: str, text: str, db: AsyncSession, metadata: dict | None = None, commit: bool = True) -> bool:
+async def ingest_knowledge(source: str, text: str, db: AsyncSession, metadata: dict | None = None, commit: bool = True, tenant_id: str | None = None) -> bool:
     from shared.models.knowledge_base import KnowledgeChunk
     try:
         emb = await embed_text(text)
@@ -57,6 +58,7 @@ async def ingest_knowledge(source: str, text: str, db: AsyncSession, metadata: d
             embedding=emb,
             extra_meta=metadata or {},
             token_count=len(text.split()),
+            tenant_id=tenant_id,
         )
         db.add(chunk)
         if commit:

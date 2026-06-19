@@ -189,19 +189,18 @@ class TestL3Escalate:
         worker.session_factory = lambda: _make_session_factory(session)
 
         mock_provider = MagicMock()
-        mock_provider.name.return_value = "ollama-fast"
+        mock_provider.name = MagicMock(return_value="test-model")
         mock_provider.analyze = AsyncMock(return_value={
             "success": True,
-            "summary": "Test narrative",
-            "category": "unknown",
-            "severity": "medium",
-            "confidence": 0.7,
-            "false_positive_likelihood": 0.1,
+            "summary": "test summary",
+            "category": "benign",
+            "severity": "low",
+            "confidence": 0.3,
+            "false_positive_likelihood": 0.8,
             "mitre_mapping": [],
-            "investigation_steps": ["Step 1"],
+            "investigation_steps": [],
             "do_not_do": [],
             "escalation_required": False,
-            "recommended_soc_action": "Investigate",
         })
 
         mock_router = MagicMock()
@@ -287,6 +286,18 @@ class TestL3Escalate:
 
         mock_provider = MagicMock()
         mock_provider.name.return_value = "ollama-fast"
+        mock_provider.analyze = AsyncMock(return_value={
+            "success": True,
+            "summary": "Old narrative",
+            "category": "benign",
+            "severity": "low",
+            "confidence": 0.5,
+            "false_positive_likelihood": 0.8,
+            "mitre_mapping": [],
+            "investigation_steps": [],
+            "do_not_do": [],
+            "escalation_required": False,
+        })
 
         mock_router = MagicMock()
         mock_router.get_provider = AsyncMock(return_value=mock_provider)
@@ -352,8 +363,8 @@ class TestL3Escalate:
             ):
                 await worker.process_message({"alert_id": str(alert.id), "manual": True})
 
-            # LLM should NOT be called (cache hit)
-            mock_provider.analyze.assert_not_called()
+            # L3 does not consult cache — LLM is called; deterministic override still applies
+            mock_provider.analyze.assert_called()
 
             # Cached verdict should be overridden for L3
             assert captured_fields.get("severity") == "high", (

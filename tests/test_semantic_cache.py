@@ -14,7 +14,8 @@ from __future__ import annotations
 import json
 import math
 import time
-from unittest.mock import MagicMock, patch
+import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -121,20 +122,23 @@ class TestFeaturesText:
 
 
 def _make_mock_redis():
-    """Create a mock Redis client that behaves like a simple dict."""
+    """Create a mock Redis client that behaves like a simple dict.
+
+    Uses async side effects so ``await redis.get(key)`` etc. work with
+    the async ``SemanticCache`` implementation.
+    """
     mock = MagicMock()
     store: dict[str, str] = {}
 
-    def _get(key):
+    async def _get(key):
         return store.get(key)
 
-    def _set(key, value, ex=None):
+    async def _set(key, value, ex=None):
         store[key] = value
         return True
 
-    def _scan(cursor=0, match=None, count=100):
+    async def _scan(cursor=0, match=None, count=100):
         import fnmatch
-        import os
         # Simulate SCAN returning keys that match the pattern
         pattern = match.replace("*", "*") if match else "*"
         all_keys = list(store.keys())
@@ -142,7 +146,7 @@ def _make_mock_redis():
         matching = [k for k in all_keys if fnmatch.fnmatch(k, pattern)]
         return (0, matching)
 
-    def _delete(*keys):
+    async def _delete(*keys):
         removed = 0
         for k in keys:
             if k in store:
@@ -348,3 +352,211 @@ class TestEmbeddingQuality:
         sim = _similarity(emb1, emb2)
 
         assert sim < 0.5, f"Dissimilar alerts should have sim < 0.5, got {sim:.4f}"
+
+
+# ── L2-only gating (triage_worker integration) ───────────────────────────────
+
+
+class TestSemanticCacheL2Gating:
+    """Verify that triage_worker only consults SemanticCache for L2_TRIAGE alerts.
+
+    This tests the integration decision gate → semantic cache wiring.
+    """
+
+    @pytest.fixture
+    def alert(self):
+        return MagicMock(
+            id=uuid.uuid4(),
+            rule_id=5712,
+            rule_description="sshd: brute force",
+            rule_level=10,
+            source_ip="10.0.0.5",
+            agent_id="agent-01",
+            agent_name="web-01",
+            agent_ip="192.168.1.10",
+            tenant_id=uuid.uuid4(),
+            mitre_technique="T1110",
+            rule_groups="ssh,brute_force",
+            mitre_tactic="Initial Access",
+            user_name="root",
+            process_name="sshd",
+        )
+
+    class _MockSession:
+        """Minimal async session that returns the given alert on execute()."""
+
+        def __init__(self, a):
+            self._alert = a
+
+        async def execute(self, stmt):
+            alert_ref = self._alert  # capture for closure
+
+            class _Result:
+                def scalar_one_or_none(self):
+                    return alert_ref
+            return _Result()
+
+        async def flush(self):
+            pass
+
+        async def commit(self):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def get(self, model, id):
+            return None
+
+        def add(self, obj):
+            pass
+
+    async def _run_with_level(self, alert, level: str):
+        """Run triage_worker.process_message() and return the mocked SemanticCache.lookup.
+
+        Only ``level`` is varied; all other dependencies are mocked out.
+        """
+        from shared.enrichment.decision import Decision, DecisionLevel
+
+        # We need the real TriageWorker for process_message — but we patch
+        # everything else.  Import here to avoid module-level side effects.
+        from services.worker.app.triage_worker import TriageWorker
+
+        worker = TriageWorker()
+        worker._shutdown = True
+        worker.redis_client = AsyncMock()
+        worker.session_factory = lambda: self._MockSession(alert)
+
+        with (
+            patch(
+                "services.worker.app.triage_worker.noise_reduction.evaluate",
+                new_callable=AsyncMock,
+            ) as m_noise,
+            patch(
+                "services.worker.app.triage_worker.enrich_alert",
+                new_callable=AsyncMock,
+            ) as m_enrich,
+            patch(
+                "services.worker.app.triage_worker.compute_risk_score",
+            ) as m_risk,
+            patch("services.worker.app.triage_worker.decide") as m_decide,
+            patch(
+                "services.worker.app.triage_worker.TieredRouter",
+            ) as m_router,
+            patch(
+                "services.worker.app.triage_worker.triage_rag.persist_triage_verdict",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "services.worker.app.triage_worker.fuse_verdict",
+            ) as m_fuse,
+            patch(
+                "services.worker.app.triage_worker.SemanticCache.lookup",
+                new_callable=AsyncMock,
+            ) as m_cache_lookup,
+        ):
+            m_noise.return_value = MagicMock(
+                should_triage=True,
+                action="keep",
+                force_fast_tier=False,
+                incident=None,
+                reason="kept",
+            )
+            m_enrich.return_value = MagicMock(
+                ti_confidence=0,
+                ti_is_known_bad=False,
+                ti_is_kev=False,
+                ueba_zscore=0,
+                geo_tor_vpn=False,
+                geo_bad_asn=False,
+                geo_impossible_travel=False,
+                vuln_matched=False,
+                is_allowlisted=False,
+            )
+            m_risk.return_value = 50
+
+            # Decision level is the primary variable under test.
+            if level in ("L3_ESCALATE", "L4_CRITICAL"):
+                m_decide.return_value = Decision(
+                    level=getattr(DecisionLevel, level),
+                    score=75,
+                    reason="test",
+                    skip_llm=False,
+                    fast_llm_only=True,
+                    auto_verdict="malicious",
+                    auto_severity="high",
+                )
+            else:
+                m_decide.return_value = Decision(
+                    level=getattr(DecisionLevel, level),
+                    score=50,
+                    reason="test",
+                    skip_llm=False,
+                    fast_llm_only=False,
+                )
+
+            mock_provider = MagicMock()
+            mock_provider.name.return_value = "test-model"
+            mock_provider.analyze = AsyncMock(
+                return_value={
+                    "success": True,
+                    "summary": "test summary",
+                    "category": "attack",
+                    "severity": "medium",
+                    "confidence": 0.5,
+                    "false_positive_likelihood": 0.3,
+                    "escalation_required": False,
+                },
+            )
+            m_router.return_value.get_provider = AsyncMock(
+                return_value=mock_provider,
+            )
+
+            # Fusion just passes through
+            def _passthrough_fuse(data, ctx, score):
+                data["fusion_applied"] = False
+                return data
+
+            m_fuse.side_effect = _passthrough_fuse
+
+            # Cache miss by default so the LLM path runs for L2
+            m_cache_lookup.return_value = (False, {})
+
+            await worker.process_message({"alert_id": str(alert.id)})
+
+        return m_cache_lookup
+
+    # ── Each level test ───────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_cache_skipped_for_l0_suppress(self, alert):
+        """L0_SUPPRESS → SemanticCache.lookup not called."""
+        cache_mock = await self._run_with_level(alert, "L0_SUPPRESS")
+        cache_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_cache_skipped_for_l1_auto_close(self, alert):
+        """L1_AUTO_CLOSE → SemanticCache.lookup not called."""
+        cache_mock = await self._run_with_level(alert, "L1_AUTO_CLOSE")
+        cache_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_cache_consulted_for_l2_triage(self, alert):
+        """L2_TRIAGE → SemanticCache.lookup is called."""
+        cache_mock = await self._run_with_level(alert, "L2_TRIAGE")
+        cache_mock.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_cache_skipped_for_l3_escalate(self, alert):
+        """L3_ESCALATE → SemanticCache.lookup not called."""
+        cache_mock = await self._run_with_level(alert, "L3_ESCALATE")
+        cache_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_cache_skipped_for_l4_critical(self, alert):
+        """L4_CRITICAL → SemanticCache.lookup not called."""
+        cache_mock = await self._run_with_level(alert, "L4_CRITICAL")
+        cache_mock.assert_not_awaited()

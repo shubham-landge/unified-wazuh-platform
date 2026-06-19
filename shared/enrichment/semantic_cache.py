@@ -235,14 +235,14 @@ class SemanticCache:
             cursor = 0
             scanned = 0
             while True:
-                cursor, keys = self._r.scan(
+                cursor, keys = await self._r.scan(
                     cursor, match=self._key_pattern(), count=100
                 )
                 scanned += len(keys)
 
                 for key in keys:
                     try:
-                        raw = self._r.get(key)
+                        raw = await self._r.get(key)
                         if not raw:
                             continue
                         entry = json.loads(raw)
@@ -315,7 +315,7 @@ class SemanticCache:
         }
 
         try:
-            self._r.set(key, json.dumps(payload), ex=ttl)
+            await self._r.set(key, json.dumps(payload), ex=ttl)
             logger.debug("semantic_cache stored key=%s ttl=%d", key, ttl)
             return True
         except Exception as exc:
@@ -335,11 +335,11 @@ class SemanticCache:
             deleted = 0
             cursor = 0
             while True:
-                cursor, keys = self._r.scan(
+                cursor, keys = await self._r.scan(
                     cursor, match=self._key_pattern(), count=100
                 )
                 if keys:
-                    self._r.delete(*keys)
+                    await self._r.delete(*keys)
                     deleted += len(keys)
                 if cursor == 0:
                     break

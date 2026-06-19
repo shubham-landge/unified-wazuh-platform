@@ -16,12 +16,14 @@ from shared.models.case_investigation_step import CaseInvestigationStep
 from shared.connectors.llm_provider import get_provider
 from shared.connectors.llm_router import TieredRouter
 from shared import noise_reduction
-from shared import triage_cache
+from shared import triage_cache  # kept for backward-compat import (tests patch this)
 from shared import triage_rag
 from shared.enrichment.pipeline import enrich_alert
 from shared.enrichment.risk_score import compute_risk_score
 from shared.enrichment.decision import decide, DecisionLevel
 from shared.enrichment.auto_close import should_auto_close, execute_auto_close
+from shared.enrichment.semantic_cache import SemanticCache
+from shared.enrichment.decision_fusion import fuse_verdict
 
 logger = logging.getLogger(__name__)
 
@@ -251,20 +253,56 @@ class TriageWorker:
                     f"{enrichment_context}"
                 )
 
-                # ── Semantic result cache (skip LLM for near-duplicates) ──
-                cached_verdict = await triage_cache.lookup(self.redis_client, alert)
-                if cached_verdict:
-                    logger.info("Triage cache hit for alert %s", alert_id)
-                    result_data = cached_verdict
-                    result_data["model_name"] = f"{provider.name()}-cached"
-                else:
+                # ── Semantic result cache (L2 only: skip LLM for near-duplicates) ──
+                semantic_cache_obj: SemanticCache | None = None
+                alert_features: dict | None = None
+                cache_hit = False
+
+                if decision_result.level == DecisionLevel.L2_TRIAGE:
+                    tenant_id = str(alert.tenant_id) if alert.tenant_id else "default"
+                    semantic_cache_obj = SemanticCache(
+                        redis_client=self.redis_client,
+                        tenant_id=tenant_id,
+                    )
+                    alert_features = {
+                        "rule_description": alert.rule_description or "",
+                        "source_ip": alert.source_ip or "",
+                        "mitre_technique": alert.mitre_technique or "",
+                        "rule_groups": alert.rule_groups or "",
+                    }
+                    hit, cached_data = await semantic_cache_obj.lookup(
+                        alert_features,
+                        threshold=settings.triage_cache_similarity_threshold,
+                    )
+                    if hit:
+                        logger.info("Semantic cache hit for alert %s", alert_id)
+                        cache_hit = True
+                        result_data = cached_data
+                        result_data["_cached"] = True
+                        result_data["_cache_source"] = "semantic"
+
+                if not cache_hit:
                     # ── RAG augmentation: retrieve similar past verdicts ──
-                    rag_context = await triage_rag.build_triage_context(session, alert, k=3)
+                    rag_context = await triage_rag.build_triage_context(
+                        session, alert, k=3, tenant_id=str(alert.tenant_id) if alert.tenant_id else None
+                    )
                     system_prompt = TRIAGE_PROMPT_SYSTEM + rag_context if rag_context else TRIAGE_PROMPT_SYSTEM
 
                     result_data = await provider.analyze(
                         system_prompt=system_prompt,
                         user_prompt=user_prompt,
+                    )
+
+                # ── Hybrid decision fusion (L2 only; L3/L4 are deterministic) ──
+                if not cache_hit and decision_result.level in (
+                    DecisionLevel.L2_TRIAGE,
+                ):
+                    result_data = fuse_verdict(result_data, ctx, score)
+                    logger.debug(
+                        "Fusion applied=%s overrides=%s for alert %s",
+                        result_data.get("fusion_applied"),
+                        result_data.get("fusion_overrides"),
+                        alert_id,
                     )
 
                 # ── L3/L4 deterministic override: verdict pre-determined, LLM for narrative only ──
@@ -428,8 +466,12 @@ class TriageWorker:
                         "triage_id": str(triage.id),
                         **fields,
                     }
-                    if not result_data.get("_cached"):
-                        await triage_cache.store(self.redis_client, alert, verdict_for_rag)
+                    if not result_data.get("_cached") and semantic_cache_obj is not None:
+                        await semantic_cache_obj.store(
+                            alert_features,
+                            verdict_for_rag,
+                            ttl=settings.triage_cache_ttl_seconds,
+                        )
                     await triage_rag.persist_triage_verdict(session, alert, verdict_for_rag)
                     await session.commit()
                 except Exception as cache_err:

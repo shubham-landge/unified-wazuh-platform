@@ -20,6 +20,7 @@ async def build_triage_context(
     session: AsyncSession,
     alert: Alert,
     k: int = 3,
+    tenant_id: str | None = None,
 ) -> str:
     """Return a system-prompt appendix with relevant past triage verdicts."""
     if not settings.rag_enabled or not settings.rag_skill_memory_enabled:
@@ -42,6 +43,7 @@ async def build_triage_context(
             query,
             agent_type="triage",
             k=k,
+            tenant_id=tenant_id,
         )
     except Exception as exc:
         logger.debug("Triage RAG retrieval failed: %s", exc)
@@ -92,13 +94,15 @@ async def persist_triage_verdict(
     try:
         from shared.rag.vector_store import ingest_knowledge
         source = f"skill_memory:triage:{alert.id}:{verdict.get('triage_id','unknown')}"
+        _tid = str(alert.tenant_id) if alert.tenant_id else None
         metadata = {
             "agent_type": "triage",
             "alert_id": str(alert.id),
             "rule_id": alert.rule_id,
             "memory_type": "triage_verdict",
+            "tenant_id": _tid,
         }
-        return await ingest_knowledge(source, text, session, metadata, commit=False)
+        return await ingest_knowledge(source, text, session, metadata, commit=False, tenant_id=_tid)
     except Exception as exc:
         logger.warning("Failed to persist triage verdict to skill memory: %s", exc)
         return False

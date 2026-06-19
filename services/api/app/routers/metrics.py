@@ -5,7 +5,9 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from prometheus_client import (
     CollectorRegistry,
+    Counter,
     Gauge,
+    Histogram,
     generate_latest,
     CONTENT_TYPE_LATEST,
 )
@@ -60,6 +62,29 @@ INCIDENT_MTTD = Gauge("soc_incident_mttd_seconds", "Incident mean time to detect
 INCIDENT_MTTR = Gauge("soc_incident_mttr_seconds", "Incident mean time to resolve in seconds", registry=REGISTRY)
 TIME_TO_FULL_ENRICHMENT = Gauge("soc_time_to_full_enrichment_seconds", "Mean time to full enrichment in seconds", registry=REGISTRY)
 BREAKOUT_INCIDENTS = Gauge("soc_breakout_incidents_total", "Total breakout incidents", registry=REGISTRY)
+
+# ── SLO metrics ──────────────────────────────────────────────────────────────
+TRIAGE_SUCCESS_TOTAL = Counter(
+    "soc_triage_success_total",
+    "Cumulative count of successful triage decisions (delta from last scrape)",
+    registry=REGISTRY,
+)
+TRIAGE_FAIL_TOTAL = Counter(
+    "soc_triage_fail_total",
+    "Cumulative count of failed triage decisions (delta from last scrape)",
+    registry=REGISTRY,
+)
+DLQ_DEPTH = Gauge(
+    "soc_dlq_depth",
+    "Current depth of the triage dead-letter queue",
+    registry=REGISTRY,
+)
+TRIAGE_LATENCY_MS = Histogram(
+    "soc_triage_latency_ms",
+    "Triage latency in milliseconds (sampled per scrape)",
+    buckets=[50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000],
+    registry=REGISTRY,
+)
 
 
 
@@ -141,7 +166,39 @@ async def metrics(
         INCIDENT_MTTR.set(float(mttr))
         TIME_TO_FULL_ENRICHMENT.set(float(enrichment))
         BREAKOUT_INCIDENTS.set(float(breakout))
-        
+
+        # ── SLO metrics ──────────────────────────────────────────────────
+        # Delta counters: compute delta since last scrape, inc Counter by delta.
+        success_total_raw = r.get("triage_success_total")
+        fail_total_raw = r.get("triage_fail_total")
+        if success_total_raw is not None:
+            current = int(success_total_raw)
+            last = int(r.get("slo_last_seen_triage_success") or 0)
+            delta = max(0, current - last)
+            if delta > 0:
+                TRIAGE_SUCCESS_TOTAL.inc(delta)
+            r.set("slo_last_seen_triage_success", str(current))
+        if fail_total_raw is not None:
+            current = int(fail_total_raw)
+            last = int(r.get("slo_last_seen_triage_fail") or 0)
+            delta = max(0, current - last)
+            if delta > 0:
+                TRIAGE_FAIL_TOTAL.inc(delta)
+            r.set("slo_last_seen_triage_fail", str(current))
+
+        # DLQ depth gauge
+        dlq_raw = r.llen("triage_dlq") or 0
+        DLQ_DEPTH.set(int(dlq_raw))
+
+        # Latency histogram: sample recent latencies from Redis list
+        latency_samples = r.lrange("triage_latency_samples", 0, -1)
+        if latency_samples:
+            for val in latency_samples:
+                try:
+                    TRIAGE_LATENCY_MS.observe(float(val))
+                except (ValueError, TypeError):
+                    pass
+
         r.close()
     except Exception as exc:
         logger.debug("Failed to read triage metrics from Redis: %s", exc)

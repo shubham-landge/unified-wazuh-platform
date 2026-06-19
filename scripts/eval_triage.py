@@ -86,6 +86,7 @@ class EvalResult:
     json_valid: bool
     raw_response: str
     error: Optional[str] = None
+    result_data: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -97,7 +98,9 @@ class EvalMetrics:
     false_negatives: int = 0   # missed threats (predicted benign, actually malicious)
     false_positives: int = 0   # false alarms (predicted malicious, actually benign)
     true_positive_total: int = 0  # total true-positive samples in the dataset
+    true_negative_total: int = 0  # total benign samples in the dataset
     severity_matches: int = 0
+    severity_within_one: int = 0
     mitre_tp: float = 0.0      # for precision/recall
     mitre_pred: float = 0.0
     mitre_true: float = 0.0
@@ -116,11 +119,15 @@ class EvalMetrics:
 
     @property
     def fp_rate(self) -> float:
-        return self.false_positives / max(self.total, 1)
+        return self.false_positives / max(self.true_negative_total, 1)
 
     @property
     def severity_agreement(self) -> float:
         return self.severity_matches / max(self.total, 1)
+
+    @property
+    def severity_within_one_band(self) -> float:
+        return self.severity_within_one / max(self.total, 1)
 
     @property
     def mitre_precision(self) -> float:
@@ -158,6 +165,7 @@ class EvalMetrics:
             "fn_rate": round(self.fn_rate, 4),
             "fp_rate": round(self.fp_rate, 4),
             "severity_agreement": round(self.severity_agreement, 4),
+            "severity_within_one_band": round(self.severity_within_one_band, 4),
             "mitre_precision": round(self.mitre_precision, 4),
             "mitre_recall": round(self.mitre_recall, 4),
             "confidence_brier": round(self.confidence_brier, 4),
@@ -166,6 +174,38 @@ class EvalMetrics:
             "latency_p95_ms": round(self.latency_p95_ms, 1),
             "errors": len(self.errors),
         }
+
+
+@dataclass
+class EvalSummary:
+    """Summary metrics for a candidate model evaluation."""
+    model: str
+    total_samples: int
+    verdict_accuracy: float
+    fn_rate: float
+    fp_rate: float
+    severity_agreement: float
+    severity_within_one_band: float
+    mitre_precision: float
+    mitre_recall: float
+    confidence_brier: float
+    json_validity: float
+    latency_p50_ms: float
+    latency_p95_ms: float
+    errors: int
+
+
+# Severity band ordering for within-one-band computation
+_SEVERITY_BANDS = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+
+
+def _within_one_band(predicted: str, true: str) -> bool:
+    """Check if predicted severity is within one band of true severity."""
+    p = _SEVERITY_BANDS.get(predicted.lower())
+    t = _SEVERITY_BANDS.get(true.lower())
+    if p is None or t is None:
+        return False
+    return abs(p - t) <= 1
 
 
 def load_dataset(dataset_path: str) -> list[EvalSample]:
@@ -326,9 +366,11 @@ def accumulate_metrics(metrics: EvalMetrics, sample: EvalSample, result: EvalRes
     if result.error:
         metrics.errors.append(result.error)
 
-    # Track true-positive total for exact fn_rate denominator
+    # Track true-positive and true-negative totals for rate denominators
     if sample.is_true_positive:
         metrics.true_positive_total += 1
+    else:
+        metrics.true_negative_total += 1
 
     # Verdict accuracy
     pred = result.predicted_verdict.lower()
@@ -341,9 +383,13 @@ def accumulate_metrics(metrics: EvalMetrics, sample: EvalSample, result: EvalRes
     elif not sample.is_true_positive and pred in ("malicious", "suspicious"):
         metrics.false_positives += 1
 
-    # Severity
+    # Severity — exact match
     if result.predicted_severity.lower() == sample.true_severity.lower():
         metrics.severity_matches += 1
+
+    # Severity — within one band
+    if _within_one_band(result.predicted_severity, sample.true_severity):
+        metrics.severity_within_one += 1
 
     # MITRE precision/recall
     true_mitre = sample.true_mitre
@@ -390,6 +436,61 @@ def check_promotion_gate(
         issues.append(f"JSON validity {candidate.json_validity:.2%} < 90% minimum")
 
     return len(issues) == 0, issues
+
+
+def compute_metrics(
+    results: list[tuple[EvalSample, EvalResult]],
+    model_name: str = "candidate",
+) -> EvalSummary:
+    """Aggregate metrics from a list of (sample, result) pairs.
+
+    Pure function: no side effects, works on any collection of results.
+    """
+    metrics = EvalMetrics(model=model_name)
+    for sample, result in results:
+        accumulate_metrics(metrics, sample, result)
+    s = metrics.summary()
+    return EvalSummary(
+        model=s["model"],
+        total_samples=s["total_samples"],
+        verdict_accuracy=s["verdict_accuracy"],
+        fn_rate=s["fn_rate"],
+        fp_rate=s["fp_rate"],
+        severity_agreement=s["severity_agreement"],
+        severity_within_one_band=s["severity_within_one_band"],
+        mitre_precision=s["mitre_precision"],
+        mitre_recall=s["mitre_recall"],
+        confidence_brier=s["confidence_brier"],
+        json_validity=s["json_validity"],
+        latency_p50_ms=s["latency_p50_ms"],
+        latency_p95_ms=s["latency_p95_ms"],
+        errors=s["errors"],
+    )
+
+
+FP_MARGIN = DEFAULT_FP_MARGIN
+
+
+def promotion_gate(results: EvalSummary, baseline_fn: float, baseline_fp: float) -> bool:
+    """Return True if candidate can replace baseline.
+
+    Gate rules:
+      - fn_rate <= baseline_fn  (never regress on missed threats)
+      - fp_rate <= baseline_fp + FP_MARGIN  (FP may slightly worsen)
+    """
+    if results.fn_rate > baseline_fn:
+        logger.warning(
+            "FN gate FAILED: candidate fn=%.4f > baseline fn=%.4f",
+            results.fn_rate, baseline_fn,
+        )
+        return False
+    if results.fp_rate > baseline_fp + FP_MARGIN:
+        logger.warning(
+            "FP gate FAILED: candidate fp=%.4f > baseline fp=%.4f + margin=%.4f",
+            results.fp_rate, baseline_fp, FP_MARGIN,
+        )
+        return False
+    return True
 
 
 async def run_eval(
@@ -464,9 +565,13 @@ def main():
     parser.add_argument("--system-prompt", default=None, help="Path to system prompt file")
     parser.add_argument("--fp-margin", type=float, default=DEFAULT_FP_MARGIN)
     parser.add_argument("--max-latency-ms", type=float, default=DEFAULT_MAX_LATENCY_MS)
+    parser.add_argument("--baseline-fn", type=float, default=None,
+                        help="Baseline false-negative rate for promotion gate")
+    parser.add_argument("--baseline-fp", type=float, default=None,
+                        help="Baseline false-positive rate for promotion gate")
     args = parser.parse_args()
 
-    asyncio.run(run_eval(
+    metrics = asyncio.run(run_eval(
         model_name=args.model,
         dataset_path=args.dataset,
         output_path=args.output,
@@ -474,6 +579,33 @@ def main():
         fp_margin=args.fp_margin,
         max_latency_ms=args.max_latency_ms,
     ))
+
+    # Run promotion gate if baselines are provided
+    if args.baseline_fn is not None or args.baseline_fp is not None:
+        s = metrics.summary()
+        summary = EvalSummary(
+            model=s["model"],
+            total_samples=s["total_samples"],
+            verdict_accuracy=s["verdict_accuracy"],
+            fn_rate=s["fn_rate"],
+            fp_rate=s["fp_rate"],
+            severity_agreement=s["severity_agreement"],
+            severity_within_one_band=s["severity_within_one_band"],
+            mitre_precision=s["mitre_precision"],
+            mitre_recall=s["mitre_recall"],
+            confidence_brier=s["confidence_brier"],
+            json_validity=s["json_validity"],
+            latency_p50_ms=s["latency_p50_ms"],
+            latency_p95_ms=s["latency_p95_ms"],
+            errors=s["errors"],
+        )
+        baseline_fn = args.baseline_fn if args.baseline_fn is not None else 1.0
+        baseline_fp = args.baseline_fp if args.baseline_fp is not None else 1.0
+        passed = promotion_gate(summary, baseline_fn, baseline_fp)
+        if passed:
+            logger.info("✅ PROMOTION GATE PASSED — model '%s' can replace baseline", args.model)
+        else:
+            logger.warning("❌ PROMOTION GATE BLOCKED — model '%s' fails gate", args.model)
 
 
 if __name__ == "__main__":

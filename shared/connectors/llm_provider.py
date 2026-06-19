@@ -73,7 +73,7 @@ def sanitize_llm_input(field_value: str | None) -> str:
     max_len = getattr(settings, 'llm_input_max_length', 2000)
     if len(text) > max_len:
         text = text[:max_len] + " [TRUNCATED]"
-    return text
+    return f"[BEGIN_UNTRUSTED_DATA]\n{text}\n[END_UNTRUSTED_DATA]"
 
 
 def parse_llm_response(content: str) -> dict:
@@ -354,9 +354,9 @@ class OllamaProvider(LLMProvider):
         if template:
             system_prompt = f"{template}\n\n{system_prompt}"
 
-        # Sanitise attacker-controlled fields before the LLM sees them
+        # Sanitise attacker-controlled fields before the LLM sees them.
+        # Only user_prompt is untrusted (alert data); system_prompt is trusted (SOC-controlled).
         user_prompt = sanitize_llm_input(user_prompt)
-        system_prompt = sanitize_llm_input(system_prompt)
         masked_user = mask_sensitive_data(user_prompt) if settings.mask_sensitive_data else user_prompt
 
         # Apply config-driven model parameters with kwargs override

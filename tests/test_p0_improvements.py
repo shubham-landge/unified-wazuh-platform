@@ -134,7 +134,10 @@ async def test_reaper_fails_stale_pending_rows():
 # ────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_containment_guard_creates_approval_request():
+@patch("shared.enrichment.containment_gate.settings")
+async def test_containment_guard_creates_approval_request(mock_gate_settings):
+    mock_gate_settings.automation_mode = "enforce"
+
     from shared.orchestrator.handlers import containment_guard
 
     session = AsyncMock()
