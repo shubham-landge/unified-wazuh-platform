@@ -36,7 +36,7 @@ def _serialize_task(task: AgentTask) -> str:
     )
 
 
-async def add_experience(session: AsyncSession, task: AgentTask) -> bool:
+async def add_experience(session: AsyncSession, task: AgentTask, tenant_id: str | None = None) -> bool:
     """Persist a completed AgentTask as a skill-memory chunk."""
     if not settings.rag_enabled:
         return False
@@ -44,12 +44,15 @@ async def add_experience(session: AsyncSession, task: AgentTask) -> bool:
     try:
         text = _serialize_task(task)
         source = f"{SKILL_MEMORY_SOURCE_PREFIX}:{task.agent_type}:{task.id}"
+        # Resolve tenant_id: prefer explicit arg, then task attribute, then default
+        _tid = tenant_id or str(getattr(task, "tenant_id", "") or "")
         metadata = {
             "agent_type": task.agent_type,
             "task_id": str(task.id),
             "run_id": str(task.run_id),
             "status": task.status,
             "memory_type": "agent_experience",
+            "tenant_id": _tid,
         }
         return await ingest_knowledge(source, text, session, metadata, commit=False)
     except Exception as exc:
@@ -62,20 +65,36 @@ async def retrieve_similar(
     query: str,
     agent_type: str | None = None,
     k: int = 5,
+    tenant_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Retrieve the top-K most similar past agent experiences."""
+    """Retrieve the top-K most similar past agent experiences.
+
+    tenant_id: if provided, only return memories tagged with this tenant.
+    This prevents cross-tenant RAG contamination.
+    """
     if not settings.rag_enabled:
         return []
 
     try:
         results = await search_knowledge(query, session, top_k=k * 3)
-        # Filter to skill memories only, optionally by agent type.
-        filtered = [
-            r
-            for r in results
-            if r.get("source", "").startswith(SKILL_MEMORY_SOURCE_PREFIX)
-            and (agent_type is None or r.get("source", "").startswith(f"{SKILL_MEMORY_SOURCE_PREFIX}:{agent_type}:"))
-        ]
+        filtered = []
+        for r in results:
+            src = r.get("source", "")
+            if not src.startswith(SKILL_MEMORY_SOURCE_PREFIX):
+                continue
+            if agent_type and not src.startswith(f"{SKILL_MEMORY_SOURCE_PREFIX}:{agent_type}:"):
+                continue
+            # Tenant isolation: skip if memory belongs to a different tenant
+            meta = r.get("metadata") or {}
+            if isinstance(meta, str):
+                try:
+                    meta = json.loads(meta)
+                except Exception:
+                    meta = {}
+            mem_tenant = meta.get("tenant_id", "")
+            if tenant_id and mem_tenant and mem_tenant != tenant_id:
+                continue
+            filtered.append(r)
         return filtered[:k]
     except Exception as exc:
         logger.warning("Skill memory retrieval failed: %s", exc)
@@ -87,13 +106,19 @@ async def build_few_shot_prompt(
     query: str,
     agent_type: str | None = None,
     k: int = 3,
+    tenant_id: str | None = None,
 ) -> str:
     """Build a few-shot prompt appendix from similar past experiences."""
-    memories = await retrieve_similar(session, query, agent_type=agent_type, k=k)
+    memories = await retrieve_similar(
+        session, query, agent_type=agent_type, k=k, tenant_id=tenant_id
+    )
     if not memories:
         return ""
 
     lines = ["\n# Relevant past experiences\n"]
     for i, mem in enumerate(memories, 1):
-        lines.append(f"{i}. {mem.get('chunk_text', '')[:800]}")
+        # Sanitize retrieved chunks before injection (prevent prompt injection)
+        chunk = mem.get("chunk_text", "")[:800]
+        chunk = chunk.replace("<", "&lt;").replace(">", "&gt;")
+        lines.append(f"{i}. {chunk}")
     return "\n".join(lines)

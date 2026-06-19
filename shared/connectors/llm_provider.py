@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 import httpx
+from pydantic import BaseModel, Field, field_validator, ValidationError
 
 from shared.config import settings
 from shared.connectors.circuit_breaker import CircuitBreaker
@@ -125,6 +126,190 @@ def normalize_llm_result(content: str) -> dict:
         result.get("suggested_soc_action"),
     )
     return result
+
+
+class TriageOutput(BaseModel):
+    """Structured, validated output from an LLM triage analysis."""
+
+    verdict: str = Field(..., pattern=r"^(malicious|benign|suspicious)$")
+    severity: str = Field(..., pattern=r"^(critical|high|medium|low)$")
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    summary: str = Field(..., max_length=500)
+    mitre_techniques: list[str] = Field(default_factory=list)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("mitre_techniques", mode="before")
+    @classmethod
+    def _normalize_mitre(cls, v: Any) -> list[str]:
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return [str(item) for item in v]
+        if isinstance(v, str):
+            return [v]
+        return [str(v)]
+
+    @field_validator("summary")
+    @classmethod
+    def _strip_summary(cls, v: str) -> str:
+        return v.strip()
+
+
+def validate_and_parse(raw_response: str) -> TriageOutput:
+    """Extract JSON from a raw LLM response and validate as TriageOutput.
+
+    Handles markdown-wrapped JSON (```json ... ``` or ``` ... ```) and bare JSON.
+    Raises ValidationError with details when extraction or validation fails.
+    """
+    candidate = raw_response.strip()
+    errors: list[str] = []
+
+    # ── Attempt 1: direct JSON parse ──
+    try:
+        parsed = json.loads(candidate)
+        if isinstance(parsed, dict):
+            return TriageOutput(**parsed)
+        errors.append("direct parse did not yield a JSON object")
+    except json.JSONDecodeError:
+        errors.append("direct parse failed: invalid JSON")
+    except ValidationError as exc:
+        # Re-raise immediately — the JSON was structurally valid but schema-wrong
+        raise
+
+    # ── Attempt 2: extract from markdown code fence ──
+    fence_match = re.search(r"```(?:json)?\s*\n?(.*?)```", candidate, re.DOTALL)
+    if fence_match:
+        inner = fence_match.group(1).strip()
+        try:
+            parsed = json.loads(inner)
+            if isinstance(parsed, dict):
+                return TriageOutput(**parsed)
+            errors.append("markdown fence did not yield a JSON object")
+        except json.JSONDecodeError:
+            errors.append("markdown fence contained invalid JSON")
+        except ValidationError as exc:
+            raise
+
+    # ── Attempt 3: find first { ... } block ──
+    depth = 0
+    start = None
+    for i, ch in enumerate(candidate):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start is not None:
+                try:
+                    parsed = json.loads(candidate[start : i + 1])
+                    if isinstance(parsed, dict):
+                        return TriageOutput(**parsed)
+                except json.JSONDecodeError:
+                    pass
+                except ValidationError as exc:
+                    raise
+                start = None
+
+    # ── All attempts exhausted ──
+    raise ValidationError.from_exception_data(
+        title="TriageOutput",
+        line_errors=[
+            {
+                "type": "value_error",
+                "loc": ("__root__",),
+                "msg": f"Could not extract valid JSON from response. "
+                       f"Attempts: {'; '.join(errors)}",
+                "input": raw_response[:500],
+                "ctx": {"error": f"JSON extraction failed: {'; '.join(errors)}"},
+            }
+        ],
+    )
+
+
+_CORRECTIVE_SUFFIX = (
+    "\n\nYOUR PREVIOUS RESPONSE WAS INVALID. "
+    "You MUST respond ONLY with a valid JSON object (no markdown, no commentary) "
+    "containing exactly these fields:\n"
+    '- "verdict": one of "malicious", "benign", "suspicious"\n'
+    '- "severity": one of "critical", "high", "medium", "low"\n'
+    '- "confidence": a float between 0.0 and 1.0\n'
+    '- "summary": a string (max 500 characters)\n'
+    '- "mitre_techniques": a list of MITRE ATT&CK technique IDs (e.g. ["T1059.001"])\n'
+    "Respond with ONLY the JSON object. No intro, no outro, no markdown fences."
+)
+
+
+async def analyze_with_validation(
+    provider: "LLMProvider",
+    system_prompt: str,
+    user_prompt: str,
+    max_retries: int = 2,
+) -> TriageOutput:
+    """Call the LLM provider, validate structured output, and retry on failure.
+
+    On each validation failure the corrective suffix is appended to *user_prompt*
+    and the provider is called again. After *max_retries* attempts, a best-effort
+    parse of the last response is attempted. If even that fails the last
+    ValidationError is re-raised.
+    """
+    last_error: ValidationError | None = None
+    last_result: dict | None = None
+    current_prompt = user_prompt
+
+    for attempt in range(max_retries + 1):
+        result = await provider.analyze(system_prompt, current_prompt)
+        last_result = result
+
+        # Extract raw content — providers stuff parsed JSON into the result dict.
+        # If the LLM returned good JSON, the keys are mixed in with metadata.
+        # If parse_llm_response fell back, the raw text is in "raw_response".
+        raw_content = result.get("raw_response") or result.get("summary") or ""
+        if not raw_content and isinstance(result, dict):
+            # Re-serialize the dict as a last resort (drops provider metadata keys
+            # because TriageOutput.model_config ignores extras).
+            raw_content = json.dumps(result)
+
+        try:
+            return validate_and_parse(raw_content)
+        except ValidationError as exc:
+            last_error = exc
+            logger.warning(
+                "LLM output validation failed (attempt %d/%d): %s",
+                attempt + 1,
+                max_retries + 1,
+                exc,
+            )
+            if attempt < max_retries:
+                current_prompt = user_prompt + _CORRECTIVE_SUFFIX
+
+    # ── Max retries exhausted — best-effort parse ──
+    if last_result is not None:
+        try:
+            best_effort = dict(last_result)
+            # Drop metadata keys that confuse pydantic
+            for key in ("success", "model", "tokens_input", "tokens_output", "cost", "raw_response"):
+                best_effort.pop(key, None)
+            return TriageOutput(**best_effort)
+        except ValidationError:
+            pass
+
+    # Re-raise the last validation error
+    if last_error is not None:
+        raise last_error
+    raise ValidationError.from_exception_data(
+        title="TriageOutput",
+        line_errors=[
+            {
+                "type": "value_error",
+                "loc": ("__root__",),
+                "msg": "analyze_with_validation failed: no response received from provider",
+                "input": None,
+                "ctx": {"error": "no response received from provider"},
+            }
+        ],
+    )
 
 
 class LLMProvider(ABC):
