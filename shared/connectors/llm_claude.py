@@ -8,6 +8,7 @@ from shared.connectors.llm_provider import (
     LLMProvider,
     mask_sensitive_data,
     normalize_llm_result,
+    sanitize_llm_input,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,8 @@ class ClaudeProvider(LLMProvider):
             if settings.mask_sensitive_data
             else user_prompt
         )
+        # Sanitize untrusted alert data before sending to cloud LLM
+        masked_user = sanitize_llm_input(masked_user)
         payload = {
             "model": self.model,
             "system": system_prompt,

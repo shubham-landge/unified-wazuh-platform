@@ -1,13 +1,13 @@
-"""Alert enrichment pipeline — parallel enrichers, risk scoring, decision engine."""
+"""Shared enrichment package — pre-LLM risk scoring and decision gate.
 
-from shared.enrichment.pipeline import EnrichmentResult, enrich_alert
-from shared.enrichment.risk_score import compute_risk_score
-from shared.enrichment.decision import DecisionLevel, decide
-
-__all__ = [
-    "EnrichmentResult",
-    "enrich_alert",
-    "compute_risk_score",
-    "DecisionLevel",
-    "decide",
-]
+Architecture:
+  pipeline.py   — parallel fan-out, timeout-bounded, fail-open
+  geoip.py      — MaxMind GeoLite2 City+ASN (offline, µs lookups)
+  vuln_correlate.py — exploit alert ↔ open CVE on target host
+  watchlists.py — tenant-scoped allow/block/crown-jewel lists
+  risk_score.py — deterministic 0-100 additive score engine
+  decision.py   — L0-L4 gate: suppress / auto-close / triage / escalate / critical
+  calibration.py — confidence calibration + decision fusion
+  auto_close.py — audited auto-close pipeline with shadow mode
+  semantic_cache.py — embedding-similarity verdict cache
+"""

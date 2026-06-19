@@ -1,126 +1,181 @@
-"""Risk scoring engine for enriched alerts.
+"""Deterministic risk score engine (0–100, additive, config-driven weights).
 
-Computes an additive score 0-100 using config-driven weights from settings.
-Each factor contributes a bounded sub-score; the sum is capped at 100.
+All weights are tunable via RISK_WEIGHT_* env vars. Allowlist forces score to 0.
+Crown-jewel assets apply a multiplier last. Fail-open: missing enrichment = 0 points.
 """
+from __future__ import annotations
 
 import logging
-from typing import Any
+from dataclasses import dataclass, field
 
 from shared.config import settings
-from shared.models.alert import Alert
-from shared.enrichment.pipeline import EnrichmentResult
 
 logger = logging.getLogger(__name__)
 
 
-def _normalize(value: float, floor: float, ceil: float) -> float:
-    """Clamp a value into [floor, ceil]."""
-    return max(floor, min(ceil, value))
+@dataclass
+class EnrichmentContext:
+    """Collected signals from all enrichers, passed into the score engine."""
+    # Wazuh
+    rule_level: int = 0
+
+    # Threat intelligence
+    ti_confidence: float = 0.0          # 0.0 = no hit, 1.0 = confirmed malicious
+    ti_is_kev: bool = False             # Known Exploited Vulnerability
+    ti_is_known_bad: bool = False       # Explicit blocklist hit
+
+    # Asset criticality
+    asset_criticality: int = 0          # 1–10; 0 = unknown
+    is_crown_jewel: bool = False        # asset_criticality >= 9 or explicit flag
+
+    # Vulnerability correlation
+    vuln_matched: bool = False          # exploit alert matched open CVE on target
+    vuln_epss: float = 0.0             # EPSS score (0–1) of matched CVE
+    vuln_is_kev: bool = False           # matched CVE is in CISA KEV
+
+    # UEBA
+    ueba_zscore: float = 0.0           # highest z-score for this entity/user
+    user_is_privileged: bool = False
+    user_is_service_acct_interactive: bool = False
+    user_is_dormant_reactivated: bool = False
+
+    # GeoIP / IP reputation
+    geo_impossible_travel: bool = False
+    geo_tor_vpn: bool = False
+    geo_bad_asn: bool = False
+    geo_unexpected_country: bool = False
+
+    # MITRE
+    mitre_high_impact: bool = False     # ransomware / lateral / exfil techniques
+
+    # Allowlist/corrections
+    is_allowlisted: bool = False
+    is_confirmed_fp: bool = False       # analyst marked as FP in feedback
+    is_benign_noise: bool = False       # matches known benign pattern
+
+    # Score breakdown (populated by compute())
+    breakdown: dict = field(default_factory=dict)
 
 
-def _factor_ti(enrichment: EnrichmentResult) -> float:
-    """Threat-intel factor: bonus for each confirmed IOC hit."""
-    if not enrichment.ti:
-        return 0.0
-    # Each TI hit contributes up to 5 points, capped at 25.
-    raw = min(len(enrichment.ti) * 5, 25)
-    # Amplify if any hit has malware families or high pulse count.
-    for hit in enrichment.ti:
-        if hit.get("malware_families"):
-            raw = min(raw + 5, 25)
-            break
-        if hit.get("pulse_count", 0) >= 5:
-            raw = min(raw + 3, 25)
-            break
-    return _normalize(raw, 0, 25)
+def _w(name: str, default: float) -> float:
+    """Read a RISK_WEIGHT_* env var, falling back to default."""
+    return float(getattr(settings, f"risk_weight_{name}", default))
 
 
-def _factor_asset(enrichment: EnrichmentResult) -> float:
-    """Asset criticality factor."""
-    if not enrichment.asset:
-        return 0.0
-    criticality = enrichment.asset[0].get("criticality")
-    if criticality is not None:
-        try:
-            val = float(criticality)
-            return _normalize(val * 2.5, 0, 15)
-        except (TypeError, ValueError):
-            pass
-    # Fallback: one asset hit = base 5.
-    return 5.0
+def compute(ctx: EnrichmentContext) -> int:
+    """Compute the deterministic 0–100 risk score.
 
-
-def _factor_user(enrichment: EnrichmentResult) -> float:
-    """User risk factor: inactive or absent user is riskier."""
-    if not enrichment.user:
-        return 5.0  # Unknown user = moderate risk.
-    user = enrichment.user[0]
-    if not user.get("is_active", True):
-        return 10.0  # Inactive account used = elevated risk.
-    if user.get("last_login") is None:
-        return 5.0  # Never logged in before = suspicious.
-    return 2.0  # Known active user = low risk.
-
-
-def _factor_ueba(enrichment: EnrichmentResult) -> float:
-    """UEBA anomaly factor."""
-    if not enrichment.ueba:
-        return 0.0
-    score = 0.0
-    for anomaly in enrichment.ueba:
-        z = anomaly.get("zscore", 0) or 0
-        if z >= 5.0:
-            score += 10
-        elif z >= 3.0:
-            score += 6
-        elif z >= 2.0:
-            score += 3
-        else:
-            score += 1
-    return _normalize(score, 0, 25)
-
-
-def _factor_rule_level(alert: Alert) -> float:
-    """Rule-level factor: normalise 0-15 Wazuh level into 0-15 contribution."""
-    if alert.rule_level is None:
-        return 2.0
-    level = float(alert.rule_level)
-    # Levels 0-15 map linearly; levels above 15 cap at 15.
-    return _normalize(level, 0, 15)
-
-
-def compute_risk_score(alert: Alert, enrichment: EnrichmentResult) -> dict[str, Any]:
-    """Compute an additive risk score 0-100 with a breakdown dict.
-
-    Weights are read from settings and should total ~100 for intuitive scaling.
-    Each factor is computed independently, multiplied by its weight, summed,
-    and capped at 100.
-
-    Returns a dict with keys:
-        - score: int (0-100)
-        - breakdown: dict of factor_name -> {raw, weight, contribution}
+    Returns the integer score and populates ctx.breakdown with per-signal
+    contributions for auditability.
     """
-    factors = {
-        "ti": (_factor_ti(enrichment), settings.enrichment_risk_weight_ti),
-        "asset": (_factor_asset(enrichment), settings.enrichment_risk_weight_asset),
-        "user": (_factor_user(enrichment), settings.enrichment_risk_weight_user),
-        "ueba": (_factor_ueba(enrichment), settings.enrichment_risk_weight_ueba),
-        "rule_level": (_factor_rule_level(alert), settings.enrichment_risk_weight_rule_level),
-    }
+    breakdown: dict[str, float] = {}
 
-    total = 0.0
-    breakdown = {}
+    # Allowlist → force 0, no further scoring
+    if ctx.is_allowlisted:
+        ctx.breakdown = {"allowlisted": True}
+        return 0
 
-    for name, (raw, weight) in factors.items():
-        contribution = (raw / 25.0) * weight if raw > 0 else 0.0
-        contribution = round(contribution, 2)
-        total += contribution
-        breakdown[name] = {
-            "raw": raw,
-            "weight": weight,
-            "contribution": contribution,
-        }
+    # ── Rule level ──────────────────────────────────────────────────────────
+    level = ctx.rule_level
+    if level >= 14:
+        pts = _w("rule_level_critical", 40)
+    elif level >= 12:
+        pts = _w("rule_level_high", 30)
+    elif level >= 10:
+        pts = _w("rule_level_medium_high", 20)
+    elif level >= 7:
+        pts = _w("rule_level_medium", 10)
+    else:
+        pts = 0
+    breakdown["rule_level"] = pts
+    score = pts
 
-    score = int(min(100.0, round(total)))
-    return {"score": score, "breakdown": breakdown}
+    # ── Threat intelligence ──────────────────────────────────────────────────
+    if ctx.ti_is_known_bad or ctx.ti_is_kev:
+        pts = _w("ti_known_bad", 40)
+    elif ctx.ti_confidence > 0:
+        pts = _w("ti_base", 30) * ctx.ti_confidence
+    else:
+        pts = 0
+    breakdown["threat_intel"] = pts
+    score += pts
+
+    # ── Asset criticality ────────────────────────────────────────────────────
+    crit = min(ctx.asset_criticality, 10)
+    pts = _w("asset_criticality_per_point", 2) * crit
+    breakdown["asset_criticality"] = pts
+    score += pts
+
+    # ── Vulnerability correlation ────────────────────────────────────────────
+    if ctx.vuln_matched:
+        if ctx.vuln_is_kev or ctx.vuln_epss >= 0.5:
+            pts = _w("vuln_kev_epss", 35)
+        else:
+            pts = _w("vuln_matched", 25)
+    else:
+        pts = 0
+    breakdown["vuln_correlation"] = pts
+    score += pts
+
+    # ── UEBA z-score ─────────────────────────────────────────────────────────
+    z = ctx.ueba_zscore
+    if z >= _w("ueba_zscore_critical_threshold", 5.0):
+        pts = _w("ueba_critical", 20)
+    elif z >= _w("ueba_zscore_high_threshold", 3.5):
+        pts = _w("ueba_high", 12)
+    elif z >= _w("ueba_zscore_medium_threshold", 2.5):
+        pts = _w("ueba_medium", 6)
+    else:
+        pts = 0
+    breakdown["ueba_zscore"] = pts
+    score += pts
+
+    # ── User risk factors ────────────────────────────────────────────────────
+    user_pts = 0.0
+    if ctx.user_is_privileged:
+        user_pts += _w("user_privileged", 10)
+    if ctx.user_is_service_acct_interactive:
+        user_pts += _w("user_service_acct", 10)
+    if ctx.user_is_dormant_reactivated:
+        user_pts += _w("user_dormant", 15)
+    breakdown["user_risk"] = user_pts
+    score += user_pts
+
+    # ── GeoIP / IP reputation ────────────────────────────────────────────────
+    geo_pts = 0.0
+    if ctx.geo_impossible_travel:
+        geo_pts += _w("geo_impossible_travel", 15)
+    if ctx.geo_tor_vpn:
+        geo_pts += _w("geo_tor_vpn", 8)
+    if ctx.geo_bad_asn:
+        geo_pts += _w("geo_bad_asn", 5)
+    if ctx.geo_unexpected_country:
+        geo_pts += _w("geo_unexpected_country", 5)
+    breakdown["geo_ip"] = geo_pts
+    score += geo_pts
+
+    # ── MITRE technique ──────────────────────────────────────────────────────
+    if ctx.mitre_high_impact:
+        pts = _w("mitre_high_impact", 10)
+        breakdown["mitre"] = pts
+        score += pts
+
+    # ── Negative modifiers ───────────────────────────────────────────────────
+    if ctx.is_confirmed_fp:
+        neg = _w("confirmed_fp_penalty", 20)
+        breakdown["confirmed_fp"] = -neg
+        score -= neg
+    if ctx.is_benign_noise:
+        neg = _w("benign_noise_penalty", 10)
+        breakdown["benign_noise"] = -neg
+        score -= neg
+
+    # ── Crown-jewel multiplier (applied last) ────────────────────────────────
+    if ctx.is_crown_jewel and score > 0:
+        mult = _w("crown_jewel_multiplier", 1.3)
+        breakdown["crown_jewel_mult"] = mult
+        score = score * mult
+
+    final = max(0, min(100, round(score)))
+    ctx.breakdown = breakdown
+    return final

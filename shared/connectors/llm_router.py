@@ -15,8 +15,47 @@ def _get_known_bad_ips() -> set[str]:
     return set(t.strip() for t in raw.split(",") if t.strip())
 
 def rule_historical_accuracy(rule_id: int | None) -> float | None:
+    """Return fraction of historically-accurate verdicts for a given rule_id.
+
+    Computed from AiTriageResult joined with UserFeedback.
+    Results are Redis-cached for 1 hour (key: rule_acc:{rule_id}).
+    Returns None if < 5 feedback samples (insufficient data).
+    Returns float in [0.0, 1.0] where 1.0 = always correct.
+    """
     if rule_id is None:
         return None
+    try:
+        import redis as _redis
+        r = _redis.from_url(settings.redis_url, decode_responses=True, socket_connect_timeout=1)
+        cached = r.get(f"rule_acc:{rule_id}")
+        if cached is not None:
+            return float(cached)
+    except Exception:
+        pass
+    # Synchronous DB fallback (rare — only on cache miss)
+    try:
+        from sqlalchemy import create_engine, text
+        engine = create_engine(settings.database_sync_url, pool_size=1, max_overflow=0)
+        with engine.connect() as conn:
+            result = conn.execute(text("""
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN uf.rating >= 4 THEN 1 ELSE 0 END) AS correct
+                FROM user_feedback uf
+                JOIN ai_triage_results atr ON uf.triage_result_id = atr.id
+                JOIN alerts a ON atr.alert_id = a.id
+                WHERE a.rule_id = :rule_id
+            """), {"rule_id": str(rule_id)})
+            row = result.fetchone()
+            if row and row.total >= 5:
+                acc = float(row.correct or 0) / float(row.total)
+                try:
+                    r.setex(f"rule_acc:{rule_id}", 3600, str(acc))
+                except Exception:
+                    pass
+                return acc
+    except Exception as exc:
+        logger.debug("rule_historical_accuracy DB error: %s", exc)
     return None
 
 

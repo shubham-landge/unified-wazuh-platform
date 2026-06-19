@@ -350,7 +350,7 @@ class Settings(BaseSettings):
     # Auto-approve actions from agents at or above this autonomy level.
     triggers_auto_approve_autonomy: str = "full"
 
-    # ── Alert Enrichment Pipeline ──
+    # ── Alert Enrichment Pipeline (S0 Orchestrator) ──
     # Timeout per individual enricher in seconds (fail-open).
     enrichment_timeout_seconds: int = 10
     # Risk-scoring additive weights (should sum to ~100 for intuitive 0-100 scale).
@@ -375,6 +375,57 @@ class Settings(BaseSettings):
     incident_risk_window_hours: int = 24
     # Enable cumulative incident risk tracking.
     incident_risk_enabled: bool = True
+
+    # ── Enrichment Engine (P1/P2 shared/enrichment/) ─────────────────────────
+    # Automation mode: "shadow" = log decisions, no action; "enforce" = act.
+    automation_mode: str = "shadow"
+
+    # L0-L4 decision gate thresholds
+    risk_gate_l0_threshold: int = 15    # below → suppress (no LLM)
+    risk_gate_l1_threshold: int = 25    # below → auto-close (no LLM)
+    risk_gate_l2_upper_threshold: int = 60  # above → auto-escalate
+    risk_gate_l3_threshold: int = 85    # above → critical
+
+    # Auto-close pipeline
+    auto_close_score_threshold: int = 25
+    auto_close_confidence_threshold: float = 0.85
+    auto_close_enabled: bool = True
+
+    # GeoIP database paths (MaxMind GeoLite2)
+    geoip_city_db_path: str = "/opt/geoip/GeoLite2-City.mmdb"
+    geoip_asn_db_path: str = "/opt/geoip/GeoLite2-ASN.mmdb"
+
+    # Risk weight overrides (all have built-in defaults; override via env)
+    risk_weight_rule_level_critical: float = 40.0
+    risk_weight_rule_level_high: float = 30.0
+    risk_weight_rule_level_medium_high: float = 20.0
+    risk_weight_rule_level_medium: float = 10.0
+    risk_weight_ti_known_bad: float = 40.0
+    risk_weight_ti_base: float = 30.0
+    risk_weight_asset_criticality_per_point: float = 2.0
+    risk_weight_vuln_kev_epss: float = 35.0
+    risk_weight_vuln_matched: float = 25.0
+    risk_weight_ueba_critical: float = 20.0
+    risk_weight_ueba_high: float = 12.0
+    risk_weight_ueba_medium: float = 6.0
+    risk_weight_ueba_zscore_critical_threshold: float = 5.0
+    risk_weight_ueba_zscore_high_threshold: float = 3.5
+    risk_weight_ueba_zscore_medium_threshold: float = 2.5
+    risk_weight_user_privileged: float = 10.0
+    risk_weight_user_service_acct: float = 10.0
+    risk_weight_user_dormant: float = 15.0
+    risk_weight_geo_impossible_travel: float = 15.0
+    risk_weight_geo_tor_vpn: float = 8.0
+    risk_weight_geo_bad_asn: float = 5.0
+    risk_weight_geo_unexpected_country: float = 5.0
+    risk_weight_mitre_high_impact: float = 10.0
+    risk_weight_confirmed_fp_penalty: float = 20.0
+    risk_weight_benign_noise_penalty: float = 10.0
+    risk_weight_crown_jewel_multiplier: float = 1.3
+
+    # ── Eval Harness ─────────────────────────────────────────────────────────
+    eval_dataset_path: str = "tests/fixtures/triage_eval"
+    eval_output_path: str = "reports/eval"
 
 settings = Settings()
 

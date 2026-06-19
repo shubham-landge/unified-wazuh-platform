@@ -1,294 +1,150 @@
-"""Parallel enrichment fan-out for a single alert.
+"""Parallel enrichment pipeline — fan-out with per-enricher timeouts.
 
-Runs threat-intel, asset, user, and UEBA enrichers concurrently with per-enricher
-timeouts. Fail-open — exceptions are captured, not propagated.
+Each enricher runs concurrently. If it times out or raises, its contribution
+is 0 (fail-open). The pipeline populates an EnrichmentContext and returns it.
+
+Typical call-site (in triage_worker):
+    ctx = await run(alert, tenant_id, session, redis_client)
+    score = risk_score.compute(ctx)
+    decision = decision_gate.decide(ctx, score, alert.rule_level)
 """
+from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
-from typing import Any
+import uuid
+from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.config import settings
-from shared.models.alert import Alert
+from shared.enrichment.risk_score import EnrichmentContext
+from shared.enrichment import geoip, vuln_correlate, watchlists
 
 logger = logging.getLogger(__name__)
 
+# Per-enricher timeout in seconds
+_GEO_TIMEOUT = 0.5
+_VULN_TIMEOUT = 2.0
+_TI_TIMEOUT = 2.0
+_UEBA_TIMEOUT = 2.0
 
-@dataclass
-class EnrichmentResult:
-    """Collected enrichment data for one alert."""
-
-    ti: list[dict] = field(default_factory=list)
-    asset: list[dict] = field(default_factory=list)
-    user: list[dict] = field(default_factory=list)
-    ueba: list[dict] = field(default_factory=list)
-    geoip: dict | None = None
-    vuln: list[dict] = field(default_factory=list)
-    watchlist: list[dict] = field(default_factory=list)
-    errors: list[str] = field(default_factory=list)
-    enriched: bool = False
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "ti": self.ti,
-            "asset": self.asset,
-            "user": self.user,
-            "ueba": self.ueba,
-            "geoip": self.geoip,
-            "vuln": self.vuln,
-            "watchlist": self.watchlist,
-            "errors": self.errors,
-            "enriched": self.enriched,
-        }
+# High-impact MITRE techniques (ransomware, lateral movement, exfil)
+_HIGH_IMPACT_TECHNIQUES = frozenset([
+    "T1486", "T1491", "T1490",  # ransomware
+    "T1021", "T1210", "T1534", "T1570",  # lateral movement
+    "T1041", "T1048", "T1567", "T1537",  # exfiltration
+    "T1078", "T1110", "T1552",  # credential access
+])
 
 
-async def _enrich_ti(session: AsyncSession, alert: Alert) -> list[dict]:
-    """Threat-intel enrichment: query known IOCs against the alert's source/dest IPs."""
-    results: list[dict] = []
-    iocs = set()
-    if alert.source_ip:
-        iocs.add(("ip", alert.source_ip))
-    if alert.destination_ip:
-        iocs.add(("ip", alert.destination_ip))
-    if alert.file_hash:
-        iocs.add(("hash", alert.file_hash))
-
-    if not iocs:
-        return results
-
+async def _run_geo(ctx: EnrichmentContext, source_ip: Optional[str], user_key: str, redis_client) -> None:
+    """Populate GeoIP fields in ctx."""
     try:
-        from shared.connectors.ti_alienvault import AlienVaultOTXConnector
-        otx = AlienVaultOTXConnector()
-        for ioc_type, ioc_value in iocs:
-            try:
-                data = await otx.lookup(ioc_type if ioc_type == "hash" else "ipv4", ioc_value)
-                if data.get("found"):
-                    results.append({"ioc": ioc_value, "type": ioc_type, "source": "otx", **data})
-            except Exception:
-                pass
+        if not source_ip:
+            return
+        result = geoip.lookup(source_ip)
+        if result and not result.is_private:
+            ctx.geo_tor_vpn = result.is_tor_vpn
+            ctx.geo_bad_asn = result.is_bad_asn
+            # Impossible travel check
+            if redis_client and result.latitude:
+                ctx.geo_impossible_travel = geoip.check_impossible_travel(
+                    user_key, result, redis_client
+                )
     except Exception as exc:
-        logger.debug("TI enrichment unavailable: %s", exc)
-
-    return results
+        logger.debug("geo enricher error: %s", exc)
 
 
-async def _enrich_asset(session: AsyncSession, alert: Alert) -> list[dict]:
-    """Asset enrichment: look up the affected agent in the asset registry."""
-    if not alert.agent_id:
-        return []
-
+async def _run_ti(ctx: EnrichmentContext, alert, tenant_id: str, session: AsyncSession) -> None:
+    """Populate TI fields from shared TI lookups."""
     try:
-        from shared.models.asset import Asset
-        from sqlalchemy import select
+        from shared.connectors.ti_connector import lookup_ioc  # type: ignore
+        source_ip = getattr(alert, "source_ip", None)
+        if source_ip:
+            hit = await lookup_ioc(session, source_ip, str(tenant_id))
+            if hit:
+                ctx.ti_confidence = float(hit.get("confidence", 0.0))
+                ctx.ti_is_kev = hit.get("is_kev", False)
+                ctx.ti_is_known_bad = hit.get("is_known_bad", ctx.ti_confidence >= 0.9)
+    except ImportError:
+        pass
+    except Exception as exc:
+        logger.debug("TI enricher error: %s", exc)
 
-        result = await session.execute(
-            select(Asset).where(Asset.agent_id == alert.agent_id)
+
+async def _run_ueba(ctx: EnrichmentContext, alert, tenant_id: str, session: AsyncSession) -> None:
+    """Populate UEBA z-score from shared UEBA detector."""
+    try:
+        from shared.ueba.detector import process_alert  # type: ignore
+        anomalies = await process_alert(session, alert, str(tenant_id))
+        if anomalies:
+            ctx.ueba_zscore = max(float(getattr(a, "z_score", 0.0)) for a in anomalies)
+    except Exception as exc:
+        logger.debug("UEBA enricher error: %s", exc)
+
+
+async def _run_vuln(ctx: EnrichmentContext, alert, session: AsyncSession) -> None:
+    """Populate vulnerability correlation fields."""
+    try:
+        agent_id = getattr(alert, "agent_id", None)
+        desc = getattr(alert, "rule_description", "") or ""
+        groups = getattr(alert, "rule_groups", "") or ""
+        cve = getattr(alert, "rule_cve", None)
+        matched, epss, is_kev = await vuln_correlate.correlate(
+            session, agent_id, desc, groups, cve
         )
-        asset = result.scalar_one_or_none()
-        if asset:
-            return [{
-                "agent_id": asset.agent_id,
-                "name": getattr(asset, "agent_name", None) or alert.agent_name,
-                "os_platform": getattr(asset, "os_platform", None),
-                "os_version": getattr(asset, "os_version", None),
-                "status": getattr(asset, "status", None),
-                "criticality": getattr(asset, "criticality_score", None),
-            }]
+        ctx.vuln_matched = matched
+        ctx.vuln_epss = epss
+        ctx.vuln_is_kev = is_kev
     except Exception as exc:
-        logger.debug("Asset enrichment unavailable: %s", exc)
-
-    return []
+        logger.debug("vuln enricher error: %s", exc)
 
 
-async def _enrich_user(session: AsyncSession, alert: Alert) -> list[dict]:
-    """User-risk enrichment: look up the user identity and risk profile."""
-    if not alert.user_name:
-        return []
-
-    try:
-        from shared.models.user import User
-        from sqlalchemy import select
-
-        result = await session.execute(
-            select(User).where(User.email == alert.user_name)
-        )
-        user = result.scalar_one_or_none()
-        if user:
-            return [{
-                "email": user.email,
-                "full_name": user.full_name,
-                "role": user.role,
-                "is_active": user.is_active,
-                "last_login": user.last_login_at.isoformat() if user.last_login_at else None,
-            }]
-    except Exception as exc:
-        logger.debug("User enrichment unavailable: %s", exc)
-
-    return []
-
-
-async def _enrich_ueba(session: AsyncSession, alert: Alert) -> list[dict]:
-    """UEBA enrichment: fetch recent anomalies for subjects on this alert."""
-    subjects = set()
-    if alert.user_name:
-        subjects.add(("user", alert.user_name))
-    if alert.source_ip:
-        subjects.add(("ip", alert.source_ip))
-    if alert.agent_id:
-        subjects.add(("agent", alert.agent_id))
-
-    if not subjects:
-        return []
-
-    try:
-        from shared.models.ueba import UebaAnomaly
-        from sqlalchemy import select
-
-        subject_types = list({s[0] for s in subjects})
-        subject_ids = list({s[1] for s in subjects})
-        result = await session.execute(
-            select(UebaAnomaly)
-            .where(
-                UebaAnomaly.subject_type.in_(subject_types),
-                UebaAnomaly.subject_id.in_(subject_ids),
-            )
-            .order_by(UebaAnomaly.created_at.desc())
-            .limit(10)
-        )
-        anomalies = result.scalars().all()
-        return [
-            {
-                "subject_type": a.subject_type,
-                "subject_id": a.subject_id,
-                "anomaly_type": a.anomaly_type,
-                "zscore": a.zscore,
-                "severity": a.severity,
-                "created_at": a.created_at.isoformat() if a.created_at else None,
-            }
-            for a in anomalies
-        ]
-    except Exception as exc:
-        logger.debug("UEBA enrichment unavailable: %s", exc)
-
-    return []
-
-
-async def _enrich_geoip(session: AsyncSession, alert: Alert) -> dict | None:
-    """GeoIP stub — returns None when disabled or unavailable."""
-    if not settings.enricher_geoip_enabled:
-        return None
-    try:
-        from shared.enrichment.geoip import lookup
-        ip = alert.source_ip or alert.destination_ip
-        if ip:
-            return await lookup(ip)
-    except Exception as exc:
-        logger.debug("GeoIP enrichment unavailable: %s", exc)
-    return None
-
-
-async def _enrich_vuln(session: AsyncSession, alert: Alert) -> list[dict]:
-    """Vulnerability correlation stub."""
-    if not settings.enricher_vuln_correlate_enabled:
-        return []
-    try:
-        from shared.enrichment.vuln_correlate import correlate
-        return await correlate(session, alert)
-    except Exception as exc:
-        logger.debug("Vuln correlation unavailable: %s", exc)
-    return []
-
-
-async def _enrich_watchlists(session: AsyncSession, alert: Alert) -> list[dict]:
-    """Watchlist hit stub."""
-    if not settings.enricher_watchlists_enabled:
-        return []
-    try:
-        from shared.enrichment.watchlists import check
-        return await check(session, alert)
-    except Exception as exc:
-        logger.debug("Watchlist check unavailable: %s", exc)
-    return []
-
-
-async def _run_with_timeout(coro, timeout: int, label: str) -> Any:
-    """Run a coroutine with a timeout; return empty result on timeout/error."""
-    try:
-        return await asyncio.wait_for(coro, timeout=timeout)
-    except asyncio.TimeoutError:
-        logger.warning("Enricher %s timed out after %ds", label, timeout)
-        return None
-    except Exception as exc:
-        logger.warning("Enricher %s failed: %s", label, exc)
-        return None
-
-
-async def enrich_alert(
+async def run(
+    alert,
+    tenant_id: uuid.UUID | str,
     session: AsyncSession,
-    alert: Alert,
     redis_client=None,
-) -> EnrichmentResult:
-    """Run all enrichers in parallel and return an EnrichmentResult.
+    watchlist_cache: Optional[watchlists.WatchlistCache] = None,
+) -> EnrichmentContext:
+    """Run all enrichers in parallel, populate and return EnrichmentContext."""
+    ctx = EnrichmentContext(
+        rule_level=getattr(alert, "rule_level", 0),
+    )
+    tenant_str = str(tenant_id)
+    source_ip = getattr(alert, "source_ip", None) or ""
+    user_name = getattr(alert, "user_name", None) or ""
+    agent_id = getattr(alert, "agent_id", None) or ""
+    mitre = getattr(alert, "mitre_technique", None) or ""
 
-    Each enricher is capped at `settings.enrichment_timeout_seconds` (default 10s).
-    Fail-open: individual failures are logged, not propagated.
+    # MITRE high-impact check (no I/O)
+    if any(mitre.startswith(t) for t in _HIGH_IMPACT_TECHNIQUES):
+        ctx.mitre_high_impact = True
 
-    Args:
-        session: Async database session.
-        alert: The alert to enrich.
-        redis_client: Optional Redis client (reserved for future caching use).
+    # Watchlist checks (Redis, fast)
+    if watchlist_cache:
+        indicators = [x for x in [source_ip, user_name, agent_id] if x]
+        ctx.is_allowlisted = watchlist_cache.is_allowlisted(tenant_str, indicators)
+        if not ctx.is_allowlisted:
+            blocked, bl_conf = watchlist_cache.is_blocklisted(tenant_str, indicators)
+            if blocked:
+                ctx.ti_is_known_bad = True
+                ctx.ti_confidence = max(ctx.ti_confidence, bl_conf)
+            ctx.is_crown_jewel = watchlist_cache.is_crown_jewel(tenant_str, [agent_id])
 
-    Returns:
-        EnrichmentResult with collected data and any errors.
-    """
-    result = EnrichmentResult()
+    # If allowlisted, skip all I/O enrichers
+    if ctx.is_allowlisted:
+        return ctx
 
-    if settings.enrichment_kill_switch:
-        result.enriched = False
-        return result
+    user_key = user_name or source_ip or agent_id
 
-    timeout = settings.enrichment_timeout_seconds
+    # Fan-out with timeouts
+    await asyncio.gather(
+        asyncio.wait_for(_run_geo(ctx, source_ip, user_key, redis_client), timeout=_GEO_TIMEOUT),
+        asyncio.wait_for(_run_ti(ctx, alert, tenant_str, session), timeout=_TI_TIMEOUT),
+        asyncio.wait_for(_run_ueba(ctx, alert, tenant_str, session), timeout=_UEBA_TIMEOUT),
+        asyncio.wait_for(_run_vuln(ctx, alert, session), timeout=_VULN_TIMEOUT),
+        return_exceptions=True,  # each timeout/error is silenced
+    )
 
-    # Collect tasks with labels for dynamic mapping.
-    task_specs: list[tuple[str, Any]] = [
-        ("ti", _run_with_timeout(_enrich_ti(session, alert), timeout, "ti")),
-        ("asset", _run_with_timeout(_enrich_asset(session, alert), timeout, "asset")),
-        ("user", _run_with_timeout(_enrich_user(session, alert), timeout, "user")),
-        ("ueba", _run_with_timeout(_enrich_ueba(session, alert), timeout, "ueba")),
-    ]
-
-    if settings.enricher_geoip_enabled:
-        task_specs.append(("geoip", _run_with_timeout(_enrich_geoip(session, alert), timeout, "geoip")))
-    if settings.enricher_vuln_correlate_enabled:
-        task_specs.append(("vuln", _run_with_timeout(_enrich_vuln(session, alert), timeout, "vuln")))
-    if settings.enricher_watchlists_enabled:
-        task_specs.append(("watchlist", _run_with_timeout(_enrich_watchlists(session, alert), timeout, "watchlists")))
-
-    labels = [spec[0] for spec in task_specs]
-    coros = [spec[1] for spec in task_specs]
-    gathered = await asyncio.gather(*coros, return_exceptions=True)
-
-    field_map = {
-        "ti": "ti", "asset": "asset", "user": "user", "ueba": "ueba",
-        "geoip": "geoip", "vuln": "vuln", "watchlist": "watchlist",
-    }
-
-    for label, raw in zip(labels, gathered):
-        if isinstance(raw, Exception):
-            result.errors.append(f"{label}: {raw}")
-            continue
-        if raw is None:
-            continue
-        field = field_map[label]
-        if label in ("geoip",):
-            setattr(result, field, raw)
-        elif isinstance(raw, list):
-            existing = getattr(result, field)
-            if isinstance(existing, list) and raw:
-                setattr(result, field, existing + raw)
-
-    result.enriched = True
-    return result
+    return ctx

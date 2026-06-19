@@ -66,21 +66,27 @@ class FakeConnector:
 @pytest.mark.asyncio
 async def test_identity_worker_emits_risky_signin_alert():
     session = FakeSession()
-    worker = IdentityWorker(
-        interval_seconds=1,
-        session_factory=FakeCtx(session),
-        entra=FakeConnector(
-            {
-                "signins": [
-                    {
-                        "userPrincipalName": "alice@example.com",
-                        "riskLevelAggregated": "high",
-                        "ipAddress": "1.2.3.4",
-                    }
-                ]
-            }
-        ),
-    )
+    _TENANT = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "services.worker.app.identity_worker.IdentityWorker._resolve_tenant_id",
+            staticmethod(lambda: _TENANT),
+        )
+        worker = IdentityWorker(
+            interval_seconds=1,
+            session_factory=FakeCtx(session),
+            entra=FakeConnector(
+                {
+                    "signins": [
+                        {
+                            "userPrincipalName": "alice@example.com",
+                            "riskLevelAggregated": "high",
+                            "ipAddress": "1.2.3.4",
+                        }
+                    ]
+                }
+            ),
+        )
     result = await worker.scan_once()
     assert result["success"] is True
     assert result["created"] == 1
@@ -92,17 +98,23 @@ async def test_identity_worker_emits_risky_signin_alert():
 @pytest.mark.asyncio
 async def test_identity_worker_detects_oauth_consent():
     session = FakeSession()
-    worker = IdentityWorker(
-        interval_seconds=1,
-        session_factory=FakeCtx(session),
-        o365=FakeConnector(
-            {
-                "audits": [
-                    {"activity": "OAuth Consent Granted", "user": "bob@example.com"}
-                ]
-            }
-        ),
-    )
+    _TENANT = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "services.worker.app.identity_worker.IdentityWorker._resolve_tenant_id",
+            staticmethod(lambda: _TENANT),
+        )
+        worker = IdentityWorker(
+            interval_seconds=1,
+            session_factory=FakeCtx(session),
+            o365=FakeConnector(
+                {
+                    "audits": [
+                        {"activity": "OAuth Consent Granted", "user": "bob@example.com"}
+                    ]
+                }
+            ),
+        )
     result = await worker.scan_once()
     assert result["created"] == 1
     assert session.added[0].rule_description.lower().startswith("illicit oauth consent") or session.added[0].rule_description.lower().startswith("illicit")

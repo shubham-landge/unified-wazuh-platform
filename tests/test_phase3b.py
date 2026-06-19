@@ -16,16 +16,18 @@ class TestTieredRouter:
     def setup_method(self):
         self.router = TieredRouter()
 
-    @pytest.mark.parametrize("strategy,expected_model", [
-        ("fast", "qwen2.5:3b-instruct"),
-        ("full", "CyberCrew/notmythos-8b"),
+    @pytest.mark.parametrize("strategy,expected_fragment", [
+        ("fast", "mini"),
+        ("full", "8b"),
     ])
     @pytest.mark.asyncio
-    async def test_strategy_override(self, strategy, expected_model):
+    async def test_strategy_override(self, strategy, expected_fragment):
         with patch("shared.config.settings.llm_tier_strategy", strategy):
-            provider = await self.router.get_provider(alert=None)
-            assert isinstance(provider, OllamaProvider)
-            assert expected_model in provider.name()
+            with patch("shared.config.settings.llm_tier_fast_model", "notmythos:mini"):
+                with patch("shared.config.settings.llm_tier_full_model", "notmythos:8b"):
+                    provider = await self.router.get_provider(alert=None)
+                    assert isinstance(provider, OllamaProvider)
+                    assert expected_fragment in provider.name()
 
     @pytest.mark.asyncio
     async def test_auto_strategy_low_level_uses_fast(self):

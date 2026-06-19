@@ -61,13 +61,6 @@ INCIDENT_MTTR = Gauge("soc_incident_mttr_seconds", "Incident mean time to resolv
 TIME_TO_FULL_ENRICHMENT = Gauge("soc_time_to_full_enrichment_seconds", "Mean time to full enrichment in seconds", registry=REGISTRY)
 BREAKOUT_INCIDENTS = Gauge("soc_breakout_incidents_total", "Total breakout incidents", registry=REGISTRY)
 
-# Wazuh environment health gauges (set from Redis keys written by wazuh_health_worker)
-WAZUH_AGENTS_DISCONNECTED = Gauge("soc_wazuh_agents_disconnected", "Wazuh agents currently disconnected", registry=REGISTRY)
-WAZUH_AGENTS_ACTIVE = Gauge("soc_wazuh_agents_active", "Wazuh agents currently active", registry=REGISTRY)
-WAZUH_CLUSTER_STATUS = Gauge("soc_wazuh_cluster_status_code", "Indexer cluster status (0=green,1=yellow,2=red,3=unknown)", registry=REGISTRY)
-WAZUH_ANALYSISD_EPS = Gauge("soc_wazuh_analysisd_eps", "Wazuh analysisd events processed", registry=REGISTRY)
-WAZUH_INGESTION_LAG = Gauge("soc_wazuh_ingestion_lag_seconds", "Seconds since newest ingested alert", registry=REGISTRY)
-WAZUH_POLLER_LAG = Gauge("soc_poller_lag_seconds", "Seconds since last successful alert poll", registry=REGISTRY)
 
 
 def _try_redis_queue_depth() -> int | None:
@@ -138,16 +131,17 @@ async def metrics(
         TRIAGE_KEPT.set(float(r.get("triage_kept_total") or 0))
         TRIAGE_TIER_FAST.set(float(r.get("triage_tier_fast_total") or 0))
         TRIAGE_TIER_FULL.set(float(r.get("triage_tier_full_total") or 0))
-        INCIDENT_MTTD.set(float(r.get("incident_mttd_seconds") or 0))
-        INCIDENT_MTTR.set(float(r.get("incident_mttr_seconds") or 0))
-        TIME_TO_FULL_ENRICHMENT.set(float(r.get("time_to_full_enrichment_seconds") or 0))
-        BREAKOUT_INCIDENTS.set(float(r.get("breakout_incidents_total") or 0))
-        WAZUH_AGENTS_DISCONNECTED.set(float(r.get("wazuh_agents_disconnected") or 0))
-        WAZUH_AGENTS_ACTIVE.set(float(r.get("wazuh_agents_active") or 0))
-        WAZUH_CLUSTER_STATUS.set(float(r.get("wazuh_cluster_status_code") or 3))
-        WAZUH_ANALYSISD_EPS.set(float(r.get("wazuh_analysisd_eps") or 0))
-        WAZUH_INGESTION_LAG.set(float(r.get("wazuh_ingestion_lag_seconds") or 0))
-        WAZUH_POLLER_LAG.set(float(r.get("wazuh_poller_lag_seconds") or 0))
+        
+        breakout = r.get("breakout_incidents_total") or 0
+        mttd = r.get("incident_mttd_seconds") or 0
+        mttr = r.get("incident_mttr_seconds") or 0
+        enrichment = r.get("time_to_full_enrichment_seconds") or 0
+        
+        INCIDENT_MTTD.set(float(mttd))
+        INCIDENT_MTTR.set(float(mttr))
+        TIME_TO_FULL_ENRICHMENT.set(float(enrichment))
+        BREAKOUT_INCIDENTS.set(float(breakout))
+        
         r.close()
     except Exception as exc:
         logger.debug("Failed to read triage metrics from Redis: %s", exc)
