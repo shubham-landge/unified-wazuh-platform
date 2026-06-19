@@ -216,6 +216,9 @@ class Settings(BaseSettings):
     alert_dedup_enabled: bool = True
     alert_correlation_window_minutes: int = 120
 
+    # Fingerprint deduplication (fast exact-match pass before AECID)
+    fingerprint_dedup_enabled: bool = True
+
     # Report scheduling
     report_schedule_enabled: bool = True
     schedule_check_interval_seconds: int = 60
