@@ -124,13 +124,13 @@ async def test_enrichment_fanout_partial_failure():
 
     mock_session = AsyncMock()
 
-    with patch("shared.orchestrator.enrichment._enrich_threat_intel", return_value=[]) as ti:
-        with patch("shared.orchestrator.enrichment._enrich_asset_criticality", side_effect=Exception("API down")) as asset:
-            with patch("shared.orchestrator.enrichment._enrich_user_risk", return_value=[]) as ur:
-                with patch("shared.orchestrator.enrichment._enrich_ueba", return_value=[]):
-                    with patch("shared.orchestrator.enrichment._enrich_few_shot", return_value=[]):
-                        with patch("shared.orchestrator.enrichment._enrich_related_incidents", return_value=[]):
-                            pack = await enrich_incident(mock_session, incident)
+    # The refactored enrich_incident delegates per-alert work to
+    # shared.enrichment.pipeline.enrich_alert.  Patch it to simulate a
+    # partial failure (one alert raises, another returns empty).
+    with patch("shared.orchestrator.enrichment.enrich_alert", side_effect=Exception("API down")) as m_enrich:
+        with patch("shared.orchestrator.enrichment._enrich_few_shot", return_value=[]):
+            with patch("shared.orchestrator.enrichment._enrich_related_incidents", return_value=[]):
+                pack = await enrich_incident(mock_session, incident)
 
     assert pack.enriched_at is not None
     assert pack.threat_intel == []

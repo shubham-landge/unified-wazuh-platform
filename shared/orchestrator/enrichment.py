@@ -1,8 +1,11 @@
-"""Parallel enrichment fan-out for cross-domain incidents.
+"""Incident-level enrichment that delegates per-alert work to the pipeline.
 
-Runs threat-intel, asset criticality, user-risk, UEBA anomaly, and RAG
-few-shot retrieval concurrently via asyncio.gather — then assembles the
-EvidencePack before the triage LLM runs.
+Queries all alerts attached to an incident, runs `shared.enrichment.pipeline.enrich_alert`
+for each one in parallel, then deduplicates and aggregates the results into an
+`EvidencePack` for backward compatibility with the orchestrator handlers.
+
+Incident-specific enrichers (few-shot examples, related incidents) are still computed
+at the incident level and merged into the final pack.
 """
 
 import asyncio
@@ -16,9 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.config import settings
 from shared.models.alert import Alert
 from shared.models.alert_dedup import AlertIncident
-from shared.models.asset import Asset
-from shared.models.ueba import UebaAnomaly
 from shared.models.entity import AlertEntity, IncidentEntity
+from shared.enrichment.pipeline import enrich_alert
 
 logger = logging.getLogger(__name__)
 
@@ -47,163 +49,25 @@ class EvidencePack:
         }
 
 
-async def _enrich_threat_intel(session: AsyncSession, incident: AlertIncident) -> list[dict]:
+async def _alerts_for_incident(session: AsyncSession, incident: AlertIncident) -> list[Alert]:
+    """Fetch all alerts linked to this incident via entity stitching."""
     try:
         stmt = (
             select(Alert)
             .join(AlertEntity, AlertEntity.alert_id == Alert.id)
             .join(IncidentEntity, IncidentEntity.entity_id == AlertEntity.entity_id)
             .where(IncidentEntity.incident_id == incident.id)
-            .where(Alert.source_ip.isnot(None))
-            .limit(5)
+            .order_by(Alert.alert_timestamp.desc())
         )
         result = await session.execute(stmt)
-        alerts = result.scalars().all()
-
-        ips = {a.source_ip for a in alerts if a.source_ip}
-        if not ips:
-            return []
-
-        from shared.connectors.ti_alienvault import AlienVaultOTXConnector
-        otx = AlienVaultOTXConnector()
-        results = []
-        for ip in ips:
-            try:
-                data = await otx.lookup("ipv4", ip)
-                results.append({"ioc": ip, "type": "ip", "otx": data})
-            except Exception:
-                pass
-        return results
+        return list(result.scalars().all())
     except Exception as exc:
-        logger.warning("Threat intel enrichment failed: %s", exc)
-        return []
-
-
-async def _enrich_asset_criticality(session: AsyncSession, incident: AlertIncident) -> list[dict]:
-    try:
-        stmt = (
-            select(Alert.agent_id, Alert.agent_name)
-            .join(AlertEntity, AlertEntity.alert_id == Alert.id)
-            .join(IncidentEntity, IncidentEntity.entity_id == AlertEntity.entity_id)
-            .where(IncidentEntity.incident_id == incident.id)
-            .where(Alert.agent_id.isnot(None))
-            .limit(10)
-        )
-        result = await session.execute(stmt)
-        rows = result.all()
-
-        agent_ids = {r[0] for r in rows if r[0]}
-        if not agent_ids:
-            return []
-
-        asset_result = await session.execute(
-            select(Asset).where(Asset.agent_id.in_(agent_ids))
-        )
-        assets = asset_result.scalars().all()
-
-        return [
-            {
-                "agent_id": a.agent_id,
-                "name": a.agent_name,
-                "os_platform": a.os_platform,
-                "os_version": a.os_version,
-                "status": a.status,
-                "criticality": getattr(a, "criticality_score", None),
-            }
-            for a in assets
-        ]
-    except Exception as exc:
-        logger.warning("Asset enrichment failed: %s", exc)
-        return []
-
-
-async def _enrich_user_risk(session: AsyncSession, incident: AlertIncident) -> list[dict]:
-    try:
-        stmt = (
-            select(Alert.user_name)
-            .join(AlertEntity, AlertEntity.alert_id == Alert.id)
-            .join(IncidentEntity, IncidentEntity.entity_id == AlertEntity.entity_id)
-            .where(IncidentEntity.incident_id == incident.id)
-            .where(Alert.user_name.isnot(None))
-            .distinct()
-            .limit(10)
-        )
-        result = await session.execute(stmt)
-        users = [row[0] for row in result.all()]
-        if not users:
-            return []
-
-        from shared.models.user import User
-        user_result = await session.execute(
-            select(User).where(User.email.in_(users))
-        )
-        user_rows = user_result.scalars().all()
-
-        return [
-            {
-                "email": u.email,
-                "full_name": u.full_name,
-                "role": u.role,
-                "is_active": u.is_active,
-                "last_login": u.last_login_at.isoformat() if u.last_login_at else None,
-            }
-            for u in user_rows
-        ]
-    except Exception as exc:
-        logger.warning("User risk enrichment failed: %s", exc)
-        return []
-
-
-async def _enrich_ueba(session: AsyncSession, incident: AlertIncident) -> list[dict]:
-    try:
-        stmt = (
-            select(Alert.user_name, Alert.source_ip)
-            .join(AlertEntity, AlertEntity.alert_id == Alert.id)
-            .join(IncidentEntity, IncidentEntity.entity_id == AlertEntity.entity_id)
-            .where(IncidentEntity.incident_id == incident.id)
-            .limit(10)
-        )
-        result = await session.execute(stmt)
-        rows = result.all()
-
-        subjects = set()
-        for row in rows:
-            if row[0]:
-                subjects.add(("user", row[0]))
-            if row[1]:
-                subjects.add(("ip", row[1]))
-
-        if not subjects:
-            return []
-
-        anomaly_result = await session.execute(
-            select(UebaAnomaly)
-            .where(
-                UebaAnomaly.subject_type.in_([s[0] for s in subjects]),
-                UebaAnomaly.subject_id.in_([s[1] for s in subjects]),
-            )
-            .order_by(UebaAnomaly.created_at.desc())
-            .limit(10)
-        )
-        anomalies = anomaly_result.scalars().all()
-
-        return [
-            {
-                "subject_type": a.subject_type,
-                "subject_id": a.subject_id,
-                "anomaly_type": a.anomaly_type,
-                "zscore": a.zscore,
-                "zscore_threshold": a.zscore_threshold,
-                "created_at": a.created_at.isoformat() if a.created_at else None,
-            }
-            for a in anomalies
-        ]
-    except Exception as exc:
-        logger.warning("UEBA enrichment failed: %s", exc)
+        logger.warning("Failed to load alerts for incident %s: %s", incident.id, exc)
         return []
 
 
 async def _enrich_few_shot(session: AsyncSession, incident: AlertIncident) -> list[dict]:
+    """Retrieve few-shot examples based on MITRE techniques in the incident."""
     try:
         stmt = (
             select(Alert.mitre_technique)
@@ -229,6 +93,7 @@ async def _enrich_few_shot(session: AsyncSession, incident: AlertIncident) -> li
 
 
 async def _enrich_related_incidents(session: AsyncSession, incident: AlertIncident) -> list[dict]:
+    """Find related closed incidents that share entities with this one."""
     try:
         stmt = (
             select(IncidentEntity.entity_id)
@@ -239,16 +104,17 @@ async def _enrich_related_incidents(session: AsyncSession, incident: AlertIncide
         if not entity_ids:
             return []
 
+        from shared.models.alert_dedup import AlertIncident as AI
         related_stmt = (
-            select(AlertIncident)
-            .join(IncidentEntity, IncidentEntity.incident_id == AlertIncident.id)
+            select(AI)
+            .join(IncidentEntity, IncidentEntity.incident_id == AI.id)
             .where(
                 IncidentEntity.entity_id.in_(entity_ids),
-                AlertIncident.id != incident.id,
-                AlertIncident.status == "closed",
+                AI.id != incident.id,
+                AI.status == "closed",
             )
             .distinct()
-            .order_by(AlertIncident.last_alert_at.desc())
+            .order_by(AI.last_alert_at.desc())
             .limit(5)
         )
         related_result = await session.execute(related_stmt)
@@ -269,30 +135,80 @@ async def _enrich_related_incidents(session: AsyncSession, incident: AlertIncide
         return []
 
 
+def _deduplicate_dicts(items: list[dict], key_fn) -> list[dict]:
+    """Deduplicate a list of dicts using a key function, preserving order."""
+    seen = set()
+    out = []
+    for item in items:
+        key = key_fn(item)
+        if key not in seen:
+            seen.add(key)
+            out.append(item)
+    return out
+
+
 async def enrich_incident(
     session: AsyncSession,
     incident: AlertIncident,
 ) -> EvidencePack:
-    """Run all enrichment sources in parallel and assemble an EvidencePack."""
+    """Run all enrichment sources for an incident and assemble an EvidencePack.
+
+    Per-alert enrichment is delegated to `shared.enrichment.pipeline.enrich_alert`.
+    Results are deduplicated and aggregated into the incident-level EvidencePack.
+    Incident-specific enrichers (few-shot, related incidents) are computed separately.
+    """
     pack = EvidencePack()
 
-    results = await asyncio.gather(
-        _enrich_threat_intel(session, incident),
-        _enrich_asset_criticality(session, incident),
-        _enrich_user_risk(session, incident),
-        _enrich_ueba(session, incident),
+    alerts = await _alerts_for_incident(session, incident)
+    if not alerts:
+        logger.debug("No alerts found for incident %s", incident.id)
+        pack.enriched_at = datetime.now(timezone.utc).isoformat()
+        return pack
+
+    # Run the alert-level pipeline for each alert in parallel.
+    alert_results = await asyncio.gather(
+        *[enrich_alert(session, alert) for alert in alerts],
+        return_exceptions=True,
+    )
+
+    # Aggregate and deduplicate per-field.
+    all_ti: list[dict] = []
+    all_asset: list[dict] = []
+    all_user: list[dict] = []
+    all_ueba: list[dict] = []
+
+    for raw in alert_results:
+        if isinstance(raw, Exception):
+            logger.warning("Alert enrichment failed in incident %s: %s", incident.id, raw)
+            continue
+        all_ti.extend(raw.ti)
+        all_asset.extend(raw.asset)
+        all_user.extend(raw.user)
+        all_ueba.extend(raw.ueba)
+
+    pack.threat_intel = _deduplicate_dicts(all_ti, lambda d: d.get("ioc", str(d)))
+    pack.asset_criticality = _deduplicate_dicts(all_asset, lambda d: d.get("agent_id", str(d)))
+    pack.user_risk = _deduplicate_dicts(all_user, lambda d: d.get("email", str(d)))
+    pack.ueba_anomalies = _deduplicate_dicts(
+        all_ueba, lambda d: (d.get("subject_type"), d.get("subject_id"))
+    )
+
+    # Incident-specific enrichers.
+    few_shot, related = await asyncio.gather(
         _enrich_few_shot(session, incident),
         _enrich_related_incidents(session, incident),
         return_exceptions=True,
     )
 
-    names = ["threat_intel", "asset_criticality", "user_risk", "ueba_anomalies", "few_shot_examples", "related_incidents"]
-    for name, data in zip(names, results):
-        if isinstance(data, Exception):
-            logger.warning("Enrichment %s failed: %s", name, data)
-            continue
-        if data:
-            setattr(pack, name, data)
+    if not isinstance(few_shot, Exception):
+        pack.few_shot_examples = few_shot
+    else:
+        logger.warning("Few-shot enrichment failed: %s", few_shot)
+
+    if not isinstance(related, Exception):
+        pack.related_incidents = related
+    else:
+        logger.warning("Related incidents enrichment failed: %s", related)
 
     pack.enriched_at = datetime.now(timezone.utc).isoformat()
     incident.first_enriched_at = datetime.now(timezone.utc)
