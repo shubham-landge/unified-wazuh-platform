@@ -17,8 +17,8 @@ _Last updated: 2026-06-17 · Branch: claud · Source: Architecture & Roadmap PDF
 | Manager cluster | **2 managers** (1 master + 1 worker) | Quorum not required for managers; HA preserved |
 | **3rd manager slot → AI node** | **Repurposed as our AI SOC host** (`m6i.2xlarge`) | AI runs on the instance that would've been manager #3 |
 | Prior AI SOC instance | **Kept as reserve / standby** | 2nd triage worker or failover when queue backs up |
-| AI model — primary | **3B** (`qwen2.5:3b-instruct`) | Fast triage on CPU, ~5–12s/alert |
-| AI model — deep dive | **7B** (`qwen2.5:7b-instruct`) | Long-context / deeper investigation via queue |
+| AI model — primary | **4B** (`qwen3:4b-instruct`) | Fast triage on CPU, ~5–12s/alert |
+| AI model — deep dive | **8B** (`Foundation-Sec-8B-Instruct`) | Long-context / deeper investigation via queue |
 | Inference hardware | **CPU-only** (`m6i.2xlarge`, 8 vCPU / 32 GB) | No GPU; small model + async queue + pre-reduction |
 | AI triage scope | **Medium and up (rule level ≥ 7)** | Needs filtering + dedup before triage |
 | Retention | **30 days hot + 90 days cold** | Indexer ISM (PDF: 30–45d indexed) + platform DB |
@@ -119,7 +119,7 @@ ingestion; layer 3 (Wazuh rules) cuts alert noise — see
 
 ### Host
 - **Primary:** the repurposed manager #3 — `m6i.2xlarge` (8 vCPU / 32 GB). 32 GB
-  holds `qwen2.5:3b-instruct` + `qwen2.5:7b-instruct` + `nomic-embed-text`
+  holds `qwen3:4b-instruct` + `Foundation-Sec-8B-Instruct` + `nomic-embed-text`
   resident at once.
 - **Reserve:** prior AI SOC instance — bring online as a 2nd triage worker when
   `soc_agent_queue_depth` sustains high, or as failover.
@@ -152,8 +152,8 @@ queue. Tiered routing (`llm_tier_strategy=auto`) already does this split.
 
 | Setting | Value |
 |---|---|
-| `ollama_fast_model` / `llm_tier_fast_model` | `qwen2.5:3b-instruct` |
-| `ollama_model` / `llm_tier_full_model` | `qwen2.5:7b-instruct` |
+| `ollama_fast_model` / `llm_tier_fast_model` | `qwen3:4b-instruct` |
+| `ollama_model` / `llm_tier_full_model` | `Foundation-Sec-8B-Instruct` |
 | `embedding_model` | `nomic-embed-text` (PDF alt: `bge-base-en`, `all-MiniLM-L6-v2`) |
 
 Alternatives if benchmarking favors them: Llama 3 8B, Mistral 7B for the deep tier.

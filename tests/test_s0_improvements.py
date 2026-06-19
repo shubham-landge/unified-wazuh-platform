@@ -203,7 +203,7 @@ async def test_triage_worker_enrichment_is_invoked():
             reason="shadow mode",
         )
         mock_provider = MagicMock()
-        mock_provider.name.return_value = "qwen2.5-coder:3b"
+        mock_provider.name.return_value = "qwen3:4b-instruct"
         mock_provider.analyze = AsyncMock(return_value={
             "success": True,
             "summary": "Brute force attempt",
@@ -276,7 +276,7 @@ async def test_triage_worker_enrichment_context_in_prompt():
     worker.session_factory = lambda: _Session(alert)
 
     mock_provider = MagicMock()
-    mock_provider.name.return_value = "qwen2.5-coder:3b"
+    mock_provider.name.return_value = "qwen3:4b-instruct"
 
     async def capture_analyze(*, system_prompt, user_prompt):
         nonlocal captured_prompt
@@ -438,7 +438,7 @@ async def test_triage_worker_updates_cumulative_incident_risk():
             auto_severity="high",
         )
         mock_provider = MagicMock()
-        mock_provider.name.return_value = "qwen2.5-coder:3b"
+        mock_provider.name.return_value = "qwen3:4b-instruct"
         mock_provider.analyze = AsyncMock(return_value={
             "success": True,
             "summary": "Brute force attempt",
@@ -561,7 +561,7 @@ async def test_triage_worker_auto_case_when_cumulative_risk_exceeds_threshold():
             auto_severity="high",
         )
         mock_provider = MagicMock()
-        mock_provider.name.return_value = "qwen2.5-coder:3b"
+        mock_provider.name.return_value = "qwen3:4b-instruct"
         mock_provider.analyze = AsyncMock(return_value={
             "success": True,
             "summary": "Brute force attempt",
@@ -679,7 +679,7 @@ async def test_triage_worker_no_auto_case_when_below_threshold():
             fast_llm_only=False,
         )
         mock_provider = MagicMock()
-        mock_provider.name.return_value = "qwen2.5-coder:3b"
+        mock_provider.name.return_value = "qwen3:4b-instruct"
         mock_provider.analyze = AsyncMock(return_value={
             "success": True,
             "summary": "Brute force attempt",
@@ -791,7 +791,7 @@ async def test_triage_worker_incident_risk_disabled():
         m_risk.return_value = {"score": 65, "breakdown": {}}
         m_decide.return_value = MagicMock(level=3, enforced=False, reason="shadow")
         mock_provider = MagicMock()
-        mock_provider.name.return_value = "qwen2.5-coder:3b"
+        mock_provider.name.return_value = "qwen3:4b-instruct"
         mock_provider.analyze = AsyncMock(return_value={
             "success": True,
             "summary": "Brute force attempt",

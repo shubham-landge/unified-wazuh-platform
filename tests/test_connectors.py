@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 async def test_ollama_provider_analyze():
     from shared.connectors.llm_provider import OllamaProvider
 
-    provider = OllamaProvider(model="qwen2.5-coder:3b")
+    provider = OllamaProvider(model="qwen3:4b-instruct")
 
     mock_response = MagicMock()
     mock_response.status_code = 200
@@ -34,12 +34,12 @@ async def test_ollama_provider_analyze():
 async def test_ollama_provider_health():
     from shared.connectors.llm_provider import OllamaProvider
 
-    provider = OllamaProvider(model="qwen2.5-coder:3b")
+    provider = OllamaProvider(model="qwen3:4b-instruct")
 
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
-        "models": [{"name": "qwen2.5-coder:3b"}]
+        "models": [{"name": "qwen3:4b-instruct"}]
     }
 
     with patch("httpx.AsyncClient") as mock_client:
@@ -47,7 +47,7 @@ async def test_ollama_provider_health():
         health = await provider.health()
 
     assert health["connected"] is True
-    assert "qwen2.5-coder:3b" in health["models"]
+    assert "qwen3:4b-instruct" in health["models"]
 
 
 @pytest.mark.asyncio
@@ -92,7 +92,7 @@ async def test_get_provider_default():
 async def test_ollama_provider_malformed_json():
     from shared.connectors.llm_provider import OllamaProvider
 
-    provider = OllamaProvider(model="qwen2.5-coder:3b")
+    provider = OllamaProvider(model="qwen3:4b-instruct")
 
     mock_response = MagicMock()
     mock_response.status_code = 200

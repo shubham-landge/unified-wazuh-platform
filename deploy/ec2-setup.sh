@@ -116,14 +116,14 @@ sudo docker compose up -d ollama
 sleep 3
 
 # Primary triage model — 3.2B params, 128K context, cybersecurity-specialized, 2.0 GB
-echo "   Pulling CyberCrew/notmythos-8b (2.0 GB)..."
-sudo docker compose exec -T ollama ollama pull CyberCrew/notmythos-8b 2>/dev/null || \
-    echo "   ⚠  notmythos-8b pull failed — check ollama logs"
+echo "   Pulling Foundation-Sec-8B-Instruct (~5.0 GB)..."
+sudo docker compose exec -T ollama ollama pull Foundation-Sec-8B-Instruct 2>/dev/null || \
+    echo "   ⚠  Foundation-Sec-8B-Instruct pull failed — check ollama logs"
 
 # Fast / noise-gate tier — 3B params, 1.9 GB
-echo "   Pulling qwen2.5:3b-instruct (1.9 GB)..."
-sudo docker compose exec -T ollama ollama pull qwen2.5:3b-instruct 2>/dev/null || \
-    echo "   ⚠  qwen2.5:3b-instruct pull failed — check ollama logs"
+echo "   Pulling qwen3:4b-instruct (~2.5 GB)..."
+sudo docker compose exec -T ollama ollama pull qwen3:4b-instruct 2>/dev/null || \
+    echo "   ⚠  qwen3:4b-instruct pull failed — check ollama logs"
 
 # RAG embeddings model — 274 MB, runs fast on CPU
 echo "   Pulling nomic-embed-text (274 MB)..."
@@ -201,14 +201,14 @@ echo "  3. Monitor triage: docker compose logs -f worker | grep triage"
 echo "  4. Run health script: bash deploy/healthcheck.sh"
 echo ""
 echo "Model tiering:"
-echo "  Fast tier (noise gate): qwen2.5:3b-instruct"
-echo "  Full tier (primary):   CyberCrew/notmythos-8b (128K ctx)"
+echo "  Fast tier (noise gate): qwen3:4b-instruct"
+echo "  Full tier (primary):   Foundation-Sec-8B-Instruct"
 echo "  Embeddings (RAG):      nomic-embed-text"
 echo "  Escalation tier:       Gemini (cloud) — set GEMINI_API_KEY and"
 echo "                         LLM_TIER_ESCALATION_ENABLED=true in .env"
 echo ""
 echo "Cloud escalation (deep analysis for cross-domain / hardest cases):"
-echo "  Local qwen+notmythos stay the always-on CPU baseline; only the hardest"
+echo "  Local Foundation-Sec+qwen3 stay the always-on CPU baseline; only the hardest"
 echo "  incidents escalate to Gemini, so cost stays bounded. Configure via the"
 echo "  LLM_TIER_ESCALATION_* keys in .env."
 echo ""

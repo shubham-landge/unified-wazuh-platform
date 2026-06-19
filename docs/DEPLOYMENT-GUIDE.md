@@ -50,8 +50,8 @@ The platform routes alerts through 2 tiers based on severity and risk score:
 
 | Tier | Model | Size | Context | Role |
 |------|-------|------|---------|------|
-| **Fast** (noise gate) | `qwen2.5:3b-instruct` | 1.9 GB | 32K | Low-severity alerts, fast classification |
-| **Full** (primary triage) | `CyberCrew/notmythos-8b` | 2.0 GB | 128K | Cybersecurity-specialized primary triage + response planning |
+| **Fast** (noise gate) | `qwen3:4b-instruct` | 1.9 GB | 32K | Low-severity alerts, fast classification |
+| **Full** (primary triage) | `Foundation-Sec-8B-Instruct` | 2.0 GB | 128K | Cybersecurity-specialized primary triage + response planning |
 | **Embeddings** (RAG) | `nomic-embed-text` | 274 MB | — | Vector embeddings for skill-memory retrieval |
 
 Optional escalation tier (domain-specialist, 4.7 GB, Wazuh-log fine-tuned):
@@ -61,8 +61,8 @@ Optional escalation tier (domain-specialist, 4.7 GB, Wazuh-log fine-tuned):
 Tier routing decision is in `shared/connectors/llm_router.py`. Config in `.env`:
 ```env
 LLM_TIER_STRATEGY=auto               # fast | full | auto
-LLM_TIER_FAST_MODEL=qwen2.5:3b-instruct
-LLM_TIER_FULL_MODEL=CyberCrew/notmythos-8b
+LLM_TIER_FAST_MODEL=qwen3:4b-instruct
+LLM_TIER_FULL_MODEL=Foundation-Sec-8B-Instruct
 LLM_TIER_LEVEL_THRESHOLD=10          # alerts level >= 10 → full tier
 LLM_TIER_SCORE_THRESHOLD=4           # risk score >= 4 → full tier
 ```
@@ -87,8 +87,8 @@ cp .env.example .env
 
 # Pull models (3-5 min, do first)
 docker compose up -d ollama
-docker compose exec ollama ollama pull CyberCrew/notmythos-8b
-docker compose exec ollama ollama pull qwen2.5:3b-instruct
+docker compose exec ollama ollama pull Foundation-Sec-8B-Instruct
+docker compose exec ollama ollama pull qwen3:4b-instruct
 docker compose exec ollama ollama pull nomic-embed-text
 
 # Build and start

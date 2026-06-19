@@ -1,0 +1,14 @@
+{
+  "schema_version": 2,
+  "active_work_id": "soc-deploy-and-validate",
+  "works": {
+    "soc-deploy-and-validate": {
+      "work_id": "soc-deploy-and-validate",
+      "active_plan": ".omo/plans/soc-deploy-and-validate.md",
+      "plan_name": "soc-deploy-and-validate",
+      "session_ids": [],
+      "status": "active",
+      "worktree_path": null
+    }
+  }
+}

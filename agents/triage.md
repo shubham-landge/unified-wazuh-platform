@@ -19,4 +19,4 @@ When processing an alert:
 
 Your triage output must include: verdict (malicious/suspicious/benign), severity, confidence, summary, recommended action, and MITRE mapping.
 
-This agent uses `notmythos:8b` (128K context, cybersecurity-native) for primary analysis and `notmythos:mini` for noise gating.
+This agent uses `Foundation-Sec-8B-Instruct` (128K context, cybersecurity-native) for primary analysis and `qwen3:4b-instruct` for noise gating.

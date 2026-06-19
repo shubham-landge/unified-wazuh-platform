@@ -559,7 +559,7 @@ async def run_eval(
 
 def main():
     parser = argparse.ArgumentParser(description="AI SOC Triage Evaluation Harness")
-    parser.add_argument("--model", default="CyberCrew/notmythos-8b", help="Ollama model to evaluate")
+    parser.add_argument("--model", default="Foundation-Sec-8B-Instruct", help="Ollama model to evaluate")
     parser.add_argument("--dataset", default="tests/fixtures/triage_eval/samples.jsonl", help="Labeled dataset path")
     parser.add_argument("--output", default="reports/eval", help="Output directory for results")
     parser.add_argument("--system-prompt", default=None, help="Path to system prompt file")

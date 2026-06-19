@@ -773,7 +773,7 @@ async def settings_page(request: Request):
     local_settings = {
         "api_key": _load_secret_setting("api_key", os.getenv("API_KEYS", "soc-key-001").split(",")[0]),
         "wazuh_host": "https://wazuh.local:55000",
-        "ollama_model": "llama3",
+        "ollama_model": "Foundation-Sec-8B-Instruct",
         "auto_triage": "enabled",
         "retention_days": "90",
         "sync_interval": "60",

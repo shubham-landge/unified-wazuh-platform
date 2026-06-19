@@ -17,14 +17,14 @@ class TestTieredRouter:
         self.router = TieredRouter()
 
     @pytest.mark.parametrize("strategy,expected_fragment", [
-        ("fast", "mini"),
-        ("full", "8b"),
+        ("fast", "4b-instruct"),
+        ("full", "8B-Instruct"),
     ])
     @pytest.mark.asyncio
     async def test_strategy_override(self, strategy, expected_fragment):
         with patch("shared.config.settings.llm_tier_strategy", strategy):
-            with patch("shared.config.settings.llm_tier_fast_model", "notmythos:mini"):
-                with patch("shared.config.settings.llm_tier_full_model", "notmythos:8b"):
+            with patch("shared.config.settings.llm_tier_fast_model", "qwen3:4b-instruct"):
+                with patch("shared.config.settings.llm_tier_full_model", "Foundation-Sec-8B-Instruct"):
                     provider = await self.router.get_provider(alert=None)
                     assert isinstance(provider, OllamaProvider)
                     assert expected_fragment in provider.name()
@@ -61,7 +61,7 @@ class TestTieredRouter:
         with patch("shared.config.settings.llm_tier_strategy", "auto"):
             with patch("shared.config.settings.llm_tier_level_threshold", 10):
                 provider = await self.router.get_provider(alert=alert)
-                assert "notmythos" in provider.name() or "8b" in provider.name()
+                assert "Foundation-Sec" in provider.name() or "8B-Instruct" in provider.name()
 
     @pytest.mark.asyncio
     async def test_complex_technique_boosts_score(self):
@@ -81,7 +81,7 @@ class TestTieredRouter:
                            "T1569.002,T1059.001"):
                     provider = await self.router.get_provider(alert=alert)
                     # score = 3 (level) + 1 (technique) = 4 >= 4
-                    assert "notmythos" in provider.name() or "8b" in provider.name()
+                assert "Foundation-Sec" in provider.name() or "8B-Instruct" in provider.name()
 
     @pytest.mark.asyncio
     async def test_burst_alert_reduces_score(self):
@@ -98,7 +98,7 @@ class TestTieredRouter:
                 with patch("shared.config.settings.llm_tier_score_threshold", 4):
                     provider = await self.router.get_provider(alert=alert)
                     # score = 3 (level) - 2 (burst) = 1 < 4, so fast
-                assert "3b" in provider.name() or "mini" in provider.name()
+                assert "4b-instruct" in provider.name() or "qwen3" in provider.name()
 
     def test_known_bad_ip_boosts_score(self):
         alert = MagicMock()

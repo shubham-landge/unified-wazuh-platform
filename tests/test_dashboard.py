@@ -35,8 +35,8 @@ def test_dashboard_health_page(mock_api, client):
         },
         "/model/status": {
             "provider": "ollama",
-            "model": "qwen2.5-coder",
-            "fast_model": "qwen2.5-coder:1.5b",
+            "model": "Foundation-Sec-8B-Instruct",
+            "fast_model": "qwen3:4b-instruct",
         },
         "/health": {
             "status": "healthy",
@@ -70,8 +70,8 @@ def test_dashboard_health_status_partial(mock_api, client):
         },
         "/model/status": {
             "provider": "ollama",
-            "model": "qwen2.5-coder",
-            "fast_model": "qwen2.5-coder:1.5b",
+            "model": "Foundation-Sec-8B-Instruct",
+            "fast_model": "qwen3:4b-instruct",
         },
         "/health": {
             "status": "healthy",

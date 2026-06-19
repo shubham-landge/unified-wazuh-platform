@@ -26,7 +26,8 @@ An AI-powered SOC operations and vulnerability management layer for Wazuh. Turns
                      │  │                               │
                      │  │  ┌──────────────────────┐     │
                      │  └──┤   Ollama (Local LLM)  │     │
-                     │     │ qwen2.5-coder:3b/7b   │     │
+                     │     │ Foundation-Sec-8B      │     │
+                     │     │ / qwen3:4b-instruct   │     │
                      │     └──────────────────────┘     │
                      └──────────────────────────────────┘
 ```
@@ -61,8 +62,8 @@ docker compose up -d
 curl http://localhost:8000/health
 
 # 5. Pull Ollama models (first time only)
-docker compose exec ollama ollama pull qwen2.5-coder:3b
-docker compose exec ollama ollama pull qwen2.5-coder:7b
+docker compose exec ollama ollama pull qwen3:4b-instruct
+docker compose exec ollama ollama pull Foundation-Sec-8B-Instruct
 ```
 
 ## Documentation

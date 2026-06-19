@@ -130,11 +130,11 @@
             <div class="grid grid-cols-2 gap-2 text-[10px] pt-1">
                 <div>
                     <span class="text-muted block font-bold uppercase tracking-wider">Active Model</span>
-                    <span class="text-primary font-semibold block mt-0.5 truncate max-w-[100px]">{{ model.model or 'qwen2.5-coder' }}</span>
+                    <span class="text-primary font-semibold block mt-0.5 truncate max-w-[100px]">{{ model.model or 'Foundation-Sec-8B-Instruct' }}</span>
                 </div>
                 <div>
                     <span class="text-muted block font-bold uppercase tracking-wider">Fast Model fallback</span>
-                    <span class="text-primary font-semibold block mt-0.5 truncate max-w-[100px]">{{ model.fast_model or 'qwen2.5-coder:1.5b' }}</span>
+                    <span class="text-primary font-semibold block mt-0.5 truncate max-w-[100px]">{{ model.fast_model or 'qwen3:4b-instruct' }}</span>
                 </div>
             </div>
         </div>

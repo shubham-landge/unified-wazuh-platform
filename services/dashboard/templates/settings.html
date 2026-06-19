@@ -162,9 +162,8 @@
                         <div class="flex flex-col gap-1.5">
                             <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Selected Model</label>
                             <select name="ollama_model" class="bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2 rounded-lg text-primary outline-none">
-                                <option value="llama3" {% if settings.ollama_model == 'llama3' %}selected{% endif %}>qwen2.5-coder:7b (Local)</option>
-                                <option value="mistral" {% if settings.ollama_model == 'mistral' %}selected{% endif %}>Mistral (7B Local)</option>
-                                <option value="gemini-1.5-flash" {% if settings.ollama_model == 'gemini-1.5-flash' %}selected{% endif %}>Gemini 1.5 Flash (Cloud)</option>
+                                <option value="Foundation-Sec-8B-Instruct" {% if settings.ollama_model == 'Foundation-Sec-8B-Instruct' %}selected{% endif %}>Foundation-Sec-8B-Instruct (Local)</option>
+                                <option value="qwen3:4b-instruct" {% if settings.ollama_model == 'qwen3:4b-instruct' %}selected{% endif %}>qwen3:4b-instruct (Local Fast)</option>
                             </select>
                         </div>
                     </div>

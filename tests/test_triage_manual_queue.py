@@ -74,7 +74,7 @@ async def test_manual_triage_forces_fast_and_updates_existing_row():
     async def fake_get_provider(**kwargs):
         captured["force_fast"] = kwargs.get("force_fast")
         prov = MagicMock()
-        prov.name.return_value = "ollama/qwen2.5:3b-instruct"
+        prov.name.return_value = "ollama/qwen3:4b-instruct"
         prov.analyze = AsyncMock(return_value={"success": True, "summary": "ok",
                                                "severity": "low", "confidence": 0.4})
         return prov
@@ -106,7 +106,7 @@ async def test_manual_triage_skips_noise_gate():
 
     async def fake_get_provider(**kwargs):
         prov = MagicMock()
-        prov.name.return_value = "ollama/qwen2.5:3b-instruct"
+        prov.name.return_value = "ollama/qwen3:4b-instruct"
         prov.analyze = AsyncMock(return_value={"success": True})
         return prov
 

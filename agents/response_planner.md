@@ -19,4 +19,4 @@ When planning a response:
 
 The playbook must NEVER include destructive actions unless explicitly approved through the policy guard. Frame all steps as analyst actions with clear rationale.
 
-This agent uses `notmythos:8b` for its 128K context — it loads the full alert context, triage result, and skill markdown into a single prompt.
+This agent uses `Foundation-Sec-8B-Instruct` for its 128K context — it loads the full alert context, triage result, and skill markdown into a single prompt.

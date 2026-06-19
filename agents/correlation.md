@@ -17,4 +17,4 @@ When correlating:
 4. Update severity to the highest in the cluster
 5. Notify the response planner if the incident cluster suggests active attack
 
-This agent runs on the fast tier (`notmythos:mini`) since correlation is pattern-matching, not LLM-heavy.
+This agent runs on the fast tier (`qwen3:4b-instruct`) since correlation is pattern-matching, not LLM-heavy.

@@ -64,17 +64,17 @@
             <div class="flex items-center gap-2 mt-0.5">
                 <p class="text-[10px] text-muted font-mono">Triage Session ID: {{ result.triage_id or 'Pending' }}</p>
                 {% if result.model %}
-                <span class="px-1.5 py-0.2 text-[8px] font-bold uppercase rounded {% if 'coder' in (result.model or '').lower() or '7b' in (result.model or '').lower() or 'llama3' in (result.model or '').lower() %}bg-accent-yellow/20 text-yellow-400 border border-accent-yellow/30{% else %}bg-accent-blue/20 text-blue-400 border border-accent-blue/30{% endif %}">
+                <span class="px-1.5 py-0.2 text-[8px] font-bold uppercase rounded {% if 'foundation' in (result.model or '').lower() or 'sec' in (result.model or '').lower() or '8b' in (result.model or '').lower() %}bg-accent-yellow/20 text-yellow-400 border border-accent-yellow/30{% else %}bg-accent-blue/20 text-blue-400 border border-accent-blue/30{% endif %}">
                     {{ result.model }}
                 </span>
                 {% if result.model %}
                 <span class="px-1.5 py-0.5 rounded text-[8px] font-bold
-                    {% if '7b' in result.model or 'gpt' in result.model or 'claude' in result.model or 'gemini' in result.model %}
+                    {% if 'foundation' in result.model.lower() or '8b' in result.model.lower() or 'gpt' in result.model or 'claude' in result.model or 'gemini' in result.model %}
                     bg-purple-500/20 text-purple-300
                     {% else %}
                     bg-cyan-500/20 text-cyan-300
                     {% endif %}">
-                    {{ 'Full' if ('7b' in result.model or 'gpt' in result.model or 'claude' in result.model or 'gemini' in result.model) else 'Fast' }}
+                    {{ 'Full' if ('foundation' in result.model.lower() or '8b' in result.model.lower() or 'gpt' in result.model or 'claude' in result.model or 'gemini' in result.model) else 'Fast' }}
                 </span>
                 {% endif %}
                 {% endif %}
