@@ -22,6 +22,7 @@ ENV PATH=/root/.local/bin:$PATH
 
 COPY shared/ shared/
 COPY services/api/app/ app/
+COPY services/worker/ services/worker/
 COPY services/dashboard/templates/reports/ services/dashboard/templates/reports/
 
 ENV PYTHONPATH=/app

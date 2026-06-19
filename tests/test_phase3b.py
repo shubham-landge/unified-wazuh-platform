@@ -61,7 +61,7 @@ class TestTieredRouter:
         with patch("shared.config.settings.llm_tier_strategy", "auto"):
             with patch("shared.config.settings.llm_tier_level_threshold", 10):
                 provider = await self.router.get_provider(alert=alert)
-                assert "Foundation-Sec" in provider.name() or "8B-Instruct" in provider.name()
+                assert "notmythos" in provider.name() or "8b" in provider.name()
 
     @pytest.mark.asyncio
     async def test_complex_technique_boosts_score(self):
@@ -81,7 +81,7 @@ class TestTieredRouter:
                            "T1569.002,T1059.001"):
                     provider = await self.router.get_provider(alert=alert)
                     # score = 3 (level) + 1 (technique) = 4 >= 4
-                assert "Foundation-Sec" in provider.name() or "8B-Instruct" in provider.name()
+                assert "notmythos" in provider.name() or "8b" in provider.name()
 
     @pytest.mark.asyncio
     async def test_burst_alert_reduces_score(self):

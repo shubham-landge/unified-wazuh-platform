@@ -116,9 +116,9 @@ sudo docker compose up -d ollama
 sleep 3
 
 # Primary triage model — 3.2B params, 128K context, cybersecurity-specialized, 2.0 GB
-echo "   Pulling Foundation-Sec-8B-Instruct (~5.0 GB)..."
-sudo docker compose exec -T ollama ollama pull Foundation-Sec-8B-Instruct 2>/dev/null || \
-    echo "   ⚠  Foundation-Sec-8B-Instruct pull failed — check ollama logs"
+echo "   Pulling CyberCrew/notmythos-8b (2.0 GB)..."
+sudo docker compose exec -T ollama ollama pull CyberCrew/notmythos-8b 2>/dev/null || \
+    echo "   ⚠  notmythos-8b pull failed — check ollama logs"
 
 # Fast / noise-gate tier — 3B params, 1.9 GB
 echo "   Pulling qwen3:4b-instruct (~2.5 GB)..."
@@ -129,6 +129,13 @@ sudo docker compose exec -T ollama ollama pull qwen3:4b-instruct 2>/dev/null || 
 echo "   Pulling nomic-embed-text (274 MB)..."
 sudo docker compose exec -T ollama ollama pull nomic-embed-text 2>/dev/null || \
     echo "   ⚠  nomic-embed-text pull failed — check ollama logs"
+
+# Foundation-Sec-8B-Instruct (optional upgrade — not available via Ollama pull)
+# When disk space permits (requires ~9 GB free), import manually from HuggingFace:
+#   wget https://huggingface.co/fdtn-ai/Foundation-Sec-8B-Instruct-Q8_0-GGUF/resolve/main/foundation-sec-8b-instruct-q8_0.gguf
+#   sudo docker compose exec -T ollama ollama create Foundation-Sec-8B-Instruct -f /app/models/Modelfile
+# Currently the default config.py aspirational target; SOC VM uses CyberCrew/notmythos-8b
+# for the full tier because Foundation-Sec needs ~8.5 GB and only ~5.8 GB is free.
 
 echo "   Models pulled:"
 sudo docker compose exec -T ollama ollama list 2>/dev/null || true
@@ -202,13 +209,13 @@ echo "  4. Run health script: bash deploy/healthcheck.sh"
 echo ""
 echo "Model tiering:"
 echo "  Fast tier (noise gate): qwen3:4b-instruct"
-echo "  Full tier (primary):   Foundation-Sec-8B-Instruct"
+echo "  Full tier (primary):   CyberCrew/notmythos-8b (128K ctx)"
 echo "  Embeddings (RAG):      nomic-embed-text"
 echo "  Escalation tier:       Gemini (cloud) — set GEMINI_API_KEY and"
 echo "                         LLM_TIER_ESCALATION_ENABLED=true in .env"
 echo ""
 echo "Cloud escalation (deep analysis for cross-domain / hardest cases):"
-echo "  Local Foundation-Sec+qwen3 stay the always-on CPU baseline; only the hardest"
+echo "  Local qwen+notmythos stay the always-on CPU baseline; only the hardest"
 echo "  incidents escalate to Gemini, so cost stays bounded. Configure via the"
 echo "  LLM_TIER_ESCALATION_* keys in .env."
 echo ""
