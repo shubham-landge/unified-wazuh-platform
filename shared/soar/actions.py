@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 import httpx
 from sqlalchemy import select
 
+from shared.enrichment.risk_score import EnrichmentContext, compute
+
 logger = logging.getLogger(__name__)
 
 
@@ -167,6 +169,15 @@ async def _identity_disable_user(action: dict, ctx: ActionContext) -> dict:
         if alert:
             tenant_id = alert.tenant_id
 
+    # Build enrichment context from alert data for policy evaluation
+    rule_level_raw = ctx.alert.get("rule_level", 0)
+    try:
+        rule_level = int(rule_level_raw) if rule_level_raw is not None else 0
+    except (ValueError, TypeError):
+        rule_level = 0
+    enrichment_ctx = EnrichmentContext(rule_level=rule_level)
+    score = compute(enrichment_ctx)
+
     guard = await containment_guard(
         ctx.session,
         tenant_id,
@@ -174,8 +185,13 @@ async def _identity_disable_user(action: dict, ctx: ActionContext) -> dict:
         {"user_id": user_id, "alert_id": alert_id},
         rationale=f"SOAR requested disabling user {user_id} for alert {alert_id}",
         risk_level="high",
+        enrichment_ctx=enrichment_ctx,
+        score=score,
     )
     if not guard["approved"]:
+        decision = guard.get("decision")
+        if decision == "deny":
+            return {"success": False, "denied": True, "error": guard["reason"]}
         logger.warning("disable_user gated pending approval %s", guard.get("approval_id"))
         return {"success": False, "requires_approval": True, "approval_id": guard.get("approval_id"), "error": guard["reason"]}
 
@@ -199,6 +215,15 @@ async def _identity_revoke_sessions(action: dict, ctx: ActionContext) -> dict:
         if alert:
             tenant_id = alert.tenant_id
 
+    # Build enrichment context from alert data for policy evaluation
+    rule_level_raw = ctx.alert.get("rule_level", 0)
+    try:
+        rule_level = int(rule_level_raw) if rule_level_raw is not None else 0
+    except (ValueError, TypeError):
+        rule_level = 0
+    enrichment_ctx = EnrichmentContext(rule_level=rule_level)
+    score = compute(enrichment_ctx)
+
     guard = await containment_guard(
         ctx.session,
         tenant_id,
@@ -206,8 +231,13 @@ async def _identity_revoke_sessions(action: dict, ctx: ActionContext) -> dict:
         {"user_id": user_id, "alert_id": alert_id},
         rationale=f"SOAR requested revoking sessions for user {user_id}",
         risk_level="high",
+        enrichment_ctx=enrichment_ctx,
+        score=score,
     )
     if not guard["approved"]:
+        decision = guard.get("decision")
+        if decision == "deny":
+            return {"success": False, "denied": True, "error": guard["reason"]}
         return {"success": False, "requires_approval": True, "approval_id": guard.get("approval_id"), "error": guard["reason"]}
 
     from shared.soar.actions_identity import revoke_sessions
@@ -230,6 +260,15 @@ async def _identity_block_ip(action: dict, ctx: ActionContext) -> dict:
         if alert:
             tenant_id = alert.tenant_id
 
+    # Build enrichment context from alert data for policy evaluation
+    rule_level_raw = ctx.alert.get("rule_level", 0)
+    try:
+        rule_level = int(rule_level_raw) if rule_level_raw is not None else 0
+    except (ValueError, TypeError):
+        rule_level = 0
+    enrichment_ctx = EnrichmentContext(rule_level=rule_level)
+    score = compute(enrichment_ctx)
+
     guard = await containment_guard(
         ctx.session,
         tenant_id,
@@ -237,8 +276,13 @@ async def _identity_block_ip(action: dict, ctx: ActionContext) -> dict:
         {"ip_address": ip_address, "alert_id": alert_id},
         rationale=f"SOAR requested blocking IP {ip_address}",
         risk_level="medium",
+        enrichment_ctx=enrichment_ctx,
+        score=score,
     )
     if not guard["approved"]:
+        decision = guard.get("decision")
+        if decision == "deny":
+            return {"success": False, "denied": True, "error": guard["reason"]}
         return {"success": False, "requires_approval": True, "approval_id": guard.get("approval_id"), "error": guard["reason"]}
 
     from shared.soar.actions_identity import block_ip

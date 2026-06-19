@@ -380,6 +380,11 @@ class Settings(BaseSettings):
     # Automation mode: "shadow" = log decisions, no action; "enforce" = act.
     automation_mode: str = "shadow"
 
+    # Containment gate settings
+    containment_score_threshold: int = 60
+    containment_crown_jewel_requires_approval: bool = True
+    containment_ti_override_actions: list[str] = ["isolate_host", "block_ip"]
+
     # L0-L4 decision gate thresholds
     risk_gate_l0_threshold: int = 15    # below → suppress (no LLM)
     risk_gate_l1_threshold: int = 25    # below → auto-close (no LLM)

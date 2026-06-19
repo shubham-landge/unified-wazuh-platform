@@ -20,7 +20,8 @@ from shared import triage_cache
 from shared import triage_rag
 from shared.enrichment.pipeline import enrich_alert
 from shared.enrichment.risk_score import compute_risk_score
-from shared.enrichment.decision import decide
+from shared.enrichment.decision import decide, DecisionLevel
+from shared.enrichment.auto_close import should_auto_close, execute_auto_close
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,33 @@ class TriageWorker:
                     decision_result.reason,
                 )
 
+                # ── Decision gate routing ──
+                # Skip L0/L1 suppression when the analyst explicitly requested
+                # triage via the "Analyze" button (manual + force_fast).
+                skip_gate = manual and force_fast_req
+                if not skip_gate:
+                    if decision_result.level == DecisionLevel.L0_SUPPRESS:
+                        logger.info("L0 suppress: alert %s", alert_id)
+                        alert.status = "suppressed"
+                        await session.commit()
+                        return
+
+                    if decision_result.level == DecisionLevel.L1_AUTO_CLOSE:
+                        eligible, reason = should_auto_close(ctx, score)
+                        if eligible and settings.auto_close_enabled:
+                            await execute_auto_close(
+                                session, str(alert_id), str(alert.tenant_id),
+                                reason, score, ctx,
+                            )
+                            return
+
+                # L3/L4: deterministic verdict, fast tier for narrative only
+                l3_l4_deterministic = decision_result.level in (
+                    DecisionLevel.L3_ESCALATE, DecisionLevel.L4_CRITICAL
+                )
+                if l3_l4_deterministic:
+                    force_fast = True
+
                 # Build enrichment context for the LLM prompt
                 enrichment_context = ""
                 parts = []
@@ -239,6 +267,13 @@ class TriageWorker:
                         user_prompt=user_prompt,
                     )
 
+                # ── L3/L4 deterministic override: verdict pre-determined, LLM for narrative only ──
+                if l3_l4_deterministic:
+                    result_data["severity"] = decision_result.auto_severity
+                    result_data["category"] = decision_result.auto_verdict
+                    result_data["escalation_required"] = True
+                    result_data["confidence"] = max(result_data.get("confidence", 0.7), 0.90)
+
                 succeeded = result_data.get("success", True) is not False
                 fields = dict(
                     model_name=provider.name(),
@@ -289,39 +324,49 @@ class TriageWorker:
                 session.add(model_run)
 
                 if result_data.get("escalation_required", False):
-                    level = alert.rule_level or 5
-                    confidence = result_data.get("confidence", 0.5)
-                    fp_likelihood = result_data.get("false_positive_likelihood", 0.3)
-                    risk_score = round(confidence * (1 - fp_likelihood) * min(level / 15, 1) * 10, 2)
-
-                    case = Case(
-                        alert_id=alert.id,
-                        title=result_data.get("summary", alert.rule_description or "Alert"),
-                        severity=result_data.get("severity", "medium"),
-                        category=result_data.get("category", "unknown"),
-                        escalation_required=True,
-                        risk_score=risk_score,
-                    )
-                    session.add(case)
-                    await session.flush()
-
-                    # Create investigation steps from AI result
-                    for i, step_text in enumerate(result_data.get("investigation_steps", result_data.get("recommended_investigation_steps", []))):
-                        step = CaseInvestigationStep(
-                            case_id=case.id,
-                            description=step_text if isinstance(step_text, str) else str(step_text),
-                            order=i,
+                    # L3/L4 deterministic verdicts with incident risk tracking will
+                    # create an incident-level auto-case below; skip the redundant
+                    # per-alert escalation case to avoid duplicate cases.
+                    if l3_l4_deterministic and incident and settings.incident_risk_enabled:
+                        logger.info(
+                            "Skipping escalation case for alert %s "
+                            "(L3/L4 deterministic; incident risk tracking handles it)",
+                            alert_id,
                         )
-                        session.add(step)
+                    else:
+                        level = alert.rule_level or 5
+                        confidence = result_data.get("confidence", 0.5)
+                        fp_likelihood = result_data.get("false_positive_likelihood", 0.3)
+                        risk_score = round(confidence * (1 - fp_likelihood) * min(level / 15, 1) * 10, 2)
 
-                    # Auto-log case_created event
-                    event = CaseEvent(
-                        case_id=case.id,
-                        event_type="case_created",
-                        description=f"AI triage escalated: {case.title}",
-                        event_meta={"model": provider.name(), "confidence": confidence},
-                    )
-                    session.add(event)
+                        case = Case(
+                            alert_id=alert.id,
+                            title=result_data.get("summary", alert.rule_description or "Alert"),
+                            severity=result_data.get("severity", "medium"),
+                            category=result_data.get("category", "unknown"),
+                            escalation_required=True,
+                            risk_score=risk_score,
+                        )
+                        session.add(case)
+                        await session.flush()
+
+                        # Create investigation steps from AI result
+                        for i, step_text in enumerate(result_data.get("investigation_steps", result_data.get("recommended_investigation_steps", []))):
+                            step = CaseInvestigationStep(
+                                case_id=case.id,
+                                description=step_text if isinstance(step_text, str) else str(step_text),
+                                order=i,
+                            )
+                            session.add(step)
+
+                        # Auto-log case_created event
+                        event = CaseEvent(
+                            case_id=case.id,
+                            event_type="case_created",
+                            description=f"AI triage escalated: {case.title}",
+                            event_meta={"model": provider.name(), "confidence": confidence},
+                        )
+                        session.add(event)
 
                 # ── Cumulative incident risk tracking (S0) ──
                 if incident and settings.incident_risk_enabled:

@@ -35,6 +35,7 @@ async def main():
         ("app.identity_worker", "IdentityWorker"),
         ("app.wazuh_health_worker", "WazuhHealthWorker"),
         ("app.dlq_worker", "DLQWorker"),
+        ("app.trigger_worker", "TriggerWorker"),
     ]:
         try:
             import importlib

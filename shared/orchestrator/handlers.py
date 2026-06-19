@@ -22,6 +22,8 @@ from shared.models.ueba import UebaAnomaly
 from shared.orchestrator.engine import HandlerContext
 from shared.correlation import extract_entities, stitch_incident, compute_killchain_stage
 from shared.orchestrator.enrichment import enrich_incident
+from shared.enrichment.containment_gate import check_policy, ContainmentAction, ContainmentDecision
+from shared.enrichment.risk_score import EnrichmentContext
 
 logger = logging.getLogger(__name__)
 
@@ -185,14 +187,52 @@ async def containment_guard(
     action_params: dict[str, Any],
     rationale: str,
     risk_level: str = "high",
+    enrichment_ctx: EnrichmentContext | None = None,
+    score: int = 0,
 ) -> dict[str, Any]:
     """Mandatory approval gate for containment/executive actions.
 
-    Never auto-approves. Checks for an existing approved request; otherwise
-    creates a pending ApprovalRequest and returns `approved=False`.
+    When enrichment_ctx is provided, delegates to the containment_gate policy
+    engine (check_policy) which can auto-approve high-confidence actions, deny
+    in shadow mode, or require human approval.  When enrichment_ctx is None
+    (legacy callers) the old always-require-approval behavior is preserved.
     """
     target_ref = action_params.get("user_id") or action_params.get("ip_address") or action_params.get("alert_id") or action_params.get("case_id")
 
+    # ── Policy-engine path (new) ───────────────────────────────────────────
+    _policy_reason: str | None = None
+    if enrichment_ctx is not None:
+        _action_map = {
+            "disable_user": ContainmentAction.DISABLE_USER,
+            "revoke_sessions": ContainmentAction.DISABLE_USER,
+            "block_ip": ContainmentAction.BLOCK_IP,
+            "isolate_host": ContainmentAction.ISOLATE_HOST,
+            "quarantine_file": ContainmentAction.QUARANTINE_FILE,
+        }
+        ca = _action_map.get(action_type)
+        if ca is not None:
+            decision, reason = check_policy(ca, enrichment_ctx, score)
+
+            if decision == ContainmentDecision.ALLOW:
+                return {
+                    "approved": True,
+                    "reason": reason,
+                    "decision": decision.value,
+                    "score": score,
+                }
+            elif decision == ContainmentDecision.DENY:
+                return {
+                    "approved": False,
+                    "reason": reason,
+                    "decision": decision.value,
+                    "score": score,
+                }
+            # REQUIRE_APPROVAL – fall through to create ApprovalRequest below.
+            # Carry the policy reason into the approval rationale and return.
+            _policy_reason = reason
+            rationale = f"{rationale} | policy: {reason}"
+
+    # ── Legacy path (always creates ApprovalRequest) ───────────────────────
     existing = await _check_existing_approval(session, tenant_id, action_type, target_ref)
     if existing:
         return {
@@ -218,7 +258,7 @@ async def containment_guard(
     return {
         "approved": False,
         "approval_id": str(approval.id),
-        "reason": "Containment action requires human approval",
+        "reason": _policy_reason or "Containment action requires human approval",
     }
 
 
