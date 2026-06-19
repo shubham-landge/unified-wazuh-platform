@@ -4,6 +4,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy import desc, select
 
@@ -19,6 +20,8 @@ from shared.models.case_event import CaseEvent
 from shared.models.soar import SoarExecution, SoarPlaybook
 from shared.models.ueba import UebaAnomaly
 from shared.orchestrator.engine import HandlerContext
+from shared.correlation import extract_entities, stitch_incident, compute_killchain_stage
+from shared.orchestrator.enrichment import enrich_incident
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +178,50 @@ async def policy_guard(input_data: dict, ctx: HandlerContext) -> dict:
     }
 
 
+async def containment_guard(
+    session,
+    tenant_id: uuid.UUID | None,
+    action_type: str,
+    action_params: dict[str, Any],
+    rationale: str,
+    risk_level: str = "high",
+) -> dict[str, Any]:
+    """Mandatory approval gate for containment/executive actions.
+
+    Never auto-approves. Checks for an existing approved request; otherwise
+    creates a pending ApprovalRequest and returns `approved=False`.
+    """
+    target_ref = action_params.get("user_id") or action_params.get("ip_address") or action_params.get("alert_id") or action_params.get("case_id")
+
+    existing = await _check_existing_approval(session, tenant_id, action_type, target_ref)
+    if existing:
+        return {
+            "approved": True,
+            "approval_id": str(existing.id),
+            "reason": "Existing approved request found",
+        }
+
+    approval = ApprovalRequest(
+        tenant_id=tenant_id,
+        requested_by="soar:containment",
+        action_type=action_type,
+        action_params=action_params if isinstance(action_params, dict) else {},
+        target_ref=target_ref,
+        rationale=rationale,
+        risk_level=risk_level,
+        status="pending",
+        expires_at=datetime.now(timezone.utc) + timedelta(seconds=3600),
+    )
+    session.add(approval)
+    await session.flush()
+
+    return {
+        "approved": False,
+        "approval_id": str(approval.id),
+        "reason": "Containment action requires human approval",
+    }
+
+
 async def triage(input_data: dict, ctx: HandlerContext) -> dict:
     """Triage an alert using the configured LLM provider."""
     alert_id = input_data.get("alert_id")
@@ -204,6 +251,24 @@ async def triage(input_data: dict, ctx: HandlerContext) -> dict:
         "with exactly these keys: verdict (malicious|suspicious|benign), severity (critical|high|medium|low), "
         "confidence (0.0-1.0), summary (string), recommended_action (string)."
     )
+
+    # Feedback-aware calibration: if analysts have historically rated this rule's
+    # verdicts poorly, warn the model so it scrutinizes this alert more carefully.
+    try:
+        from shared.connectors.llm_router import user_feedback_negative_rate
+
+        neg_rate = await user_feedback_negative_rate(
+            getattr(alert, "rule_id", None), ctx.session
+        )
+        if neg_rate >= 0.3:
+            system_prompt += (
+                f"\n\nNOTE: Analysts have disagreed with prior AI verdicts on this rule "
+                f"{round(neg_rate * 100)}% of the time. Be extra rigorous, avoid "
+                f"over-escalation, and explain your reasoning explicitly."
+            )
+    except Exception as exc:  # never let calibration break triage
+        logger.debug("feedback-rate calibration skipped: %s", exc)
+
     user_prompt = json.dumps(alert_dict, default=str)
 
     provider = get_provider()
@@ -349,6 +414,18 @@ async def case_create(input_data: dict, ctx: HandlerContext) -> dict:
     )
     ctx.session.add(case)
     await ctx.session.flush()
+
+    # Hand off to the ticketing worker for immediate Jira/ServiceNow sync.
+    # Best-effort: the worker also polls open cases, so this only reduces latency.
+    if settings.ticketing_sync_enabled:
+        try:
+            import redis.asyncio as _redis
+
+            r = _redis.from_url(settings.redis_url, decode_responses=True)
+            await r.rpush("ticketing:pending", str(case.id))
+            await r.aclose()
+        except Exception as exc:
+            logger.debug("ticketing enqueue skipped: %s", exc)
 
     return {
         "case_id": str(case.id),
@@ -524,11 +601,11 @@ async def lead(input_data: dict, ctx: HandlerContext) -> dict:
 
 
 async def correlation(input_data: dict, ctx: HandlerContext) -> dict:
-    """Group related alerts into one incident bundle.
+    """Group related alerts into one cross-domain incident bundle.
 
-    Looks for an existing open AlertIncident keyed by the strongest common
-    attribute across the supplied alert IDs and either creates a new incident
-    or appends to the existing one.
+    Phase 9: uses entity-based stitching (shared/correlation/stitch.py)
+    instead of the old endpoint-only group_key. Also runs parallel
+    enrichment (TI, asset, user-risk, UEBA, RAG) before returning.
     """
     alert_ids = input_data.get("alert_ids") or [input_data.get("alert_id")]
     alert_ids = [a for a in alert_ids if a]
@@ -544,61 +621,47 @@ async def correlation(input_data: dict, ctx: HandlerContext) -> dict:
     if not alerts:
         raise ValueError(f"No alerts found for ids {alert_ids}")
 
-    # Prefer a common grouping attribute; fall back to a deterministic compound key.
     first = alerts[0]
-    group_key_parts = []
-    if first.source_ip:
-        group_key_parts.append(f"src:{first.source_ip}")
-    if first.user_name:
-        group_key_parts.append(f"user:{first.user_name}")
-    if first.mitre_technique:
-        group_key_parts.append(f"technique:{first.mitre_technique}")
-    if first.agent_id:
-        group_key_parts.append(f"agent:{first.agent_id}")
-    group_key = "|".join(group_key_parts) if group_key_parts else f"rule:{first.rule_id}"
+    tenant_id = ctx.run.tenant_id
 
-    # Look for an existing open incident with the same grouping key.
-    result = await ctx.session.execute(
-        select(AlertIncident)
-        .where(
-            AlertIncident.group_key == group_key,
-            AlertIncident.status == "open",
+    # Phase 9: cross-domain entity-based stitching
+    incident = await stitch_incident(ctx.session, first, tenant_id)
+
+    for extra_alert in alerts[1:]:
+        if not hasattr(extra_alert, "rule_level"):
+            continue
+        existing = await ctx.session.execute(
+            select(AlertIncident).where(AlertIncident.id == incident.id)
         )
-        .order_by(AlertIncident.created_at.desc())
-        .limit(1)
-    )
-    incident = result.scalar_one_or_none()
-
-    if incident:
-        incident.alert_count += len(alerts)
+        incident = existing.scalar_one_or_none() or incident
+        incident.alert_count = max(incident.alert_count, len(alerts))
         incident.last_alert_at = datetime.now(timezone.utc)
-        if first.severity in ("critical", "high"):
-            incident.severity = first.severity
-        await ctx.session.flush()
-    else:
-        incident = AlertIncident(
-            tenant_id=ctx.run.tenant_id,
-            group_key=group_key,
-            rule_id=first.rule_id,
-            rule_description=first.rule_description,
-            agent_id=first.agent_id,
-            source_ip=first.source_ip,
-            alert_count=len(alerts),
-            severity=first.severity,
-            status="open",
-            first_alert_at=datetime.now(timezone.utc),
-            last_alert_at=datetime.now(timezone.utc),
-            notes=input_data.get("notes"),
-        )
-        ctx.session.add(incident)
-        await ctx.session.flush()
 
-    few_shot = await _few_shot("correlation", input_data)
+    await ctx.session.flush()
+
+    await compute_killchain_stage(ctx.session, incident)
+
+    # Set SLA timer for advancing incidents
+    from shared.correlation.killchain import is_advancing
+    if is_advancing(incident.kill_chain_stage) and not incident.sla_due_at:
+        incident.sla_due_at = datetime.now(timezone.utc) + timedelta(minutes=72)
+
+    await ctx.session.flush()
+
+    # Phase 9: parallel enrichment fan-out
+    evidence = await enrich_incident(ctx.session, incident)
+    few_shot = evidence.few_shot_examples or await _few_shot("correlation", input_data)
 
     return {
         "incident_id": str(incident.id),
-        "group_key": group_key,
         "alert_count": incident.alert_count,
+        "cross_domain": incident.cross_domain,
+        "source_domains": incident.source_domains,
+        "kill_chain_stage": incident.kill_chain_stage,
+        "sla_due_at": incident.sla_due_at.isoformat() if incident.sla_due_at else None,
+        "stage_history": incident.stage_history,
+        "evidence": evidence.to_dict(),
+        "few_shot": few_shot,
         "severity": incident.severity,
         "status": incident.status,
         "alert_ids": [str(a.id) for a in alerts],

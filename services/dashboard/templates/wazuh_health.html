@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<div>
+    <div class="flex justify-between items-center mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">Wazuh Environment</h1>
+            <p class="text-xs text-secondary mt-0.5">Health of the Wazuh deployment itself — agents, manager/cluster, indexer ingestion — plus our pipeline SLAs.</p>
+        </div>
+        <span class="text-[10px] text-muted font-mono">Snapshot: {{ snapshot.captured_at[:19].replace('T', ' ') if snapshot and snapshot.captured_at else '—' }}</span>
+    </div>
+
+    {% if not snapshot %}
+    <div class="card-premium text-center py-10">
+        <p class="text-sm text-secondary">No health snapshot yet.</p>
+        <p class="text-[11px] text-muted mt-1">The wazuh_health_worker writes a snapshot every poll interval. Check that it is enabled and Wazuh is reachable.</p>
+    </div>
+    {% else %}
+
+    <!-- Overall banner -->
+    {% set st = snapshot.overall_status %}
+    <div class="card-premium mb-6 flex items-center justify-between
+        {% if st == 'unhealthy' %}border-accent-red/40{% elif st == 'degraded' %}border-accent-yellow/40{% else %}border-accent-green/30{% endif %}">
+        <div class="flex items-center gap-3">
+            <span class="w-2.5 h-2.5 rounded-full {% if st == 'unhealthy' %}bg-accent-red{% elif st == 'degraded' %}bg-accent-yellow{% else %}bg-accent-green{% endif %}"></span>
+            <span class="text-sm font-bold text-white uppercase tracking-wider">{{ st }}</span>
+        </div>
+        <div class="flex flex-wrap gap-2 justify-end">
+            {% for issue in snapshot.issues %}
+            <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold border
+                {% if issue.severity == 'critical' %}bg-accent-red/10 border-accent-red/30 text-accent-red{% else %}bg-accent-yellow/10 border-accent-yellow/30 text-accent-yellow{% endif %}">
+                {{ issue.code }}: {{ issue.detail }}
+            </span>
+            {% else %}
+            <span class="text-[10px] text-muted">No issues detected</span>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <!-- Agents -->
+        <div class="card-premium">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-3">Agent Connectivity</h3>
+            <div class="text-3xl font-bold text-white">{{ snapshot.agents.active }}<span class="text-sm text-muted font-normal"> / {{ snapshot.agents.total }} active</span></div>
+            <div class="mt-3 space-y-1 text-[11px]">
+                <div class="flex justify-between"><span class="text-muted">Disconnected</span><span class="text-accent-red font-semibold">{{ snapshot.agents.disconnected }}</span></div>
+                <div class="flex justify-between"><span class="text-muted">Never connected</span><span class="text-secondary">{{ snapshot.agents.never_connected }}</span></div>
+                <div class="flex justify-between"><span class="text-muted">Pending</span><span class="text-secondary">{{ snapshot.agents.pending }}</span></div>
+            </div>
+        </div>
+
+        <!-- Manager -->
+        <div class="card-premium">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-3">Manager &amp; Cluster</h3>
+            <div class="text-sm font-bold {% if snapshot.manager.all_running %}text-accent-green{% else %}text-accent-red{% endif %}">
+                {{ 'All daemons running' if snapshot.manager.all_running else 'Daemon down' }}
+            </div>
+            <div class="mt-3 space-y-1 text-[11px]">
+                <div class="flex justify-between"><span class="text-muted">Cluster</span><span class="text-secondary">{{ snapshot.manager.cluster_status }}</span></div>
+                <div class="flex justify-between"><span class="text-muted">analysisd EPS</span><span class="text-secondary">{{ snapshot.manager.analysisd_eps }}</span></div>
+                <div class="flex justify-between"><span class="text-muted">Events dropped</span><span class="{% if snapshot.manager.events_dropped %}text-accent-yellow{% else %}text-secondary{% endif %}">{{ snapshot.manager.events_dropped }}</span></div>
+            </div>
+        </div>
+
+        <!-- Indexer -->
+        <div class="card-premium">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-3">Indexer &amp; Ingestion</h3>
+            {% set ist = snapshot.indexer.status %}
+            <div class="text-sm font-bold {% if ist == 'green' %}text-accent-green{% elif ist == 'yellow' %}text-accent-yellow{% elif ist == 'red' %}text-accent-red{% else %}text-muted{% endif %}">
+                Cluster {{ ist }}
+            </div>
+            <div class="mt-3 space-y-1 text-[11px]">
+                <div class="flex justify-between"><span class="text-muted">Unassigned shards</span><span class="text-secondary">{{ snapshot.indexer.unassigned_shards }}</span></div>
+                <div class="flex justify-between"><span class="text-muted">Ingestion lag</span><span class="text-secondary">{{ snapshot.indexer.ingestion_lag_seconds|round(0) if snapshot.indexer.ingestion_lag_seconds is not none else '—' }}s</span></div>
+            </div>
+        </div>
+
+        <!-- Self SLA -->
+        <div class="card-premium">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-3">Pipeline SLA</h3>
+            <div class="text-sm font-bold text-white">Self-monitoring</div>
+            <div class="mt-3 space-y-1 text-[11px]">
+                <div class="flex justify-between"><span class="text-muted">Poller lag</span><span class="text-secondary">{{ snapshot.self.poller_lag_seconds|round(0) if snapshot.self.poller_lag_seconds is not none else '—' }}s</span></div>
+                <div class="flex justify-between"><span class="text-muted">Triage queue depth</span><span class="text-secondary">{{ snapshot.self.triage_queue_depth }}</span></div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

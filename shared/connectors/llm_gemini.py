@@ -40,7 +40,10 @@ class GeminiProvider(LLMProvider):
         payload = {
             "systemInstruction": {"parts": [{"text": system_prompt}]},
             "contents": [{"role": "user", "parts": [{"text": masked_user}]}],
-            "generationConfig": {"temperature": kwargs.get("temperature", 0.1)},
+            "generationConfig": {
+                "temperature": kwargs.get("temperature", 0.1),
+                "responseMimeType": "application/json",
+            },
         }
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:

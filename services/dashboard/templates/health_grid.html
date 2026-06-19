@@ -1,4 +1,4 @@
-<div id="health-status-grid" class="grid grid-cols-1 md:grid-cols-3 gap-6" hx-get="/health/status" hx-trigger="every 30s" hx-swap="outerHTML">
+<div id="health-status-grid" class="grid grid-cols-1 md:grid-cols-3 gap-6" hx-get="/health/status" hx-trigger="every 30s" hx-swap="innerHTML">
     <!-- 1. Database Connectivity -->
     <div class="card-premium flex flex-col justify-between" style="border-left: 4px solid {% if db.database.connected %}#22c55e{% else %}#ef4444{% endif %};">
         <div class="space-y-3">

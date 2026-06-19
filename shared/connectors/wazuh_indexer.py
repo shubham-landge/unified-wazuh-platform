@@ -115,6 +115,62 @@ class WazuhIndexerConnector:
             logger.error("Failed to search vulnerabilities: %s", e)
             return []
 
+    async def cluster_health(self) -> dict:
+        """Detailed cluster health: status, shard allocation, node count."""
+        try:
+            async def _do():
+                client = await self._get_client()
+                resp = await client.get(f"{self.base_url}/_cluster/health")
+                resp.raise_for_status()
+                data = resp.json()
+                return {
+                    "status": data.get("status", "unknown"),
+                    "nodes": data.get("number_of_nodes", 0),
+                    "active_shards": data.get("active_shards", 0),
+                    "unassigned_shards": data.get("unassigned_shards", 0),
+                    "active_shards_percent": data.get("active_shards_percent_as_number", 0.0),
+                    "label": self.label,
+                }
+            return await self._cb_call(_do)
+        except Exception as e:
+            logger.warning("Indexer cluster health failed: %s", e)
+            return {"status": "error", "nodes": 0, "active_shards": 0,
+                    "unassigned_shards": 0, "active_shards_percent": 0.0,
+                    "label": self.label, "error": str(e)}
+
+    async def ingestion_lag_seconds(self, index: str = "wazuh-alerts-*") -> float | None:
+        """Seconds between now and the newest alert's @timestamp.
+
+        High lag means events are arriving late (pipeline backpressure) or the
+        managers stopped shipping. Returns None when no alerts are found.
+        """
+        try:
+            async def _do():
+                client = await self._get_client()
+                query = {
+                    "size": 1,
+                    "sort": [{"@timestamp": {"order": "desc"}}],
+                    "_source": ["@timestamp"],
+                }
+                resp = await client.post(
+                    f"{self.base_url}/{index}/_search",
+                    json=query,
+                    headers={"Content-Type": "application/json"},
+                )
+                resp.raise_for_status()
+                hits = resp.json().get("hits", {}).get("hits", [])
+                if not hits:
+                    return None
+                ts = hits[0].get("_source", {}).get("@timestamp")
+                if not ts:
+                    return None
+                newest = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                return max(0.0, (datetime.now(timezone.utc) - newest).total_seconds())
+            return await self._cb_call(_do)
+        except Exception as e:
+            logger.warning("Failed to compute ingestion lag: %s", e)
+            return None
+
     async def close(self):
         if self._client:
             await self._client.aclose()

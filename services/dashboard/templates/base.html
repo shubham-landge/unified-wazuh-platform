@@ -11,8 +11,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     
-    <!-- HTMX, Alpine, and Chart.js -->
-    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <!-- Vendor Scripts (local copies, no CDN dependency) -->
+    <script src="/static/vendor/htmx.min.js"></script>
     <script>
         document.body.addEventListener('htmx:configRequest', function(evt) {
             var token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -35,9 +35,9 @@
             input.value = token;
         });
     </script>
-    <script src="https://unpkg.com/alpinejs@3.14.3" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/static/vendor/alpine.min.js" defer></script>
+    <script src="/static/vendor/chart.umd.min.js"></script>
+    <script src="/static/vendor/tailwind.min.js"></script>
     
     <script>
         tailwind.config = {
@@ -128,7 +128,7 @@
                             Alerts
                         </div>
                         <span class="text-xs px-1.5 py-0.2 bg-accent-red/20 text-red-400 font-semibold rounded-full border border-accent-red/30"
-                              hx-get="/alerts" hx-select=".alerts-count" hx-trigger="every 30s" hx-swap="outerHTML">New</span>
+                              >New</span>
                     </a>
 
                     <!-- Cases -->
@@ -271,6 +271,15 @@
                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z"/>
                         </svg>
                         Health Status
+                    </a>
+
+                    <!-- Wazuh Environment -->
+                    <a href="/wazuh-environment" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group {{ 'bg-accent-blue/10 text-accent-blue border border-accent-blue/15' if page == 'wazuh-environment' else 'text-secondary hover:text-white hover:bg-white/5 border border-transparent' }}"
+                       hx-get="/wazuh-environment" hx-target="body" hx-push-url="true">
+                        <svg class="w-5 h-5 shrink-0 group-hover:scale-105 transition-transform" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7m0 0a3 3 0 01-3 3m0 3h.008v.008h-.008v-.008zm0-6h.008v.008h-.008v-.008zm-3 6h.008v.008h-.008v-.008zm0-6h.008v.008h-.008v-.008z"/>
+                        </svg>
+                        Wazuh Environment
                     </a>
 
                     <!-- Knowledge Base -->
@@ -727,30 +736,46 @@
         }
 
         // Heartbeat — keep session & HTTP pool fresh during inactivity
-        setInterval(function() {
-            fetch('/health').catch(function() {});
-        }, 300_000);
-
-        document.body.addEventListener('htmx:beforeRequest', function(evt) {
-            // Can be used to show loading animations
-        });
-
-        document.body.addEventListener('htmx:beforeSwap', function(evt) {
-            // When HTMX follows a redirect (e.g. 303 → /login), force a full
-            // reload instead of swapping the login page HTML into the body.
-            if (evt.detail.xhr.status >= 300 && evt.detail.xhr.status < 400) {
-                evt.preventDefault();
-                window.location.reload();
+        // ── Cleanup component intervals before HTMX navigations ──
+        document.body.addEventListener('htmx:beforeSwap', function() {
+            if (window._componentIntervals) {
+                window._componentIntervals.forEach(function(id) { clearInterval(id); });
+                window._componentIntervals = [];
             }
         });
 
-        document.body.addEventListener('htmx:responseError', function(evt) {
-            // Full page reload on server errors or connection loss
-            if (evt.detail.xhr.status >= 500 || evt.detail.xhr.status === 0) {
-                window.addGlobalToast("error", "Connection lost – reloading…");
+        // ── Session redirect → full reload (with toast) ──
+        document.body.addEventListener('htmx:beforeSwap', function(evt) {
+            if (evt.detail.xhr.status >= 300 && evt.detail.xhr.status < 400) {
+                evt.preventDefault();
+                window.addGlobalToast("warning", "Session expired – redirecting to login…");
                 setTimeout(function() { window.location.reload(); }, 1500);
             }
         });
+
+        // ── Session expiry warning (5 min before 8h timeout) ──
+        (function() {
+            const SESSION_MAX_MS = 28800 * 1000;
+            setTimeout(function() {
+                window.addGlobalToast("warning", "Session expires in 5 minutes. Save your work before closing.");
+            }, SESSION_MAX_MS - 300000);
+        })();
+
+        // ── HTMX error recovery with exponential backoff, max 3 retries ──
+        let _reloadRetries = 0;
+        document.body.addEventListener('htmx:responseError', function(evt) {
+            if (evt.detail.xhr.status >= 500 || evt.detail.xhr.status === 0) {
+                if (_reloadRetries >= 3) {
+                    window.addGlobalToast("error", "Connection lost. Please refresh the page manually.");
+                    return;
+                }
+                _reloadRetries++;
+                const delay = Math.min(2000 * Math.pow(2, _reloadRetries), 15000);
+                window.addGlobalToast("error", "Connection lost – retrying in " + (delay/1000) + "s…");
+                setTimeout(function() { window.location.reload(); }, delay);
+            }
+        });
+        document.body.addEventListener('htmx:afterSwap', function() { _reloadRetries = 0; });
 
         document.body.addEventListener('htmx:afterOnLoad', function(evt) {
             // Toast support after partial loads

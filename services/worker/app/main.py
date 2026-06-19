@@ -4,6 +4,7 @@ import logging
 from .poller import AlertPoller
 from .triage_worker import TriageWorker
 from .vulnerability_worker import VulnerabilityWorker
+from .vuln_ingester import VulnIngester
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,8 +17,9 @@ async def main():
     poller = AlertPoller()
     triage_worker = TriageWorker()
     vulnerability_worker = VulnerabilityWorker()
+    vuln_ingester = VulnIngester()
 
-    workers = [poller, triage_worker, vulnerability_worker]
+    workers = [poller, triage_worker, vulnerability_worker, vuln_ingester]
 
     for module_name, class_name in [
         ("app.notification_worker", "NotificationWorker"),
@@ -30,6 +32,9 @@ async def main():
         ("app.ticketing_worker", "TicketingWorker"),
         ("app.approval_worker", "ApprovalWorker"),
         ("app.osint_worker", "OSINTWorker"),
+        ("app.identity_worker", "IdentityWorker"),
+        ("app.wazuh_health_worker", "WazuhHealthWorker"),
+        ("app.dlq_worker", "DLQWorker"),
     ]:
         try:
             import importlib

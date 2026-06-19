@@ -113,11 +113,9 @@ async def get_case(
     except ValueError:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Invalid case ID")
 
-    query = select(Case).where(Case.id == uid)
-    if tenant_id:
-        tenant_uuid = uuid.UUID(tenant_id)
-        query = query.where(Case.tenant_id == tenant_uuid)
-    
+    tenant_uuid = require_tenant_uuid(tenant_id)
+    query = select(Case).where(Case.id == uid, Case.tenant_id == tenant_uuid)
+
     result = await db.execute(query)
     case = result.scalar_one_or_none()
     if not case:
@@ -199,19 +197,18 @@ async def get_case_timeline(
     except ValueError:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Invalid case ID")
 
-    query = select(CaseEvent).where(CaseEvent.case_id == uid).order_by(desc(CaseEvent.created_at))
-    if tenant_id:
-        tenant_uuid = uuid.UUID(tenant_id)
-        query = query.where(CaseEvent.tenant_id == tenant_uuid)
-    
+    tenant_uuid = require_tenant_uuid(tenant_id)
+    query = (
+        select(CaseEvent)
+        .where(CaseEvent.case_id == uid, CaseEvent.tenant_id == tenant_uuid)
+        .order_by(desc(CaseEvent.created_at))
+    )
     if event_type:
         query = query.where(CaseEvent.event_type == event_type)
 
-    count_query = select(CaseEvent.id).where(CaseEvent.case_id == uid)
-    if tenant_id:
-        tenant_uuid = uuid.UUID(tenant_id)
-        count_query = count_query.where(CaseEvent.tenant_id == tenant_uuid)
-    
+    count_query = select(CaseEvent.id).where(
+        CaseEvent.case_id == uid, CaseEvent.tenant_id == tenant_uuid
+    )
     if event_type:
         count_query = count_query.where(CaseEvent.event_type == event_type)
     count_result = await db.execute(count_query)
@@ -254,11 +251,16 @@ async def list_steps(
     except ValueError:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Invalid case ID")
 
-    query = select(CaseInvestigationStep).where(CaseInvestigationStep.case_id == uid).order_by(CaseInvestigationStep.order)
-    if tenant_id:
-        tenant_uuid = uuid.UUID(tenant_id)
-        query = query.where(CaseInvestigationStep.tenant_id == tenant_uuid)
-    
+    tenant_uuid = require_tenant_uuid(tenant_id)
+    query = (
+        select(CaseInvestigationStep)
+        .where(
+            CaseInvestigationStep.case_id == uid,
+            CaseInvestigationStep.tenant_id == tenant_uuid,
+        )
+        .order_by(CaseInvestigationStep.order)
+    )
+
     result = await db.execute(query)
     steps = result.scalars().all()
 

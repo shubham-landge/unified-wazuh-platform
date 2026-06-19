@@ -115,6 +115,7 @@ CREATE TABLE ai_triage_results (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     alert_id UUID REFERENCES alerts(id) ON DELETE SET NULL,
+    status VARCHAR(20) DEFAULT 'completed',  -- pending | completed | failed (async triage)
     model_name TEXT NOT NULL,
     model_version TEXT,
     prompt_text TEXT,
@@ -840,6 +841,7 @@ CREATE TABLE agent_definitions (
     name TEXT NOT NULL UNIQUE,
     description TEXT,
     agent_type VARCHAR(64) NOT NULL,
+    autonomy_level VARCHAR(16) NOT NULL DEFAULT 'approval',  -- read-only | approval | full
     config JSONB DEFAULT '{}',
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -1006,3 +1008,90 @@ CREATE INDEX idx_credential_leaks_target ON credential_leaks(target);
 CREATE TRIGGER trg_credential_leaks_updated_at
     BEFORE UPDATE ON credential_leaks FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Phase 9 — Detection Beyond the Endpoint
+-- Entity extraction, cross-domain stitching, kill-chain tracking
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- Normalized entities extracted from every alert (cheap, no LLM).
+CREATE TABLE entities (
+    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id    UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    entity_type  VARCHAR(24) NOT NULL,   -- user | host | ip | principal | session | device
+    value        VARCHAR(512) NOT NULL,  -- normalized (lowercased UPN, canonical IP, ARN, ...)
+    risk_score   NUMERIC(5,2) DEFAULT 0,
+    first_seen   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    tags         JSONB DEFAULT '{}',
+    UNIQUE (tenant_id, entity_type, value)
+);
+CREATE INDEX ix_entities_tenant_type_value ON entities (tenant_id, entity_type, value);
+
+-- Links extracted entities to the alert they came from, with role designations.
+CREATE TABLE alert_entities (
+    alert_id   UUID NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
+    entity_id  UUID NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    role       VARCHAR(16) NOT NULL DEFAULT 'observed',  -- actor | target | source | dest | observed
+    PRIMARY KEY (alert_id, entity_id, role)
+);
+
+-- Entities that define an incident's identity (the stitching backbone).
+CREATE TABLE incident_entities (
+    incident_id UUID NOT NULL REFERENCES alert_incidents(id) ON DELETE CASCADE,
+    entity_id   UUID NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    PRIMARY KEY (incident_id, entity_id)
+);
+
+-- Extend alerts for cross-domain detection (identity/cloud/saas).
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source_type VARCHAR(24) DEFAULT 'endpoint';
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS principal   VARCHAR(512);
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS session_id  VARCHAR(256);
+
+-- Extend alert_incidents for cross-domain stitching and kill-chain tracking.
+ALTER TABLE alert_incidents ADD COLUMN IF NOT EXISTS cross_domain      BOOLEAN     DEFAULT false;
+ALTER TABLE alert_incidents ADD COLUMN IF NOT EXISTS source_domains    JSONB       DEFAULT '[]';
+ALTER TABLE alert_incidents ADD COLUMN IF NOT EXISTS kill_chain_stage  VARCHAR(24) DEFAULT 'unknown';
+ALTER TABLE alert_incidents ADD COLUMN IF NOT EXISTS stage_history     JSONB       DEFAULT '[]';
+ALTER TABLE alert_incidents ADD COLUMN IF NOT EXISTS sla_due_at        TIMESTAMPTZ;
+ALTER TABLE alert_incidents ADD COLUMN IF NOT EXISTS first_enriched_at TIMESTAMPTZ;
+
+-- Extend agent_definitions: autonomy level gate for orchestration policy guard.
+ALTER TABLE agent_definitions ADD COLUMN IF NOT EXISTS autonomy_level VARCHAR(16) NOT NULL DEFAULT 'approval';
+
+-- ─── Phase 9.x: composite indexes for tenant-scoped time-range queries ───
+-- The hot path on every list endpoint is "WHERE tenant_id = ? ORDER BY created_at DESC".
+CREATE INDEX IF NOT EXISTS idx_alerts_tenant_created ON alerts (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cases_tenant_created ON cases (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_triage_tenant_created ON ai_triage_results (tenant_id, created_at DESC);
+
+-- ─── Wazuh Environment Health snapshots (overlay observability) ───
+-- Written by wazuh_health_worker each poll; powers the Wazuh Environment view,
+-- Prometheus gauges, and threshold alerts on Wazuh's own health.
+CREATE TABLE IF NOT EXISTS wazuh_health_snapshots (
+    id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id                 UUID,
+    manager_label             VARCHAR(64) DEFAULT 'default',
+    captured_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    agents_active             INTEGER DEFAULT 0,
+    agents_disconnected       INTEGER DEFAULT 0,
+    agents_never_connected    INTEGER DEFAULT 0,
+    agents_pending            INTEGER DEFAULT 0,
+    agents_total              INTEGER DEFAULT 0,
+    cluster_status            VARCHAR(24) DEFAULT 'unknown',
+    manager_all_running       BOOLEAN DEFAULT true,
+    analysisd_eps             DOUBLE PRECISION DEFAULT 0,
+    analysisd_queue_pct       DOUBLE PRECISION DEFAULT 0,
+    events_dropped            INTEGER DEFAULT 0,
+    indexer_status            VARCHAR(16) DEFAULT 'unknown',
+    indexer_unassigned_shards INTEGER DEFAULT 0,
+    ingestion_lag_seconds     DOUBLE PRECISION,
+    self_poller_lag_seconds   DOUBLE PRECISION,
+    self_triage_queue_depth   INTEGER DEFAULT 0,
+    overall_status            VARCHAR(16) DEFAULT 'healthy',
+    issues                    JSONB DEFAULT '[]',
+    raw                       JSONB DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_wazuh_health_captured ON wazuh_health_snapshots (captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wazuh_health_label_captured ON wazuh_health_snapshots (manager_label, captured_at DESC);

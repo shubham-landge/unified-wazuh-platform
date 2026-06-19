@@ -40,7 +40,22 @@ class TicketingWorker:
                 logger.error("Ticketing sync cycle failed: %s", e, exc_info=True)
             await asyncio.sleep(POLL_INTERVAL)
 
+    async def _drain_pending_queue(self):
+        """Drain orchestration-enqueued case IDs so the list doesn't grow.
+
+        The sync cycle below already syncs every open case, so draining here is
+        enough — the IDs are an immediacy hint, not a separate work source.
+        """
+        if not self.redis_client:
+            return
+        try:
+            while await self.redis_client.lpop("ticketing:pending"):
+                pass
+        except Exception as exc:
+            logger.debug("ticketing queue drain skipped: %s", exc)
+
     async def _sync_cycle(self):
+        await self._drain_pending_queue()
         async with self.session_factory() as session:
             configs = await self._load_active_configs(session)
             if not configs:

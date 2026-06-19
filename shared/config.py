@@ -117,6 +117,9 @@ class Settings(BaseSettings):
 
     triage_confidence_threshold: float = 0.5
     triage_enabled: bool = True
+    # Manual "Analyze" button is interactive — force the fast tier by default so
+    # the analyst gets a result quickly. Set false to let the router decide.
+    triage_manual_force_fast: bool = True
     mask_sensitive_data: bool = True
 
     # ── Noise reduction (pre-triage stage) ──
@@ -254,6 +257,15 @@ class Settings(BaseSettings):
     llm_tier_full_model: str = "CyberCrew/notmythos-8b"  # 2.0GB, 128K context, cybersecurity-specialized
     llm_tier_level_threshold: int = 10
     llm_tier_score_threshold: int = 4
+
+    # ── Cloud escalation tier (deep analysis for the hardest cases) ──
+    # Local qwen (fast) → notmythos (full) stay always-on CPU tiers. Escalation is
+    # opt-in: only cross-domain/advancing incidents or very high routing scores go
+    # to the cloud, so the CPU-only baseline holds and cloud cost stays bounded.
+    llm_tier_escalation_enabled: bool = False
+    llm_tier_escalation_provider: str = "gemini"
+    llm_tier_escalation_model: str = "gemini-2.5-flash"
+    llm_tier_escalation_score_threshold: int = 7
     llm_tier_burst_window_minutes: int = 10
     llm_tier_known_bad_ips: str = ""  # comma-separated
     llm_tier_complex_techniques: str = "T1569.002,T1059.001,T1021.001,T1485,T1490"  # lateral movement, ransomware, etc.
@@ -263,6 +275,32 @@ class Settings(BaseSettings):
     llm_model_top_p: float = 0.9
     llm_model_top_k: int = 40
     llm_model_repeat_penalty: float = 1.15
+
+    # ── LLM Stability (CPU-only hardening) ──
+    # Keep the model resident in Ollama between requests. Without this the 8B
+    # unloads after ~5 min idle and every cold request pays a 1-2 min load
+    # penalty — the main source of latency variance. "-1" = keep forever,
+    # "30m" = keep 30 minutes. Set to "0" only if RAM-constrained.
+    ollama_keep_alive: str = "30m"
+    # Max concurrent LLM inferences. CPU-only Ollama serializes internally, so
+    # >1 just piles up timeouts and risks OOM from parallel model loads. Keep 1.
+    llm_max_concurrency: int = 1
+    # Cap generated tokens so a runaway response can't double the latency.
+    llm_num_predict: int = 1024
+    # Explicit context window (notmythos/qwen real ceiling is ~8192 on CPU).
+    llm_num_ctx: int = 8192
+    # Retries on transient timeout/connection errors before giving up.
+    llm_max_retries: int = 1
+
+    # ── Triage DLQ ──
+    dlq_max_retries: int = 3
+    dlq_poll_interval: int = 5
+
+    # ── Semantic result cache (Phase P0-5) ──
+    triage_cache_enabled: bool = True
+    triage_cache_ttl_seconds: int = 1800
+    triage_cache_similarity_threshold: float = 0.92
+    triage_cache_skip_level: int = 12
 
     # ── Prompt Template Loading ──
     prompts_path: str = "/app/prompts"  # directory for per-model .md prompt templates
@@ -287,6 +325,18 @@ class Settings(BaseSettings):
     agent_default_autonomy_level: str = "read-only"
     # Comma-separated list of agent types allowed to run in "full" autonomy (no human gate).
     agent_full_autonomy_types: str = "triage,correlation"
+
+    # ── Wazuh Environment Health Monitoring ──
+    # The overlay watches Wazuh itself (agents, manager/cluster, indexer/ingestion)
+    # plus our own pipeline, and raises alerts when Wazuh's own health degrades.
+    wazuh_health_enabled: bool = True
+    wazuh_health_poll_interval_seconds: int = 120
+    # Warn when this fraction of enrolled agents are disconnected (0.2 = 20%).
+    wazuh_health_agent_disconnect_pct_warn: float = 0.2
+    # Warn when newest alert is older than this many seconds (ingestion stalled).
+    wazuh_health_ingestion_lag_warn_seconds: int = 600
+    # Warn when analysisd dropped at least this many events since last poll.
+    wazuh_health_events_dropped_warn: int = 100
 
     # ── Triggers (Suna-inspired cron + webhook automation) ──
     # Cron triggers: spawn agent sessions on schedule.

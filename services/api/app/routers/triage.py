@@ -40,6 +40,31 @@ class FeedbackRequest(BaseModel):
     corrected_confidence: float | None = Field(None, ge=0, le=1)
 
 
+_TRIAGE_PENDING_TIMEOUT_SECONDS = 600
+
+
+async def _enqueue_triage(alert_id: str, triage_id: str, force_fast: bool) -> None:
+    """Hand the triage to the TriageWorker via Redis instead of running the LLM
+    in the API process. Survives API restarts and serializes inference on the
+    worker, which also applies noise-gating, UEBA, SOAR, and case creation."""
+    import redis.asyncio as redis
+
+    r = redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        await r.lpush(
+            "triage_queue",
+            json.dumps({
+                "alert_id": alert_id,
+                "triage_id": triage_id,
+                "manual": True,
+                "force_fast": force_fast,
+            }),
+        )
+    finally:
+        await r.aclose()
+
+
+
 @router.post("/run", status_code=HTTP_202_ACCEPTED)
 async def run_triage(
     body: TriageRequest,
@@ -56,108 +81,25 @@ async def run_triage(
     if not alert:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Alert not found")
 
-    from shared.connectors.llm_router import TieredRouter
-
-    provider = await TieredRouter().get_provider(alert=alert, tenant_id=str(alert.tenant_id), db_session=db)
-
-    # Load system prompt from file
-    from pathlib import Path
-    prompts_dir = Path(__file__).parent.parent / "prompts"
-    system_prompt_path = prompts_dir / "system_soc_triage.md"
-    try:
-        raw = system_prompt_path.read_text()
-        system_prompt = "\n".join(l for l in raw.splitlines() if not l.startswith("#")).strip()
-    except FileNotFoundError:
-        system_prompt = (
-            "You are a defensive SOC triage copilot for Wazuh. "
-            "Analyze the alert and return structured JSON only. "
-            "Never recommend destructive actions."
-        )
-
-    alert_prompt_path = prompts_dir / "alert_triage.md"
-    try:
-        template = alert_prompt_path.read_text()
-        user_prompt = template.format(
-            rule_description=alert.rule_description or "",
-            rule_id=alert.rule_id or "",
-            rule_level=alert.rule_level or "",
-            rule_groups=", ".join(alert.rule_groups or []),
-            agent_name=alert.agent_name or "",
-            agent_ip=alert.agent_ip or "",
-            source_ip=alert.source_ip or "",
-            destination_ip=alert.destination_ip or "",
-            user_name=alert.user_name or "",
-            process_name=alert.process_name or "",
-            file_name=alert.file_name or "",
-            file_hash=alert.file_hash or "",
-            event_id=alert.event_id or "",
-            mitre_tactic=alert.mitre_tactic or "",
-            mitre_technique=alert.mitre_technique or "",
-            alert_timestamp=alert.alert_timestamp.isoformat() if alert.alert_timestamp else "",
-        )
-    except (FileNotFoundError, KeyError):
-        user_prompt = (
-            f"Alert Rule: {alert.rule_description}\n"
-            f"Rule ID: {alert.rule_id} | Level: {alert.rule_level}\n"
-            f"Agent: {alert.agent_name} ({alert.agent_ip})\n"
-            f"Source IP: {alert.source_ip} | User: {alert.user_name}\n"
-            f"MITRE: {alert.mitre_tactic} / {alert.mitre_technique}\n"
-        )
-
-    try:
-        result_data = await provider.analyze(system_prompt=system_prompt, user_prompt=user_prompt)
-    except Exception as e:
-        raise HTTPException(status_code=HTTP_503_SERVICE_UNAVAILABLE, detail=f"LLM provider error: {e}")
-
     triage_result = AiTriageResult(
         alert_id=alert_uid,
-        model_name=provider.name(),
-        prompt_text=user_prompt,
-        response_text=json.dumps(result_data),
-        summary=result_data.get("summary", alert.rule_description),
-        category=result_data.get("category", "unknown"),
-        severity=result_data.get("severity", "medium"),
-        confidence=result_data.get("confidence", 0.5),
-        false_positive_likelihood=result_data.get("false_positive_likelihood", 0.3),
-        mitre_mapping=result_data.get("mitre_mapping", []),
-        investigation_steps=result_data.get(
-            "recommended_investigation_steps",
-            result_data.get("investigation_steps", []),
-        ),
-        do_not_do=result_data.get("do_not_do", []),
-        escalation_required=result_data.get("escalation_required", False),
-        suggested_soc_action=result_data.get("recommended_soc_action"),
-        success=result_data.get("success", True),
-        error_message=result_data.get("error"),
+        status="pending",
+        model_name="",
         tenant_id=alert.tenant_id,
     )
     db.add(triage_result)
-
-    from shared.models.model_run import ModelRun
-    from hashlib import sha256
-    model_run = ModelRun(
-        tenant_id=alert.tenant_id,
-        model_name=provider.name(),
-        prompt_hash=sha256(user_prompt.encode()).hexdigest()[:16],
-        input_tokens=result_data.get("tokens_input"),
-        output_tokens=result_data.get("tokens_output"),
-        latency_ms=result_data.get("latency_ms"),
-        success=result_data.get("success", True),
-    )
-    db.add(model_run)
-
     await db.commit()
+    await db.refresh(triage_result)
+
+    # Manual "Analyze" is interactive — default to the fast tier so the analyst
+    # gets an answer quickly (configurable via TRIAGE_MANUAL_FORCE_FAST).
+    force_fast = getattr(settings, "triage_manual_force_fast", True)
+    await _enqueue_triage(str(alert_uid), str(triage_result.id), force_fast)
 
     return {
-        "status": "accepted",
+        "status": "pending",
         "triage_id": str(triage_result.id),
         "alert_id": str(alert_uid),
-        "summary": triage_result.summary,
-        "severity": triage_result.severity,
-        "confidence": float(triage_result.confidence),
-        "false_positive_likelihood": float(triage_result.false_positive_likelihood),
-        "escalation_required": triage_result.escalation_required,
-        "model": provider.name(),
     }
 
 
@@ -180,10 +122,35 @@ async def get_triage_result(
     )
     triage = result.scalar_one_or_none()
     if not triage:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="No triage result for this alert")
+        return {"status": "not_found", "triage_id": None}
+
+    if triage.status == "pending":
+        # Reaper: a background task that died (API restart, OOM-kill) would leave
+        # this row "pending" forever and the dashboard would poll every 5s with no
+        # end. Once it's older than the LLM timeout budget, fail it so the UI stops.
+        created = triage.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - created).total_seconds()
+        if age > _TRIAGE_PENDING_TIMEOUT_SECONDS:
+            triage.status = "failed"
+            triage.success = False
+            triage.error_message = "Triage timed out (no result within budget)"
+            await db.commit()
+            return {
+                "status": "failed",
+                "triage_id": str(triage.id),
+                "alert_id": str(triage.alert_id),
+                "error": triage.error_message,
+            }
+        return {
+            "status": "pending",
+            "triage_id": str(triage.id),
+            "alert_id": str(triage.alert_id),
+        }
 
     return {
-        "status": "success",
+        "status": "completed",
         "triage_id": str(triage.id),
         "alert_id": str(triage.alert_id),
         "model": triage.model_name,

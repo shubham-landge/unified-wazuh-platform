@@ -35,6 +35,7 @@ from app.routers import (
     tenants,
     metrics,
     posture,
+    wazuh_health,
 )
 
 logging.basicConfig(
@@ -98,3 +99,4 @@ app.include_router(usage.router)
 app.include_router(tenants.router)
 app.include_router(metrics.router)
 app.include_router(posture.router)
+app.include_router(wazuh_health.router)

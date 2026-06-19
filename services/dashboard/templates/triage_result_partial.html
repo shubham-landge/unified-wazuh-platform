@@ -8,7 +8,6 @@
         if (val === 'not_helpful') {
             this.showFeedbackForm = true;
         } else {
-            // POST rating directly
             const fd = new FormData();
             fd.append('rating', 'helpful');
             fetch('/feedback/{{ result.triage_id }}', { method: 'POST', body: fd })
@@ -27,15 +26,46 @@
                 if (window.addGlobalToast) window.addGlobalToast('success', 'Corrections submitted successfully.');
             });
     }
-}">
+}"
+    {% if result.status == 'pending' %}
+    hx-get="/triage/{{ result.alert_id }}"
+    hx-trigger="every 5s"
+    hx-swap="outerHTML"
+    hx-target="this"
+    {% endif %}
+>
+    {% if result.status == 'pending' %}
+    <div class="text-center py-8">
+        <svg class="animate-spin h-8 w-8 mx-auto text-accent-blue mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <p class="text-sm text-accent-blue font-semibold">AI Analysis in Progress</p>
+        <p class="text-xs text-muted mt-1">Running local LLM inference&hellip; this may take 30-120 seconds.</p>
+        <div class="flex justify-center gap-1 mt-3">
+            <span class="w-2 h-2 bg-accent-blue rounded-full animate-bounce" style="animation-delay: 0s"></span>
+            <span class="w-2 h-2 bg-accent-blue rounded-full animate-bounce" style="animation-delay: 0.2s"></span>
+            <span class="w-2 h-2 bg-accent-blue rounded-full animate-bounce" style="animation-delay: 0.4s"></span>
+        </div>
+    </div>
+    {% elif result.status == 'error' %}
+    <div class="text-center py-6">
+        <svg class="w-8 h-8 mx-auto text-accent-red/50 mb-2" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+        </svg>
+        <p class="text-xs text-accent-red font-medium">Analysis failed: {{ result.detail or 'Unknown error' }}</p>
+        <p class="text-[10px] text-muted mt-1">Try again or check the API logs for details.</p>
+    </div>
+    {% elif result.triage_id and result.status != 'not_found' %}
     <!-- Analysis Header -->
     <div class="flex justify-between items-start border-b border-white/5 pb-3">
         <div>
             <h4 class="text-xs font-bold text-white uppercase tracking-wider">AI Copilot Analysis Result</h4>
             <div class="flex items-center gap-2 mt-0.5">
                 <p class="text-[10px] text-muted font-mono">Triage Session ID: {{ result.triage_id or 'Pending' }}</p>
+                {% if result.model %}
                 <span class="px-1.5 py-0.2 text-[8px] font-bold uppercase rounded {% if 'coder' in (result.model or '').lower() or '7b' in (result.model or '').lower() or 'llama3' in (result.model or '').lower() %}bg-accent-yellow/20 text-yellow-400 border border-accent-yellow/30{% else %}bg-accent-blue/20 text-blue-400 border border-accent-blue/30{% endif %}">
-                    {{ result.model or 'Ollama' }}
+                    {{ result.model }}
                 </span>
                 {% if result.model %}
                 <span class="px-1.5 py-0.5 rounded text-[8px] font-bold
@@ -46,6 +76,7 @@
                     {% endif %}">
                     {{ 'Full' if ('7b' in result.model or 'gpt' in result.model or 'claude' in result.model or 'gemini' in result.model) else 'Fast' }}
                 </span>
+                {% endif %}
                 {% endif %}
             </div>
         </div>
@@ -206,10 +237,22 @@
             </div>
         </div>
     </div>
+    {% else %}
+    <div class="text-center py-6">
+        <svg class="w-8 h-8 mx-auto text-muted/30 mb-2" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
+        </svg>
+        <p class="text-xs text-muted font-medium">Not yet analyzed. Click "Analyze Event" to run AI triage on this alert.</p>
+    </div>
+    {% endif %}
 </div>
 
 <script>
+    {% if result.triage_id and result.status != 'pending' %}
+    var btn = document.getElementById('triage-btn-text');
+    if (btn) btn.textContent = 'Re-analyze';
     if (window.addGlobalToast) {
         window.addGlobalToast("success", "AI Triage analysis complete.");
     }
+    {% endif %}
 </script>

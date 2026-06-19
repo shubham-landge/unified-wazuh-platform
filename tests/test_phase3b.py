@@ -17,8 +17,8 @@ class TestTieredRouter:
         self.router = TieredRouter()
 
     @pytest.mark.parametrize("strategy,expected_model", [
-        ("fast", "notmythos:mini"),
-        ("full", "notmythos:8b"),
+        ("fast", "qwen2.5:3b-instruct"),
+        ("full", "CyberCrew/notmythos-8b"),
     ])
     @pytest.mark.asyncio
     async def test_strategy_override(self, strategy, expected_model):
@@ -43,9 +43,8 @@ class TestTieredRouter:
 
         with patch("shared.config.settings.llm_tier_strategy", "auto"):
             with patch("shared.config.settings.llm_tier_level_threshold", 10):
-                with patch("shared.config.settings.llm_tier_fast_model", "notmythos:mini"):
-                    provider = await self.router.get_provider(alert=alert)
-                    assert "mini" in provider.name()
+                provider = await self.router.get_provider(alert=alert)
+                assert "instruct" in provider.name() or "3b" in provider.name()
 
     @pytest.mark.asyncio
     async def test_auto_strategy_high_level_uses_full(self):
@@ -62,7 +61,7 @@ class TestTieredRouter:
         with patch("shared.config.settings.llm_tier_strategy", "auto"):
             with patch("shared.config.settings.llm_tier_level_threshold", 10):
                 provider = await self.router.get_provider(alert=alert)
-                assert "8b" in provider.name()
+                assert "notmythos" in provider.name() or "8b" in provider.name()
 
     @pytest.mark.asyncio
     async def test_complex_technique_boosts_score(self):
@@ -82,7 +81,7 @@ class TestTieredRouter:
                            "T1569.002,T1059.001"):
                     provider = await self.router.get_provider(alert=alert)
                     # score = 3 (level) + 1 (technique) = 4 >= 4
-                    assert "8b" in provider.name()
+                    assert "notmythos" in provider.name() or "8b" in provider.name()
 
     @pytest.mark.asyncio
     async def test_burst_alert_reduces_score(self):
@@ -97,10 +96,9 @@ class TestTieredRouter:
         with patch("shared.config.settings.llm_tier_strategy", "auto"):
             with patch("shared.config.settings.llm_tier_level_threshold", 10):
                 with patch("shared.config.settings.llm_tier_score_threshold", 4):
-                    with patch("shared.config.settings.llm_tier_fast_model", "notmythos:mini"):
-                        provider = await self.router.get_provider(alert=alert)
-                        # score = 3 (level) - 2 (burst) = 1 < 4, so fast
-                        assert "mini" in provider.name()
+                    provider = await self.router.get_provider(alert=alert)
+                    # score = 3 (level) - 2 (burst) = 1 < 4, so fast
+                assert "3b" in provider.name() or "mini" in provider.name()
 
     def test_known_bad_ip_boosts_score(self):
         alert = MagicMock()
@@ -373,14 +371,15 @@ class TestSchemaValidation:
 class TestTriageUsesRouter:
     """Triage endpoints use TieredRouter."""
 
-    def test_tiered_router_imported_in_api_triage(self):
-        """TieredRouter should be imported in triage.py."""
+    def test_api_triage_enqueues_to_worker(self):
+        """The API triage router hands off to the worker queue (routing happens
+        in the worker, not the API process)."""
         import pathlib
         triage_path = pathlib.Path(__file__).parent.parent / "services" / "api" / "app" / "routers" / "triage.py"
         triage_code = triage_path.read_text()
 
-        assert "from shared.connectors.llm_router import TieredRouter" in triage_code
-        assert "TieredRouter().get_provider" in triage_code
+        assert "triage_queue" in triage_code
+        assert "_enqueue_triage" in triage_code
 
     def test_tiered_router_used_in_worker(self):
         """TieredRouter should be used in triage_worker."""
@@ -443,12 +442,13 @@ def test_is_burst_alert_time_window():
     assert is_burst_alert(alert)
 
 
-def test_api_router_imports_tiered_router():
+def test_api_router_enqueues_triage():
     import pathlib
     triage_path = pathlib.Path(__file__).parent.parent / "services" / "api" / "app" / "routers" / "triage.py"
     code = triage_path.read_text()
-    assert "TieredRouter" in code
-    assert "TieredRouter().get_provider" in code
+    # Routing/inference happens in the worker; the API only enqueues.
+    assert "triage_queue" in code
+    assert "_enqueue_triage" in code
 
 
 def test_schema_has_user_feedback():

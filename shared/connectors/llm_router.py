@@ -73,8 +73,15 @@ async def user_feedback_negative_rate(rule_id: int | None, db_session=None) -> f
 
 
 class TieredRouter:
-    async def get_provider(self, alert=None, tenant_id: str | None = None, db_session=None, force_fast: bool = False) -> LLMProvider:
+    async def get_provider(self, alert=None, tenant_id: str | None = None, db_session=None,
+                           force_fast: bool = False, force_escalation: bool = False) -> LLMProvider:
         strategy = settings.llm_tier_strategy
+
+        # Cross-domain / advancing incidents can demand the cloud escalation tier
+        # directly, bypassing the per-alert score (incident-level reasoning).
+        if force_escalation and self._escalation_enabled():
+            logger.info("Routing to ESCALATION tier (forced, cross-domain)")
+            return self._build_escalation_provider()
 
         # Noise-reduction downgrade pins the alert to the fast tier, bypassing
         # the score so it can never escalate to the (slower, CPU-costly) 7B tier.
@@ -89,12 +96,22 @@ class TieredRouter:
         score = await self._compute_score(alert, tenant_id, db_session)
         logger.debug("TieredRouter score=%d for alert %s", score, getattr(alert, "id", None))
 
+        # Escalation is opt-in and only for the hardest cases, so local CPU tiers
+        # stay the always-on baseline and cloud spend is bounded.
+        if self._escalation_enabled() and score >= settings.llm_tier_escalation_score_threshold:
+            logger.info("Routing to ESCALATION tier (score=%d)", score)
+            return self._build_escalation_provider()
+
         if score >= settings.llm_tier_score_threshold:
             logger.info("Routing to FULL tier (score=%d)", score)
             return self._build_full_provider()
 
         logger.debug("Routing to FAST tier (score=%d)", score)
         return self._build_fast_provider()
+
+    @staticmethod
+    def _escalation_enabled() -> bool:
+        return bool(getattr(settings, "llm_tier_escalation_enabled", False))
 
     async def _compute_score(self, alert, tenant_id: str | None, db_session=None) -> int:
         score = 0
@@ -144,19 +161,13 @@ class TieredRouter:
         model = settings.llm_tier_full_model
         return self._resolve_provider(prov, model)
 
+    def _build_escalation_provider(self) -> LLMProvider:
+        prov = getattr(settings, "llm_tier_escalation_provider", "gemini")
+        model = getattr(settings, "llm_tier_escalation_model", "gemini-2.5-flash")
+        return self._resolve_provider(prov, model)
+
     def _resolve_provider(self, provider_name: str, model: str | None = None) -> LLMProvider:
-        name = provider_name.lower()
-        if name == "ollama":
-            return OllamaProvider(model=model)
-        elif name == "openai":
-            from shared.connectors.llm_openai import OpenAIProvider
-            return OpenAIProvider()
-        elif name == "gemini":
-            from shared.connectors.llm_gemini import GeminiProvider
-            return GeminiProvider()
-        elif name == "claude":
-            from shared.connectors.llm_claude import ClaudeProvider
-            return ClaudeProvider()
-        else:
-            logger.warning("Unknown provider %s, falling back to Ollama", provider_name)
-            return OllamaProvider(model=model)
+        # build_provider applies the per-tier model override to every provider,
+        # so the cloud escalation tier actually uses its configured model.
+        from shared.connectors.llm_provider import build_provider
+        return build_provider(provider_name, model)

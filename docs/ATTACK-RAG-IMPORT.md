@@ -1,8 +1,25 @@
 # ATT&CK Skill DB Import Plan
 
-> **Status**: Design / implementation plan. Not yet executed.  
-> **Updated**: 2026-06-17  
+> **Status**: Run-on-demand. Seeder implemented at `scripts/seed_attack_skills.py`; execute it to populate the RAG store.  
+> **Updated**: 2026-06-18  
 > **Scope**: How to import the ~754 ATT&CK-mapped skills from `mukul975/awesome-attck-skill-db` into the platform RAG store (`knowledge_chunks`) so triage, response planning, and few-shot retrieval improve.
+
+## How to run
+
+```bash
+# Default: seeds the curated techniques in prompts/skills/ (T*.md)
+python scripts/seed_attack_skills.py
+
+# Full set: clone the external DB and point the seeder at it
+git clone https://github.com/mukul975/awesome-attck-skill-db /opt/attck-skill-db
+python scripts/seed_attack_skills.py --skills-dir /opt/attck-skill-db --force
+```
+
+The seeder is idempotent per technique (source `attack-skill:<Txxxx>`), chunks +
+embeds each file via the existing RAG pipeline, and needs the embedding model
+reachable at `OLLAMA_BASE_URL`. It is intentionally a standalone script (not a
+boot hook) so seeding hundreds of embeddings never blocks service startup on the
+CPU-only box.
 
 ---
 

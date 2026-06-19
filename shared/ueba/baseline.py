@@ -17,6 +17,7 @@ async def update_baseline(
     metric_name: str,
     observed: float,
     window_days: int = 30,
+    tenant_id: str | None = None,
 ) -> UebaBaseline:
     result = await session.execute(
         select(UebaBaseline).where(
@@ -33,6 +34,7 @@ async def update_baseline(
             subject_id=subject_id,
             metric_name=metric_name,
             window_days=window_days,
+            tenant_id=tenant_id,
         )
         session.add(baseline)
 

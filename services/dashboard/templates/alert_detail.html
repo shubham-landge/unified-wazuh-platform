@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="max-w-5xl mx-auto space-y-6">
+    {% if alert.id %}
     <!-- Breadcrumb & Back Actions -->
     <div class="flex items-center justify-between pb-2">
         <a href="/alerts" class="inline-flex items-center gap-1.5 text-xs text-accent-blue hover:underline font-semibold"
@@ -25,7 +26,13 @@
         
         <!-- Quick Action: Create Manual Case -->
         <button hx-post="/cases"
-                hx-vals='{"title": "Investigation: {{ alert.rule_description }}", "description": "Manual case creation from alert {{ alert.id }}", "severity": "{% if alert.rule_level >= 12 %}critical{% elif alert.rule_level >= 10 %}high{% else %}medium{% endif %}", "category": "manual", "alert_id": "{{ alert.id }}"}'
+                hx-vals='{{ {
+                    "title": ("Investigation: " ~ alert.rule_description),
+                    "description": ("Manual case creation from alert " ~ alert.id),
+                    "severity": "critical" if alert.rule_level >= 12 else ("high" if alert.rule_level >= 10 else "medium"),
+                    "category": "manual",
+                    "alert_id": alert.id,
+                }|tojson|safe }}'
                 hx-target="body"
                 hx-swap="outerHTML"
                 class="px-4 py-2 border border-white/10 hover:bg-white/5 text-white rounded-lg text-xs font-semibold transition-all">
@@ -135,15 +142,13 @@
             </div>
             
             <div class="relative">
-                <!-- Trigger Button with HTMX spinner class -->
-                <button class="px-5 py-2.5 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold shadow-[0_0_15px_rgba(59,130,246,0.3)] transition-all flex items-center gap-2"
+                <button id="triage-btn" class="px-5 py-2.5 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold shadow-[0_0_15px_rgba(59,130,246,0.3)] transition-all flex items-center gap-2"
                         hx-post="/triage/run"
                         hx-vals='{"alert_id": "{{ alert.id }}"}'
                         hx-target="#triage-result"
                         hx-swap="innerHTML"
                         hx-indicator="#triage-spinner">
-                    <span>Analyze Event</span>
-                    <!-- Spinner Icon (hidden by default, shown by HTMX during request) -->
+                    <span id="triage-btn-text">Analyze Event</span>
                     <svg id="triage-spinner" class="animate-spin h-4 w-4 text-white htmx-indicator" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -152,8 +157,24 @@
             </div>
         </div>
         
-        <!-- Target container for triage partial -->
-        <div id="triage-result" class="mt-4"></div>
+        <div id="triage-result" class="mt-4"
+             hx-get="/triage/{{ alert.id }}"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+        </div>
     </div>
+    {% else %}
+    <div class="card-premium p-12 text-center">
+        <svg class="w-12 h-12 mx-auto text-muted/30 mb-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+        </svg>
+        <h2 class="text-lg font-bold text-white mb-2">Alert Not Found</h2>
+        <p class="text-sm text-muted mb-6">The requested alert could not be loaded. It may have been deleted or the backend API may be unavailable.</p>
+        <a href="/alerts" class="inline-flex px-5 py-2.5 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-xs font-bold transition-all"
+           hx-get="/alerts" hx-target="body" hx-push-url="true">
+            Return to Alert List
+        </a>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
