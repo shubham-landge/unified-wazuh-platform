@@ -15,6 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.worker.app.triage_worker import TriageWorker
+from shared.enrichment.risk_score import EnrichmentContext
+from shared.enrichment.decision import Decision, DecisionLevel
 from shared.models.alert import Alert
 from shared.models.alert_dedup import AlertIncident
 from shared.models.case import Case
@@ -305,20 +307,26 @@ async def test_triage_worker_enrichment_context_in_prompt():
             incident=None,
             reason="kept",
         )
-        m_enrich.return_value = MagicMock(
-            enriched=True,
-            ti=[{"ioc": "10.0.0.5"}],
-            asset=[{"agent_id": "agent-01", "name": "web-01", "criticality": 5}],
-            user=[{"email": "admin@corp.com", "is_active": True}],
-            ueba=[{"anomaly_type": "login_burst", "zscore": 3.5}],
-            geoip={"country": "RU"},
-            vuln=[{"cve": "CVE-2024-0001"}],
-            watchlist=[{"list": "blocklist"}],
-            errors=[],
-            to_dict=lambda: {},
+        m_enrich.return_value = EnrichmentContext(
+            ti_confidence=0.8,
+            ti_is_known_bad=True,
+            asset_criticality=5,
+            ueba_zscore=3.5,
+            geo_impossible_travel=True,
+            geo_unexpected_country=True,
+            vuln_matched=True,
+            vuln_epss=0.5,
         )
-        m_risk.return_value = {"score": 65, "breakdown": {}}
-        m_decide.return_value = MagicMock(level=3, enforced=False, reason="shadow")
+        m_risk.return_value = 65
+        m_decide.return_value = Decision(
+            level=DecisionLevel.L3_ESCALATE,
+            score=65,
+            reason="shadow",
+            skip_llm=False,
+            fast_llm_only=True,
+            auto_verdict="malicious",
+            auto_severity="high",
+        )
         m_router.return_value.get_provider = AsyncMock(return_value=mock_provider)
         m_cache.return_value = None
 
@@ -326,13 +334,11 @@ async def test_triage_worker_enrichment_context_in_prompt():
 
     assert captured_prompt is not None
     assert "Enrichment:" in captured_prompt
-    assert "Threat Intel: 1 IOC hit(s)" in captured_prompt
-    assert "Asset: web-01" in captured_prompt
-    assert "User: admin@corp.com" in captured_prompt
-    assert "UEBA: 1 anomaly(s) detected" in captured_prompt
-    assert "GeoIP: RU" in captured_prompt
-    assert "Vulnerabilities: 1 CVE(s)" in captured_prompt
-    assert "Watchlist: 1 hit(s)" in captured_prompt
+    assert "Threat Intel: confidence=0.80, known bad" in captured_prompt
+    assert "UEBA: z-score=3.50" in captured_prompt
+    assert "GeoIP: impossible travel" in captured_prompt
+    assert "Vulnerabilities: EPSS=0.500" in captured_prompt
+    assert "Watchlist: blocklisted" in captured_prompt
 
 
 # ────────────────────────────────
@@ -420,20 +426,17 @@ async def test_triage_worker_updates_cumulative_incident_risk():
             incident=incident,
             reason="kept",
         )
-        m_enrich.return_value = MagicMock(
-            enriched=True,
-            ti=[],
-            asset=[],
-            user=[],
-            ueba=[],
-            geoip=None,
-            vuln=[],
-            watchlist=[],
-            errors=[],
-            to_dict=lambda: {},
+        m_enrich.return_value = EnrichmentContext()
+        m_risk.return_value = 65
+        m_decide.return_value = Decision(
+            level=DecisionLevel.L3_ESCALATE,
+            score=65,
+            reason="shadow",
+            skip_llm=False,
+            fast_llm_only=True,
+            auto_verdict="malicious",
+            auto_severity="high",
         )
-        m_risk.return_value = {"score": 65, "breakdown": {}}
-        m_decide.return_value = MagicMock(level=3, enforced=False, reason="shadow")
         mock_provider = MagicMock()
         mock_provider.name.return_value = "qwen2.5-coder:3b"
         mock_provider.analyze = AsyncMock(return_value={
@@ -545,21 +548,18 @@ async def test_triage_worker_auto_case_when_cumulative_risk_exceeds_threshold():
             incident=incident,
             reason="kept",
         )
-        m_enrich.return_value = MagicMock(
-            enriched=True,
-            ti=[],
-            asset=[],
-            user=[],
-            ueba=[],
-            geoip=None,
-            vuln=[],
-            watchlist=[],
-            errors=[],
-            to_dict=lambda: {},
-        )
+        m_enrich.return_value = EnrichmentContext()
         # Score of 60 pushes cumulative from 100 to 160, exceeding threshold of 150
-        m_risk.return_value = {"score": 60, "breakdown": {}}
-        m_decide.return_value = MagicMock(level=3, enforced=False, reason="shadow")
+        m_risk.return_value = 60
+        m_decide.return_value = Decision(
+            level=DecisionLevel.L3_ESCALATE,
+            score=60,
+            reason="shadow",
+            skip_llm=False,
+            fast_llm_only=True,
+            auto_verdict="malicious",
+            auto_severity="high",
+        )
         mock_provider = MagicMock()
         mock_provider.name.return_value = "qwen2.5-coder:3b"
         mock_provider.analyze = AsyncMock(return_value={
@@ -668,21 +668,16 @@ async def test_triage_worker_no_auto_case_when_below_threshold():
             incident=incident,
             reason="kept",
         )
-        m_enrich.return_value = MagicMock(
-            enriched=True,
-            ti=[],
-            asset=[],
-            user=[],
-            ueba=[],
-            geoip=None,
-            vuln=[],
-            watchlist=[],
-            errors=[],
-            to_dict=lambda: {},
-        )
+        m_enrich.return_value = EnrichmentContext()
         # Score of 40 pushes cumulative from 50 to 90, below threshold of 150
-        m_risk.return_value = {"score": 40, "breakdown": {}}
-        m_decide.return_value = MagicMock(level=2, enforced=False, reason="shadow")
+        m_risk.return_value = 40
+        m_decide.return_value = Decision(
+            level=DecisionLevel.L2_TRIAGE,
+            score=40,
+            reason="shadow",
+            skip_llm=False,
+            fast_llm_only=False,
+        )
         mock_provider = MagicMock()
         mock_provider.name.return_value = "qwen2.5-coder:3b"
         mock_provider.analyze = AsyncMock(return_value={

@@ -148,3 +148,7 @@ async def run(
     )
 
     return ctx
+
+
+# Backward compatibility: origin/main code expects `enrich_alert`
+enrich_alert = run

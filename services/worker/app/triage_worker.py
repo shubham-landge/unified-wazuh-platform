@@ -156,40 +156,50 @@ class TriageWorker:
                     force_fast = decision.force_fast_tier
 
                 # ── Pre-LLM enrichment, risk scoring, and decision (S0) ──
-                enrichment_result = await enrich_alert(session, alert, self.redis_client)
-                risk = compute_risk_score(alert, enrichment_result)
-                decision_result = decide(
-                    risk["score"], alert, enrichment_result, breakdown=risk.get("breakdown")
-                )
+                ctx = await enrich_alert(alert, str(alert.tenant_id), session, self.redis_client)
+                score = compute_risk_score(ctx)
+                decision_result = decide(ctx, score, alert.rule_level)
                 logger.info(
-                    "Enrichment decision for alert %s: score=%d level=L%d enforced=%s (%s)",
+                    "Enrichment decision for alert %s: score=%d level=%s (%s)",
                     alert_id,
-                    risk["score"],
-                    int(decision_result.level),
-                    decision_result.enforced,
+                    score,
+                    decision_result.level.name,
                     decision_result.reason,
                 )
 
                 # Build enrichment context for the LLM prompt
                 enrichment_context = ""
-                if enrichment_result.enriched:
-                    parts = []
-                    if enrichment_result.ti:
-                        parts.append(f"Threat Intel: {len(enrichment_result.ti)} IOC hit(s)")
-                    if enrichment_result.asset:
-                        parts.append(f"Asset: {enrichment_result.asset[0].get('name', 'unknown')} (criticality={enrichment_result.asset[0].get('criticality', 'N/A')})")
-                    if enrichment_result.user:
-                        parts.append(f"User: {enrichment_result.user[0].get('email', 'unknown')} (active={enrichment_result.user[0].get('is_active', 'N/A')})")
-                    if enrichment_result.ueba:
-                        parts.append(f"UEBA: {len(enrichment_result.ueba)} anomaly(s) detected")
-                    if enrichment_result.geoip:
-                        parts.append(f"GeoIP: {enrichment_result.geoip.get('country', 'unknown')}")
-                    if enrichment_result.vuln:
-                        parts.append(f"Vulnerabilities: {len(enrichment_result.vuln)} CVE(s)")
-                    if enrichment_result.watchlist:
-                        parts.append(f"Watchlist: {len(enrichment_result.watchlist)} hit(s)")
-                    if parts:
-                        enrichment_context = "Enrichment:\n" + "\n".join(f"- {p}" for p in parts) + "\n"
+                parts = []
+                if ctx.ti_confidence > 0 or ctx.ti_is_known_bad:
+                    ti_parts = [f"confidence={ctx.ti_confidence:.2f}"]
+                    if ctx.ti_is_kev:
+                        ti_parts.append("KEV")
+                    if ctx.ti_is_known_bad:
+                        ti_parts.append("known bad")
+                    parts.append("Threat Intel: " + ", ".join(ti_parts))
+                if ctx.ueba_zscore > 0:
+                    parts.append(f"UEBA: z-score={ctx.ueba_zscore:.2f}")
+                if ctx.geo_tor_vpn or ctx.geo_bad_asn or ctx.geo_impossible_travel:
+                    geo_parts = []
+                    if ctx.geo_impossible_travel:
+                        geo_parts.append("impossible travel")
+                    if ctx.geo_tor_vpn:
+                        geo_parts.append("Tor/VPN")
+                    if ctx.geo_bad_asn:
+                        geo_parts.append("bad ASN")
+                    parts.append("GeoIP: " + ", ".join(geo_parts))
+                if ctx.vuln_matched:
+                    vuln_parts = [f"EPSS={ctx.vuln_epss:.3f}"]
+                    if ctx.vuln_is_kev:
+                        vuln_parts.append("KEV")
+                    parts.append("Vulnerabilities: " + ", ".join(vuln_parts))
+                if ctx.is_allowlisted or ctx.ti_is_known_bad:
+                    if ctx.is_allowlisted:
+                        parts.append("Watchlist: allowlisted")
+                    elif ctx.ti_is_known_bad:
+                        parts.append("Watchlist: blocklisted")
+                if parts:
+                    enrichment_context = "Enrichment:\n" + "\n".join("- " + p for p in parts) + "\n"
 
                 provider = await TieredRouter().get_provider(
                     alert=alert,
@@ -317,7 +327,7 @@ class TriageWorker:
                 if incident and settings.incident_risk_enabled:
                     try:
                         # Add current alert's risk score to incident cumulative risk
-                        incident_risk_delta = risk["score"]
+                        incident_risk_delta = score
                         incident.cumulative_risk_score = (incident.cumulative_risk_score or 0) + incident_risk_delta
                         await session.flush()
                         logger.info(

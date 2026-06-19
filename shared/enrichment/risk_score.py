@@ -179,3 +179,7 @@ def compute(ctx: EnrichmentContext) -> int:
     final = max(0, min(100, round(score)))
     ctx.breakdown = breakdown
     return final
+
+
+# Backward compatibility: origin/main code expects compute_risk_score
+compute_risk_score = compute
