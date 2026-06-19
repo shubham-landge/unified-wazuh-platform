@@ -13,6 +13,7 @@ from app.middleware.metering import UsageMeteringMiddleware
 from app.routers import (
     health,
     alerts,
+    alerts_ingest,
     auth,
     cases,
     vulnerabilities,
@@ -78,6 +79,7 @@ app.add_middleware(UsageMeteringMiddleware)
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(alerts.router)
+app.include_router(alerts_ingest.router)
 app.include_router(cases.router)
 app.include_router(vulnerabilities.router)
 app.include_router(assets.router)

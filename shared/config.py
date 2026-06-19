@@ -299,6 +299,11 @@ class Settings(BaseSettings):
     dlq_max_retries: int = 3
     dlq_poll_interval: int = 5
 
+    # ── ARQ Durable Queue ──
+    queue_backend: str = "legacy"  # "arq" or "legacy"; arq replaces DLQ+reaper
+    arq_max_tries: int = 3
+    arq_keep_result_seconds: int = 3600
+
     # ── Semantic result cache (Phase P0-5) ──
     triage_cache_enabled: bool = True
     triage_cache_ttl_seconds: int = 1800
@@ -352,6 +357,10 @@ class Settings(BaseSettings):
     triggers_webhooks: str = ""
     # Auto-approve actions from agents at or above this autonomy level.
     triggers_auto_approve_autonomy: str = "full"
+
+    # ── Webhook / Push Ingestion ──
+    # When False, POST /alerts/event returns 404 to prevent accidental exposure.
+    webhook_ingest_enabled: bool = False
 
     # ── Alert Enrichment Pipeline (S0 Orchestrator) ──
     # Timeout per individual enricher in seconds (fail-open).
