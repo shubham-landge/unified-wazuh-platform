@@ -18,6 +18,9 @@ from shared.connectors.llm_router import TieredRouter
 from shared import noise_reduction
 from shared import triage_cache
 from shared import triage_rag
+from shared.enrichment.pipeline import enrich_alert
+from shared.enrichment.risk_score import compute_risk_score
+from shared.enrichment.decision import decide
 
 logger = logging.getLogger(__name__)
 
@@ -132,12 +135,14 @@ class TriageWorker:
                     # Analyst explicitly asked for analysis: skip the noise gate
                     # entirely and honour the requested tier.
                     force_fast = force_fast_req
+                    incident = None
                 else:
                     # ── Noise-reduction pre-triage gate (keep/drop/downgrade) ──
                     # Runs before the LLM to protect the CPU triage budget.
                     decision = await noise_reduction.evaluate(
                         session, alert, str(alert.tenant_id) if alert.tenant_id else None
                     )
+                    incident = decision.incident
                     if not decision.should_triage:
                         await session.commit()  # persist incident attachment / counts
                         logger.info(
@@ -149,6 +154,42 @@ class TriageWorker:
                     if decision.action == noise_reduction.DOWNGRADE:
                         logger.info("Alert %s downgraded to fast tier: %s", alert_id, decision.reason)
                     force_fast = decision.force_fast_tier
+
+                # ── Pre-LLM enrichment, risk scoring, and decision (S0) ──
+                enrichment_result = await enrich_alert(session, alert, self.redis_client)
+                risk = compute_risk_score(alert, enrichment_result)
+                decision_result = decide(
+                    risk["score"], alert, enrichment_result, breakdown=risk.get("breakdown")
+                )
+                logger.info(
+                    "Enrichment decision for alert %s: score=%d level=L%d enforced=%s (%s)",
+                    alert_id,
+                    risk["score"],
+                    int(decision_result.level),
+                    decision_result.enforced,
+                    decision_result.reason,
+                )
+
+                # Build enrichment context for the LLM prompt
+                enrichment_context = ""
+                if enrichment_result.enriched:
+                    parts = []
+                    if enrichment_result.ti:
+                        parts.append(f"Threat Intel: {len(enrichment_result.ti)} IOC hit(s)")
+                    if enrichment_result.asset:
+                        parts.append(f"Asset: {enrichment_result.asset[0].get('name', 'unknown')} (criticality={enrichment_result.asset[0].get('criticality', 'N/A')})")
+                    if enrichment_result.user:
+                        parts.append(f"User: {enrichment_result.user[0].get('email', 'unknown')} (active={enrichment_result.user[0].get('is_active', 'N/A')})")
+                    if enrichment_result.ueba:
+                        parts.append(f"UEBA: {len(enrichment_result.ueba)} anomaly(s) detected")
+                    if enrichment_result.geoip:
+                        parts.append(f"GeoIP: {enrichment_result.geoip.get('country', 'unknown')}")
+                    if enrichment_result.vuln:
+                        parts.append(f"Vulnerabilities: {len(enrichment_result.vuln)} CVE(s)")
+                    if enrichment_result.watchlist:
+                        parts.append(f"Watchlist: {len(enrichment_result.watchlist)} hit(s)")
+                    if parts:
+                        enrichment_context = "Enrichment:\n" + "\n".join(f"- {p}" for p in parts) + "\n"
 
                 provider = await TieredRouter().get_provider(
                     alert=alert,
@@ -169,6 +210,7 @@ class TriageWorker:
                     f"User: {alert.user_name}\n"
                     f"Process: {alert.process_name}\n"
                     f"MITRE: {alert.mitre_tactic} / {alert.mitre_technique}\n"
+                    f"{enrichment_context}"
                 )
 
                 # ── Semantic result cache (skip LLM for near-duplicates) ──
@@ -270,6 +312,57 @@ class TriageWorker:
                         event_meta={"model": provider.name(), "confidence": confidence},
                     )
                     session.add(event)
+
+                # ── Cumulative incident risk tracking (S0) ──
+                if incident and settings.incident_risk_enabled:
+                    try:
+                        # Add current alert's risk score to incident cumulative risk
+                        incident_risk_delta = risk["score"]
+                        incident.cumulative_risk_score = (incident.cumulative_risk_score or 0) + incident_risk_delta
+                        await session.flush()
+                        logger.info(
+                            "Incident %s cumulative risk updated: +%d → %d",
+                            incident.id,
+                            incident_risk_delta,
+                            incident.cumulative_risk_score,
+                        )
+
+                        # Auto-case threshold check
+                        if incident.cumulative_risk_score >= settings.incident_auto_case_threshold:
+                            # Check if a case already exists for this incident's latest alert
+                            existing_case_result = await session.execute(
+                                select(Case).where(Case.alert_id == alert.id).limit(1)
+                            )
+                            if not existing_case_result.scalar_one_or_none():
+                                auto_case = Case(
+                                    alert_id=alert.id,
+                                    title=f"Auto-case: Incident {incident.id} (risk={incident.cumulative_risk_score})",
+                                    severity="high",
+                                    category="auto_case",
+                                    escalation_required=True,
+                                    risk_score=float(incident.cumulative_risk_score),
+                                )
+                                session.add(auto_case)
+                                await session.flush()
+                                auto_event = CaseEvent(
+                                    case_id=auto_case.id,
+                                    event_type="case_created",
+                                    description=f"Auto-case: cumulative incident risk {incident.cumulative_risk_score} exceeded threshold {settings.incident_auto_case_threshold}",
+                                    event_meta={
+                                        "incident_id": str(incident.id),
+                                        "cumulative_risk": incident.cumulative_risk_score,
+                                        "threshold": settings.incident_auto_case_threshold,
+                                    },
+                                )
+                                session.add(auto_event)
+                                logger.warning(
+                                    "Auto-case created for incident %s (cumulative risk=%d >= threshold=%.0f)",
+                                    incident.id,
+                                    incident.cumulative_risk_score,
+                                    settings.incident_auto_case_threshold,
+                                )
+                    except Exception as risk_err:
+                        logger.warning("Cumulative incident risk update failed for alert %s: %s", alert_id, risk_err)
 
                 await session.commit()
 

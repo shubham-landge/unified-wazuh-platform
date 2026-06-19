@@ -41,6 +41,7 @@ class AlertIncident(Base, NullableTenantMixin):
     stage_history: Mapped[list] = mapped_column(JSON, default=list)
     sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     first_enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cumulative_risk_score: Mapped[float] = mapped_column(Integer, default=0)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

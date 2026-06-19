@@ -350,6 +350,32 @@ class Settings(BaseSettings):
     # Auto-approve actions from agents at or above this autonomy level.
     triggers_auto_approve_autonomy: str = "full"
 
+    # ── Alert Enrichment Pipeline ──
+    # Timeout per individual enricher in seconds (fail-open).
+    enrichment_timeout_seconds: int = 10
+    # Risk-scoring additive weights (should sum to ~100 for intuitive 0-100 scale).
+    enrichment_risk_weight_ti: float = 25
+    enrichment_risk_weight_asset: float = 15
+    enrichment_risk_weight_user: float = 20
+    enrichment_risk_weight_ueba: float = 25
+    enrichment_risk_weight_rule_level: float = 15
+    # Decision mode: shadow=True logs L0-L4 but never enforces (safe rollout).
+    enrichment_decision_shadow_mode: bool = True
+    # Global kill switch — when True, enrichment + decision are disabled entirely.
+    enrichment_kill_switch: bool = False
+    # Per-enricher feature flags.
+    enricher_geoip_enabled: bool = False
+    enricher_vuln_correlate_enabled: bool = False
+    enricher_watchlists_enabled: bool = False
+    # ── Incident Risk & Auto-Case ──
+    # Cumulative incident risk: when an incident's total risk exceeds this
+    # threshold, auto-create a case (shadow mode still logs only).
+    incident_auto_case_threshold: float = 150.0
+    # Window (hours) for cumulative risk calculation.
+    incident_risk_window_hours: int = 24
+    # Enable cumulative incident risk tracking.
+    incident_risk_enabled: bool = True
+
 settings = Settings()
 
 

@@ -1,73 +1,21 @@
-"""Alert deduplication and correlation utilities."""
-import hashlib
-import logging
-from datetime import datetime, timedelta, timezone
+"""Alert deduplication and correlation utilities.
 
-from sqlalchemy import select
+This module now delegates to the entity-based incident stitching engine in
+`shared.correlation.stitch` and is kept only for backward-compatible imports.
+The old hash-based (rule_id, agent_id, source_ip) grouping has been retired.
+"""
+import logging
+import uuid as uuid_mod
+from datetime import datetime, timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.config import settings
+from shared.correlation.stitch import stitch_incident
 from shared.models.alert import Alert
 from shared.models.alert_dedup import AlertIncident
-from shared.config import settings
 
 logger = logging.getLogger(__name__)
-
-
-def make_group_key(rule_id: int | None, agent_id: str | None, source_ip: str | None) -> str:
-    """Create deterministic group key for alert correlation."""
-    parts = [str(rule_id or ""), str(agent_id or ""), str(source_ip or "")]
-    combined = "|".join(parts)
-    return hashlib.md5(combined.encode()).hexdigest()
-
-
-async def get_or_create_incident(
-    session: AsyncSession,
-    alert: Alert,
-    tenant_id: str | None,
-    correlation_window_minutes: int = 120,
-) -> AlertIncident:
-    """
-    Find or create an AlertIncident for this alert.
-    Groups by (rule_id, agent_id, source_ip) within a time window.
-    """
-    group_key = make_group_key(alert.rule_id, alert.agent_id, alert.source_ip)
-    window_start = datetime.now(timezone.utc) - timedelta(minutes=correlation_window_minutes)
-
-    # Look for an existing incident in the correlation window
-    result = await session.execute(
-        select(AlertIncident).where(
-            AlertIncident.group_key == group_key,
-            AlertIncident.tenant_id == tenant_id,
-            AlertIncident.last_alert_at >= window_start,
-            AlertIncident.status != "closed",
-        )
-    )
-    incident = result.scalar_one_or_none()
-
-    if incident:
-        # Update existing incident
-        incident.alert_count += 1
-        incident.last_alert_at = datetime.now(timezone.utc)
-        logger.debug("Alert correlated to incident %s (count=%d)", incident.id, incident.alert_count)
-        return incident
-
-    # Create new incident
-    incident = AlertIncident(
-        tenant_id=tenant_id,
-        group_key=group_key,
-        rule_id=alert.rule_id,
-        rule_description=alert.rule_description,
-        agent_id=alert.agent_id,
-        source_ip=alert.source_ip,
-        alert_count=1,
-        severity=_infer_severity(alert),
-        first_alert_at=datetime.now(timezone.utc),
-        last_alert_at=datetime.now(timezone.utc),
-        correlation_window_minutes=correlation_window_minutes,
-    )
-    session.add(incident)
-    logger.info("Created new incident %s for rule %s from %s", incident.id, alert.rule_id, alert.source_ip)
-    return incident
 
 
 def _infer_severity(alert: Alert) -> str:
@@ -82,6 +30,33 @@ def _infer_severity(alert: Alert) -> str:
     return "low"
 
 
+async def get_or_create_incident(
+    session: AsyncSession,
+    alert: Alert,
+    tenant_id: str | None,
+    correlation_window_minutes: int = 120,
+) -> AlertIncident:
+    """Find or create an entity-based AlertIncident for this alert."""
+    if not tenant_id:
+        return await _single_alert_incident(session, alert, tenant_id)
+
+    try:
+        tenant_uuid = uuid_mod.UUID(str(tenant_id))
+        incident = await stitch_incident(session, alert, tenant_uuid)
+        # Preserve fields the old API expected
+        incident.correlation_window_minutes = correlation_window_minutes
+        if not incident.severity:
+            incident.severity = _infer_severity(alert)
+        return incident
+    except Exception as exc:
+        logger.warning(
+            "stitch_incident failed for alert %s, falling back to single-alert: %s",
+            alert.id,
+            exc,
+        )
+        return await _single_alert_incident(session, alert, tenant_id)
+
+
 async def dedup_alert_before_triage(
     session: AsyncSession,
     alert: Alert,
@@ -91,26 +66,40 @@ async def dedup_alert_before_triage(
     Main entry point: deduplicate alert and return its incident group.
     Call this BEFORE sending alert to triage.
     """
-    if not settings.alert_dedup_enabled:
-        # If dedup disabled, create a single-alert incident
-        incident = AlertIncident(
-            tenant_id=tenant_id,
-            group_key=make_group_key(alert.rule_id, alert.agent_id, alert.source_ip),
-            rule_id=alert.rule_id,
-            rule_description=alert.rule_description,
-            agent_id=alert.agent_id,
-            source_ip=alert.source_ip,
-            alert_count=1,
-            severity=_infer_severity(alert),
-            first_alert_at=alert.alert_timestamp or datetime.now(timezone.utc),
-            last_alert_at=alert.alert_timestamp or datetime.now(timezone.utc),
-        )
-        session.add(incident)
-        return incident
+    if not settings.alert_dedup_enabled or not tenant_id:
+        return await _single_alert_incident(session, alert, tenant_id)
 
-    return await get_or_create_incident(
-        session,
-        alert,
-        tenant_id,
-        settings.alert_correlation_window_minutes,
+    try:
+        tenant_uuid = uuid_mod.UUID(str(tenant_id))
+        return await stitch_incident(session, alert, tenant_uuid)
+    except Exception as exc:
+        logger.warning(
+            "stitch_incident failed for alert %s, falling back: %s",
+            alert.id,
+            exc,
+        )
+        return await _single_alert_incident(session, alert, tenant_id)
+
+
+async def _single_alert_incident(
+    session: AsyncSession,
+    alert: Alert,
+    tenant_id: str | None,
+) -> AlertIncident:
+    """Create a standalone incident for a single alert (no entity stitching)."""
+    incident = AlertIncident(
+        tenant_id=tenant_id,
+        group_key=f"single:{alert.id}",
+        rule_id=alert.rule_id,
+        rule_description=alert.rule_description,
+        agent_id=alert.agent_id,
+        source_ip=alert.source_ip,
+        alert_count=1,
+        severity=_infer_severity(alert),
+        first_alert_at=alert.alert_timestamp or datetime.now(timezone.utc),
+        last_alert_at=alert.alert_timestamp or datetime.now(timezone.utc),
+        status="open",
     )
+    session.add(incident)
+    await session.flush()
+    return incident
