@@ -41,8 +41,9 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://ollama:11434"
     # Deep-investigation / long-context tier (escalation only on CPU-only deploys).
     # Full-investigation tier — 128K context, cybersecurity-specialized.
-    # NOTE: Requires manual GGUF import from HuggingFace — not on Ollama registry.
-    ollama_model: str = "Foundation-Sec-8B-Instruct"
+    # NOTE: Falls back to CyberCrew/notmythos-8b (2.0GB, 128K context, cybersecurity-specialized)
+    #       Foundation-Sec-8B-Instruct is not available on the Ollama registry.
+    ollama_model: str = "CyberCrew/notmythos-8b"
     # Fast / noise-gate tier — 3b instruct model, CPU-friendly default.
     ollama_fast_model: str = "qwen3:4b-instruct"
 
