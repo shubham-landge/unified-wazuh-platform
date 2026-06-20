@@ -1,10 +1,13 @@
-"""Tests for the shared enrichment package (risk_score, decision gate, auto_close).
+"""Tests for the shared enrichment package (risk_score, decision gate, auto_close,
+TI enricher, asset enricher, user enricher, UEBA history, and full pipeline).
 
-All tests are pure unit tests — no DB, no Redis, no network required.
+Pure unit tests for deterministic logic; async DB-dependant enrichers use mocked sessions.
 """
 from __future__ import annotations
 
 import pytest
+from unittest.mock import AsyncMock, MagicMock
+
 from shared.enrichment.risk_score import EnrichmentContext, compute
 from shared.enrichment.decision import decide, DecisionLevel
 from shared.enrichment.auto_close import should_auto_close
@@ -256,3 +259,433 @@ class TestPipelineIntegration:
         assert decision.level == DecisionLevel.L2_TRIAGE
         assert not decision.skip_llm
         assert not decision.fast_llm_only
+
+
+# ─── TI Enricher (shared/enrichment/ti.py) ──────────────────────────────────
+
+
+class TestTIEnricher:
+    async def test_no_source_ip_returns_false(self):
+        from shared.enrichment.ti import lookup
+        mock_session = AsyncMock()
+        is_bad, conf, is_kev = await lookup(mock_session, None, "tenant-1")
+        assert is_bad is False
+        assert conf == 0.0
+        assert is_kev is False
+
+    async def test_no_match_returns_false(self):
+        from shared.enrichment.ti import lookup
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = None
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        is_bad, conf, is_kev = await lookup(mock_session, "1.2.3.4", "tenant-1")
+        assert is_bad is False
+
+    async def test_known_bad_ioc_returns_true(self):
+        from shared.enrichment.ti import lookup
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = MagicMock(
+            threat_score=80.0, confidence=0.95, tags=["malware", "c2"]
+        )
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        is_bad, conf, is_kev = await lookup(mock_session, "10.0.0.1", "tenant-1")
+        assert is_bad is True
+        assert conf == 0.95
+        assert is_kev is False
+
+    async def test_kev_tag_detected(self):
+        from shared.enrichment.ti import lookup
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = MagicMock(
+            threat_score=90.0, confidence=0.99, tags=["kev", "ransomware"]
+        )
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        is_bad, conf, is_kev = await lookup(mock_session, "192.168.1.1", "tenant-1")
+        assert is_bad is True
+        assert is_kev is True
+
+    async def test_db_error_returns_false(self):
+        from shared.enrichment.ti import lookup
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=Exception("DB down"))
+
+        is_bad, conf, is_kev = await lookup(mock_session, "1.1.1.1", "tenant-1")
+        assert is_bad is False
+        assert conf == 0.0
+
+    async def test_is_ip_known_bad_convenience(self):
+        from shared.enrichment.ti import is_ip_known_bad
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = MagicMock(
+            threat_score=90.0, confidence=0.99, tags=[]
+        )
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        result = await is_ip_known_bad(mock_session, "10.0.0.1", "tenant-1")
+        assert result is True
+
+
+# ─── Asset Enricher (shared/enrichment/asset.py) ─────────────────────────────
+
+
+class TestAssetEnricher:
+    async def test_no_agent_id_returns_defaults(self):
+        from shared.enrichment.asset import get_asset_criticality
+        mock_session = AsyncMock()
+        crit, is_cj = await get_asset_criticality(mock_session, None, "tenant-1")
+        assert crit == 0
+        assert is_cj is False
+
+    async def test_asset_not_found_returns_defaults(self):
+        from shared.enrichment.asset import get_asset_criticality
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = None
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        crit, is_cj = await get_asset_criticality(mock_session, "agent-99", "tenant-1")
+        assert crit == 0
+        assert is_cj is False
+
+    async def test_normal_asset_returns_criticality(self):
+        from shared.enrichment.asset import get_asset_criticality
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = MagicMock(
+            criticality=7, labels={}
+        )
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        crit, is_cj = await get_asset_criticality(mock_session, "agent-01", "tenant-1")
+        assert crit == 7
+        assert is_cj is False
+
+    async def test_criticality_9_is_crown_jewel(self):
+        from shared.enrichment.asset import get_asset_criticality
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = MagicMock(
+            criticality=9, labels={}
+        )
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        crit, is_cj = await get_asset_criticality(mock_session, "agent-cj", "tenant-1")
+        assert crit == 9
+        assert is_cj is True
+
+    async def test_label_crown_jewel_override(self):
+        from shared.enrichment.asset import get_asset_criticality
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = MagicMock(
+            criticality=5, labels={"crown_jewel": True}
+        )
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        crit, is_cj = await get_asset_criticality(mock_session, "agent-cj2", "tenant-1")
+        assert crit == 5
+        assert is_cj is True
+
+    async def test_db_error_returns_defaults(self):
+        from shared.enrichment.asset import get_asset_criticality
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=Exception("DB down"))
+
+        crit, is_cj = await get_asset_criticality(mock_session, "agent-01", "tenant-1")
+        assert crit == 0
+        assert is_cj is False
+
+    async def test_get_asset_info_returns_metadata(self):
+        from shared.enrichment.asset import get_asset_info
+        mock_session = AsyncMock()
+        mock_asset = MagicMock()
+        mock_asset.agent_id = "agent-01"
+        mock_asset.agent_name = "web-server-1"
+        mock_asset.os_platform = "ubuntu"
+        mock_asset.os_version = "22.04"
+        mock_asset.criticality = 7
+        mock_asset.owner = "infra-team"
+        mock_asset.last_seen = None
+        mock_asset.groups = ["web", "prod"]
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_asset
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        info = await get_asset_info(mock_session, "agent-01", "tenant-1")
+        assert info is not None
+        assert info["agent_id"] == "agent-01"
+        assert info["criticality"] == 7
+
+
+# ─── User Enricher (shared/enrichment/user.py) ───────────────────────────────
+
+
+class TestUserEnricher:
+    """Tests for user risk factor determination."""
+
+    def test_privileged_root(self):
+        from shared.enrichment.user import _is_privileged_username
+        assert _is_privileged_username("root") is True
+        assert _is_privileged_username("ROOT") is True
+        assert _is_privileged_username("admin") is True
+        assert _is_privileged_username("Administrator") is True
+
+    def test_privileged_domain_admin(self):
+        from shared.enrichment.user import _is_privileged_username
+        assert _is_privileged_username("DomainAdmin") is True
+        assert _is_privileged_username("superuser") is True
+
+    def test_not_privileged_normal_user(self):
+        from shared.enrichment.user import _is_privileged_username
+        assert _is_privileged_username("john_doe") is False
+        assert _is_privileged_username("alice") is False
+
+    def test_service_account_patterns(self):
+        from shared.enrichment.user import _is_service_account
+        assert _is_service_account("svc-backup") is True
+        assert _is_service_account("sql-service") is True
+        assert _is_service_account("NT AUTHORITY\\SYSTEM") is True
+        assert _is_service_account("NT AUTHORITY\\NETWORK SERVICE") is True
+        assert _is_service_account("scanner-prod") is True
+
+    def test_not_service_account(self):
+        from shared.enrichment.user import _is_service_account
+        assert _is_service_account("john_doe") is False
+        assert _is_service_account("admin") is False
+
+    async def test_no_user_name_returns_false(self):
+        from shared.enrichment.user import get_user_risk_factors
+        mock_session = AsyncMock()
+        is_priv, is_svc, is_dormant = await get_user_risk_factors(
+            mock_session, None, "tenant-1"
+        )
+        assert is_priv is False
+        assert is_svc is False
+        assert is_dormant is False
+
+    async def test_privileged_user_detected(self):
+        from shared.enrichment.user import get_user_risk_factors
+        mock_session = AsyncMock()
+        # Mock the dormant check query
+        mock_result = MagicMock()
+        mock_result.scalar.return_value = 0  # No historical alerts
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        is_priv, is_svc, is_dormant = await get_user_risk_factors(
+            mock_session, "Administrator", "tenant-1"
+        )
+        assert is_priv is True
+        assert is_svc is False
+        assert is_dormant is False
+
+    async def test_service_account_detected(self):
+        from shared.enrichment.user import get_user_risk_factors
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar.return_value = 0
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        is_priv, is_svc, is_dormant = await get_user_risk_factors(
+            mock_session, "svc-backup", "tenant-1"
+        )
+        assert is_priv is False
+        assert is_svc is True
+        assert is_dormant is False
+
+    async def test_dormant_reactivated_detected(self):
+        from shared.enrichment.user import get_user_risk_factors
+        mock_session = AsyncMock()
+
+        # First call returns count of old alerts, second returns count of recent
+        mock_result1 = MagicMock()
+        mock_result1.scalar.return_value = 5  # 5 old alerts
+        mock_result2 = MagicMock()
+        mock_result2.scalar.return_value = 1  # 1 recent alert (reactivated)
+
+        mock_session.execute = AsyncMock(side_effect=[mock_result1, mock_result2])
+
+        is_priv, is_svc, is_dormant = await get_user_risk_factors(
+            mock_session, "john_doe", "tenant-1"
+        )
+        assert is_priv is False
+        assert is_svc is False
+        assert is_dormant is True
+
+
+# ─── UEBA History Enricher (shared/enrichment/ueba_history.py) ────────────────
+
+
+class TestUebaHistory:
+    async def test_no_entities_returns_empty(self):
+        from shared.enrichment.ueba_history import get_entity_history
+        mock_session = AsyncMock()
+        anomalies, max_z = await get_entity_history(
+            mock_session, None, None, None, "tenant-1"
+        )
+        assert anomalies == []
+        assert max_z == 0.0
+
+    async def test_returns_anomalies_for_agent(self):
+        from shared.enrichment.ueba_history import get_entity_history
+        from shared.models.ueba import UebaAnomaly
+        from datetime import datetime, timezone
+
+        mock_session = AsyncMock()
+        now = datetime.now(timezone.utc)
+        mock_anomaly = UebaAnomaly(
+            subject_type="agent",
+            subject_id="agent-01",
+            anomaly_type="alert_count_anomaly",
+            score=3.5,
+            severity="high",
+            description="High alert count",
+            detected_at=now,
+        )
+        mock_anomaly.id = "anom-001"
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [mock_anomaly]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        anomalies, max_z = await get_entity_history(
+            mock_session, "agent-01", None, None, "tenant-1"
+        )
+        assert len(anomalies) == 1
+        assert anomalies[0]["z_score"] == 3.5
+        assert max_z == 3.5
+
+    async def test_max_zscore_across_entities(self):
+        from shared.enrichment.ueba_history import get_entity_history
+        from shared.models.ueba import UebaAnomaly
+        from datetime import datetime, timezone
+
+        mock_session = AsyncMock()
+        now = datetime.now(timezone.utc)
+
+        a1 = UebaAnomaly(subject_type="agent", subject_id="a1",
+                         anomaly_type="test", score=2.0, severity="medium",
+                         detected_at=now)
+        a1.id = "anom-001"
+        a2 = UebaAnomaly(subject_type="user", subject_id="u1",
+                         anomaly_type="test", score=5.0, severity="critical",
+                         detected_at=now)
+        a2.id = "anom-002"
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [a1, a2]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        anomalies, max_z = await get_entity_history(
+            mock_session, "agent-01", "user-01", None, "tenant-1"
+        )
+        assert len(anomalies) == 2
+        assert max_z == 5.0
+
+    async def test_db_error_returns_empty(self):
+        from shared.enrichment.ueba_history import get_entity_history
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=Exception("DB down"))
+
+        anomalies, max_z = await get_entity_history(
+            mock_session, "agent-01", None, None, "tenant-1"
+        )
+        assert anomalies == []
+        assert max_z == 0.0
+
+    async def test_count_anomalies_returns_count(self):
+        from shared.enrichment.ueba_history import count_anomalies
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar.return_value = 3
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        count = await count_anomalies(mock_session, "agent-01", None, None, "tenant-1")
+        assert count == 3
+
+
+# ─── Full Pipeline with All Enrichers ────────────────────────────────────────
+
+
+class TestFullPipelineWireup:
+    """Verify that the pipeline correctly wires all enricher modules."""
+
+    def test_pipeline_imports_all_modules(self):
+        """All enricher modules are importable."""
+        from shared.enrichment import ti, asset, user, ueba_history
+        from shared.enrichment import geoip, vuln_correlate, watchlists
+        from shared.enrichment import risk_score, decision, auto_close
+        from shared.enrichment.pipeline import run, enrich_alert
+
+        assert callable(run)
+        assert callable(enrich_alert)
+
+    def test_pipeline_exports_match_origin(self):
+        """enrich_alert is the same callable as run for backward compat."""
+        from shared.enrichment.pipeline import run, enrich_alert
+        assert enrich_alert is run
+
+    async def test_pipeline_allowlist_skips_io(self):
+        """When allowlisted, pipeline returns immediately without I/O."""
+        from shared.enrichment.pipeline import run
+        from shared.enrichment.watchlists import WatchlistCache
+
+        mock_session = AsyncMock()
+        mock_redis = MagicMock()
+
+        # Configure watchlist to flag as allowlisted
+        mock_wl = MagicMock(spec=WatchlistCache)
+        mock_wl.is_allowlisted.return_value = True
+        mock_wl.is_blocklisted.return_value = (False, 0.0)
+        mock_wl.is_crown_jewel.return_value = False
+
+        # Minimal alert-like object
+        alert = MagicMock()
+        alert.rule_level = 10
+        alert.source_ip = "10.0.0.1"
+        alert.user_name = "admin"
+        alert.agent_id = "agent-01"
+        alert.mitre_technique = ""
+
+        ctx = await run(alert, "tenant-1", mock_session, redis_client=mock_redis,
+                        watchlist_cache=mock_wl)
+        assert ctx.is_allowlisted is True
+        assert ctx.rule_level == 10
+
+    async def test_pipeline_with_all_enrichers_populates_context(self):
+        """All enrichers run and populate fields without crashing."""
+        from shared.enrichment.pipeline import run
+        from shared.enrichment.watchlists import WatchlistCache
+
+        mock_session = AsyncMock()
+        mock_redis = MagicMock()
+
+        mock_wl = MagicMock(spec=WatchlistCache)
+        mock_wl.is_allowlisted.return_value = False
+        mock_wl.is_blocklisted.return_value = (False, 0.0)
+        mock_wl.is_crown_jewel.return_value = False
+
+        alert = MagicMock()
+        alert.rule_level = 10
+        alert.source_ip = "203.0.113.1"
+        alert.user_name = "jdoe"
+        alert.agent_id = "agent-01"
+        alert.mitre_technique = "T1486"
+        alert.rule_description = "Suspicious activity"
+        alert.rule_groups = "web,attack"
+        alert.rule_cve = None
+
+        # Each enricher will either fail-open (no actual DB data) or return defaults
+        ctx = await run(alert, "tenant-1", mock_session, redis_client=mock_redis,
+                        watchlist_cache=mock_wl)
+        assert ctx.rule_level == 10
+        assert ctx.mitre_high_impact is True  # T1486 is ransomware
+        # Not allowlisted
+        assert ctx.is_allowlisted is False

@@ -53,6 +53,12 @@ class EnrichmentContext:
     is_confirmed_fp: bool = False       # analyst marked as FP in feedback
     is_benign_noise: bool = False       # matches known benign pattern
 
+    # Raw enrichment results (lists of dicts for EvidencePack aggregation)
+    ti: list[dict] = field(default_factory=list)       # TI IOC lookup results
+    asset: list[dict] = field(default_factory=list)     # asset criticality results
+    user: list[dict] = field(default_factory=list)      # user risk factor results
+    ueba: list[dict] = field(default_factory=list)      # UEBA anomaly results
+
     # Score breakdown (populated by compute())
     breakdown: dict = field(default_factory=dict)
 

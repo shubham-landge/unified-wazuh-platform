@@ -19,14 +19,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.enrichment.risk_score import EnrichmentContext
 from shared.enrichment import geoip, vuln_correlate, watchlists
+from shared.enrichment import ti as ti_enricher
+from shared.enrichment import asset as asset_enricher
+from shared.enrichment import user as user_enricher
+from shared.enrichment import ueba_history as ueba_hist
 
 logger = logging.getLogger(__name__)
 
 # Per-enricher timeout in seconds
 _GEO_TIMEOUT = 0.5
-_VULN_TIMEOUT = 2.0
 _TI_TIMEOUT = 2.0
+_ASSET_TIMEOUT = 1.0
+_USER_TIMEOUT = 1.0
+_VULN_TIMEOUT = 2.0
 _UEBA_TIMEOUT = 2.0
+_UEBA_HIST_TIMEOUT = 2.0
 
 # High-impact MITRE techniques (ransomware, lateral movement, exfil)
 _HIGH_IMPACT_TECHNIQUES = frozenset([
@@ -56,20 +63,76 @@ async def _run_geo(ctx: EnrichmentContext, source_ip: Optional[str], user_key: s
 
 
 async def _run_ti(ctx: EnrichmentContext, alert, tenant_id: str, session: AsyncSession) -> None:
-    """Populate TI fields from shared TI lookups."""
+    """Populate TI fields using shared/enrichment/ti.py."""
     try:
-        from shared.connectors.ti_connector import lookup_ioc  # type: ignore
         source_ip = getattr(alert, "source_ip", None)
         if source_ip:
-            hit = await lookup_ioc(session, source_ip, str(tenant_id))
-            if hit:
-                ctx.ti_confidence = float(hit.get("confidence", 0.0))
-                ctx.ti_is_kev = hit.get("is_kev", False)
-                ctx.ti_is_known_bad = hit.get("is_known_bad", ctx.ti_confidence >= 0.9)
-    except ImportError:
-        pass
+            is_known_bad, confidence, is_kev = await ti_enricher.lookup(
+                session, source_ip, str(tenant_id)
+            )
+            if is_known_bad:
+                ctx.ti_is_known_bad = True
+                ctx.ti_confidence = max(ctx.ti_confidence, confidence)
+            elif confidence > 0:
+                ctx.ti_confidence = max(ctx.ti_confidence, confidence)
+            if is_kev:
+                ctx.ti_is_kev = True
+            # Populate raw result for EvidencePack aggregation
+            ctx.ti.append({
+                "ioc": source_ip,
+                "is_known_bad": is_known_bad,
+                "confidence": confidence,
+                "is_kev": is_kev,
+            })
     except Exception as exc:
         logger.debug("TI enricher error: %s", exc)
+
+
+async def _run_asset(ctx: EnrichmentContext, alert, tenant_id: str, session: AsyncSession) -> None:
+    """Populate asset criticality from shared/enrichment/asset.py."""
+    try:
+        agent_id = getattr(alert, "agent_id", None)
+        if agent_id:
+            criticality, is_cj = await asset_enricher.get_asset_criticality(
+                session, agent_id, str(tenant_id)
+            )
+            if criticality > 0:
+                ctx.asset_criticality = criticality
+            if is_cj:
+                ctx.is_crown_jewel = True
+            # Populate raw result for EvidencePack aggregation
+            ctx.asset.append({
+                "agent_id": agent_id,
+                "criticality": criticality,
+                "is_crown_jewel": is_cj,
+            })
+    except Exception as exc:
+        logger.debug("Asset enricher error: %s", exc)
+
+
+async def _run_user(ctx: EnrichmentContext, alert, tenant_id: str, session: AsyncSession) -> None:
+    """Populate user risk factors from shared/enrichment/user.py."""
+    try:
+        user_name = getattr(alert, "user_name", None)
+        if user_name:
+            is_priv, is_svc_acct, is_dormant = await user_enricher.get_user_risk_factors(
+                session, user_name, str(tenant_id)
+            )
+            if is_priv:
+                ctx.user_is_privileged = True
+            if is_svc_acct:
+                ctx.user_is_service_acct_interactive = True
+            if is_dormant:
+                ctx.user_is_dormant_reactivated = True
+            # Populate raw result for EvidencePack aggregation
+            ctx.user.append({
+                "user_name": user_name,
+                "is_privileged": is_priv,
+                "is_service_acct_interactive": is_svc_acct,
+                "is_dormant_reactivated": is_dormant,
+            })
+    except Exception as exc:
+        logger.debug("User enricher error: %s", exc)
 
 
 async def _run_ueba(ctx: EnrichmentContext, alert, tenant_id: str, session: AsyncSession) -> None:
@@ -78,9 +141,42 @@ async def _run_ueba(ctx: EnrichmentContext, alert, tenant_id: str, session: Asyn
         from shared.ueba.detector import process_alert  # type: ignore
         anomalies = await process_alert(session, alert, str(tenant_id))
         if anomalies:
-            ctx.ueba_zscore = max(float(getattr(a, "z_score", 0.0)) for a in anomalies)
+            ctx.ueba_zscore = max(float(getattr(a, "score", 0.0)) for a in anomalies)
+            # Populate raw results for EvidencePack aggregation
+            for a in anomalies:
+                ctx.ueba.append({
+                    "subject_type": getattr(a, "subject_type", "unknown"),
+                    "subject_id": getattr(a, "subject_id", "unknown"),
+                    "z_score": float(getattr(a, "score", 0.0)),
+                    "anomaly_type": getattr(a, "anomaly_type", None),
+                })
     except Exception as exc:
         logger.debug("UEBA enricher error: %s", exc)
+
+
+async def _run_ueba_history(ctx: EnrichmentContext, alert, tenant_id: str, session: AsyncSession) -> None:
+    """Populate UEBA historical context from shared/enrichment/ueba_history.py."""
+    try:
+        agent_id = getattr(alert, "agent_id", None)
+        user_name = getattr(alert, "user_name", None)
+        source_ip = getattr(alert, "source_ip", None)
+
+        anomalies, max_hist_zscore = await ueba_hist.get_entity_history(
+            session, agent_id, user_name, source_ip, str(tenant_id)
+        )
+        # Boost the UEBA z-score if history shows highly anomalous behavior
+        if max_hist_zscore > ctx.ueba_zscore:
+            ctx.ueba_zscore = max(ctx.ueba_zscore, max_hist_zscore * 0.8)
+        # Populate raw results for EvidencePack aggregation
+        for a in anomalies:
+            ctx.ueba.append({
+                "subject_type": a.get("subject_type", "unknown"),
+                "subject_id": a.get("subject_id", "unknown"),
+                "z_score": a.get("z_score", 0.0),
+                "anomaly_type": a.get("anomaly_type", None),
+            })
+    except Exception as exc:
+        logger.debug("UEBA history enricher error: %s", exc)
 
 
 async def _run_vuln(ctx: EnrichmentContext, alert, session: AsyncSession) -> None:
@@ -138,12 +234,15 @@ async def run(
 
     user_key = user_name or source_ip or agent_id
 
-    # Fan-out with timeouts
+    # Fan-out with timeouts — all enrichers run in parallel
     await asyncio.gather(
         asyncio.wait_for(_run_geo(ctx, source_ip, user_key, redis_client), timeout=_GEO_TIMEOUT),
         asyncio.wait_for(_run_ti(ctx, alert, tenant_str, session), timeout=_TI_TIMEOUT),
-        asyncio.wait_for(_run_ueba(ctx, alert, tenant_str, session), timeout=_UEBA_TIMEOUT),
+        asyncio.wait_for(_run_asset(ctx, alert, tenant_str, session), timeout=_ASSET_TIMEOUT),
+        asyncio.wait_for(_run_user(ctx, alert, tenant_str, session), timeout=_USER_TIMEOUT),
         asyncio.wait_for(_run_vuln(ctx, alert, session), timeout=_VULN_TIMEOUT),
+        asyncio.wait_for(_run_ueba(ctx, alert, tenant_str, session), timeout=_UEBA_TIMEOUT),
+        asyncio.wait_for(_run_ueba_history(ctx, alert, tenant_str, session), timeout=_UEBA_HIST_TIMEOUT),
         return_exceptions=True,  # each timeout/error is silenced
     )
 
