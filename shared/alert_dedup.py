@@ -54,6 +54,7 @@ async def get_or_create_incident(
             alert.id,
             exc,
         )
+        await session.rollback()
         return await _single_alert_incident(session, alert, tenant_id)
 
 
@@ -78,6 +79,7 @@ async def dedup_alert_before_triage(
             alert.id,
             exc,
         )
+        await session.rollback()
         return await _single_alert_incident(session, alert, tenant_id)
 
 
