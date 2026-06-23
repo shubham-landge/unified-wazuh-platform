@@ -13,6 +13,7 @@ from shared.models.ai_triage_result import AiTriageResult
 from shared.models.case import Case
 from shared.models.case_event import CaseEvent
 from shared.models.case_investigation_step import CaseInvestigationStep
+from shared.connectors.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 from shared.connectors.llm_provider import get_provider
 from shared.connectors.llm_router import TieredRouter
 from shared import noise_reduction
@@ -24,6 +25,8 @@ from shared.enrichment.decision import decide, DecisionLevel
 from shared.enrichment.auto_close import should_auto_close, execute_auto_close
 from shared.enrichment.semantic_cache import SemanticCache
 from shared.enrichment.decision_fusion import fuse_verdict
+from shared.models.triage import validate_triage_output
+from shared.metrics import record_triage_success, record_triage_fail, record_triage_latency
 
 logger = logging.getLogger(__name__)
 
@@ -57,17 +60,38 @@ class TriageWorker:
         self.session_factory = async_sessionmaker(self.engine, expire_on_commit=False)
         self.redis_client: redis.Redis | None = None
         self._shutdown = False
+        self._concurrency = max(1, getattr(settings, 'worker_triage_concurrency', 1))
+        # Circuit breaker for the background reaper: protect against cascading
+        # DB write failures by opening after N consecutive _reap_stale_pending
+        # failures and skipping reaper cycles until the recovery window expires.
+        self._reaper_breaker = CircuitBreaker(
+            name="triage_reaper",
+            failure_threshold=getattr(settings, "reaper_cb_failure_threshold", 3),
+            recovery_timeout=getattr(settings, "reaper_cb_recovery_timeout", 300.0),
+        )
+
+    @staticmethod
+    def _is_shadow_mode() -> bool:
+        """Return True when automation_mode is 'shadow' → log decisions, no action."""
+        return str(getattr(settings, 'automation_mode', 'shadow')).lower() == 'shadow'
 
     async def start(self):
         self.redis_client = await redis.from_url(settings.redis_url, decode_responses=True)
-        logger.info("Triage worker started. Waiting for alerts...")
+        logger.info(
+            "Triage worker started with %d consumer(s). Waiting for alerts...",
+            self._concurrency,
+        )
 
+        # Launch N parallel queue-loop consumers + 1 reaper loop.
+        consumers = [
+            self._run_queue_loop(idx) for idx in range(self._concurrency)
+        ]
         await asyncio.gather(
-            self._run_queue_loop(),
+            *consumers,
             self._run_reaper_loop(),
         )
 
-    async def _run_queue_loop(self):
+    async def _run_queue_loop(self, consumer_idx: int = 0):
         while not self._shutdown:
             try:
                 item = await self.redis_client.brpop("triage_queue", timeout=5)
@@ -77,21 +101,47 @@ class TriageWorker:
             except TypeError:
                 continue
             except Exception as e:
-                logger.error("Triage worker error: %s", e, exc_info=True)
+                logger.error(
+                    "Triage worker[%d] error: %s", consumer_idx, e, exc_info=True
+                )
                 await asyncio.sleep(1)
 
     async def _run_reaper_loop(self):
-        """Periodically fail triage rows stuck in 'pending' too long."""
+        """Periodically fail triage rows stuck in 'pending' too long.
+
+        Runs independently of the dashboard poll — no API call required.
+        """
         while not self._shutdown:
             try:
                 await asyncio.sleep(60)
                 await self._reap_stale_pending()
             except asyncio.CancelledError:
                 break
+            except CircuitBreakerOpenError:
+                # Circuit is open; the reaper is backing off. Log at debug level
+                # to avoid noise — _reap_stale_pending already logged the skip.
+                logger.debug("Reaper circuit open; back-off cycle")
             except Exception as exc:
                 logger.error("Reaper loop error: %s", exc)
 
     async def _reap_stale_pending(self):
+        """Fail triage rows stuck in 'pending' too long.
+
+        Wraps the DB write in a CircuitBreaker so that persistent DB failures
+        open the circuit and skip reaper cycles until the recovery window expires.
+        """
+        try:
+            await self._reaper_breaker.call(self._execute_reaper_update)
+        except CircuitBreakerOpenError:
+            logger.debug("Reaper circuit open; skipping this cycle")
+            return
+
+    async def _execute_reaper_update(self):
+        """Perform the DB update to fail stale pending triage rows.
+
+        Extracted as a callable target for the CircuitBreaker so that only
+        DB write failures are counted, not transient errors in the reaper loop.
+        """
         from datetime import datetime, timedelta, timezone
         from sqlalchemy import update
         cutoff = datetime.now(timezone.utc) - timedelta(seconds=_PENDING_REAPER_TIMEOUT_SECONDS)
@@ -177,12 +227,18 @@ class TriageWorker:
                 if not skip_gate:
                     if decision_result.level == DecisionLevel.L0_SUPPRESS:
                         logger.info("L0 suppress: alert %s", alert_id)
-                        alert.status = "suppressed"
-                        await session.commit()
+                        if self._is_shadow_mode():
+                            logger.info(
+                                "[SHADOW] would suppress alert %s: %s (score=%d)",
+                                alert_id, decision_result.reason, score,
+                            )
+                        else:
+                            alert.status = "suppressed"
+                            await session.commit()
                         return
 
                     if decision_result.level == DecisionLevel.L1_AUTO_CLOSE:
-                        eligible, reason = should_auto_close(ctx, score)
+                        eligible, reason = should_auto_close(ctx, score, alert.rule_level)
                         if eligible and settings.auto_close_enabled:
                             await execute_auto_close(
                                 session, str(alert_id), str(alert.tenant_id),
@@ -265,6 +321,7 @@ class TriageWorker:
                         tenant_id=tenant_id,
                     )
                     alert_features = {
+                        "rule_id": str(alert.rule_id) if alert.rule_id else "",
                         "rule_description": alert.rule_description or "",
                         "source_ip": alert.source_ip or "",
                         "mitre_technique": alert.mitre_technique or "",
@@ -307,12 +364,40 @@ class TriageWorker:
 
                 # ── L3/L4 deterministic override: verdict pre-determined, LLM for narrative only ──
                 if l3_l4_deterministic:
-                    result_data["severity"] = decision_result.auto_severity
-                    result_data["category"] = decision_result.auto_verdict
-                    result_data["escalation_required"] = True
-                    result_data["confidence"] = max(result_data.get("confidence", 0.7), 0.90)
+                    if self._is_shadow_mode():
+                        logger.info(
+                            "[SHADOW] L3/L4 deterministic override suppressed for alert %s: "
+                            "would set verdict=%s severity=%s (score=%d)",
+                            alert_id, decision_result.auto_verdict,
+                            decision_result.auto_severity, score,
+                        )
+                        # In shadow mode, let the LLM determine the verdict
+                        # naturally; log but do not override.
+                    else:
+                        result_data["severity"] = decision_result.auto_severity
+                        result_data["category"] = decision_result.auto_verdict
+                        result_data["escalation_required"] = True
+                        result_data["confidence"] = max(result_data.get("confidence", 0.7), 0.90)
+
+                # ── Output validation gate ──
+                # Validate the fully-processed LLM result (fusion + overrides
+                # applied) against the TriageResult schema.  Follows the
+                # noise-gate pattern: try validate, on failure log and continue
+                # with degraded-but-usable data — never drop the alert.
+
+                result_data = validate_triage_output(result_data)
+                if "_validation_error" in result_data:
+                    val_error = result_data.pop("_validation_error")
+                    logger.warning(
+                        "LLM output validation degraded for alert %s: %s",
+                        alert_id, val_error,
+                    )
+                    # Surface the validation error in the triage row's
+                    # error_message so it's visible in the dashboard.
+                    result_data["error"] = result_data.get("error") or val_error
 
                 succeeded = result_data.get("success", True) is not False
+                latency_ms = result_data.get("latency_ms")
                 fields = dict(
                     model_name=provider.name(),
                     prompt_text=user_prompt,
@@ -379,6 +464,7 @@ class TriageWorker:
 
                         case = Case(
                             alert_id=alert.id,
+                            incident_id=incident.id if incident else None,
                             title=result_data.get("summary", alert.rule_description or "Alert"),
                             severity=result_data.get("severity", "medium"),
                             category=result_data.get("category", "unknown"),
@@ -427,37 +513,60 @@ class TriageWorker:
                                 select(Case).where(Case.alert_id == alert.id).limit(1)
                             )
                             if not existing_case_result.scalar_one_or_none():
-                                auto_case = Case(
-                                    alert_id=alert.id,
-                                    title=f"Auto-case: Incident {incident.id} (risk={incident.cumulative_risk_score})",
-                                    severity="high",
-                                    category="auto_case",
-                                    escalation_required=True,
-                                    risk_score=float(incident.cumulative_risk_score),
-                                )
-                                session.add(auto_case)
-                                await session.flush()
-                                auto_event = CaseEvent(
-                                    case_id=auto_case.id,
-                                    event_type="case_created",
-                                    description=f"Auto-case: cumulative incident risk {incident.cumulative_risk_score} exceeded threshold {settings.incident_auto_case_threshold}",
-                                    event_meta={
-                                        "incident_id": str(incident.id),
-                                        "cumulative_risk": incident.cumulative_risk_score,
-                                        "threshold": settings.incident_auto_case_threshold,
-                                    },
-                                )
-                                session.add(auto_event)
-                                logger.warning(
-                                    "Auto-case created for incident %s (cumulative risk=%d >= threshold=%.0f)",
-                                    incident.id,
-                                    incident.cumulative_risk_score,
-                                    settings.incident_auto_case_threshold,
-                                )
+                                if self._is_shadow_mode():
+                                    logger.info(
+                                        "[SHADOW] would auto-create case for incident %s "
+                                        "(cumulative risk=%d >= threshold=%.0f)",
+                                        incident.id,
+                                        incident.cumulative_risk_score,
+                                        settings.incident_auto_case_threshold,
+                                    )
+                                else:
+                                    auto_case = Case(
+                                        alert_id=alert.id,
+                                        incident_id=incident.id,
+                                        title=f"Auto-case: Incident {incident.id} (risk={incident.cumulative_risk_score})",
+                                        severity="high",
+                                        category="auto_case",
+                                        escalation_required=True,
+                                        risk_score=float(incident.cumulative_risk_score),
+                                    )
+                                    session.add(auto_case)
+                                    await session.flush()
+                                    auto_event = CaseEvent(
+                                        case_id=auto_case.id,
+                                        event_type="case_created",
+                                        description=f"Auto-case: cumulative incident risk {incident.cumulative_risk_score} exceeded threshold {settings.incident_auto_case_threshold}",
+                                        event_meta={
+                                            "incident_id": str(incident.id),
+                                            "cumulative_risk": incident.cumulative_risk_score,
+                                            "threshold": settings.incident_auto_case_threshold,
+                                        },
+                                    )
+                                    session.add(auto_event)
+                                    logger.warning(
+                                        "Auto-case created for incident %s (cumulative risk=%d >= threshold=%.0f)",
+                                        incident.id,
+                                        incident.cumulative_risk_score,
+                                        settings.incident_auto_case_threshold,
+                                    )
                     except Exception as risk_err:
                         logger.warning("Cumulative incident risk update failed for alert %s: %s", alert_id, risk_err)
 
                 await session.commit()
+
+                # ── Prometheus metrics ──
+                # Record triage outcome and latency so the /metrics endpoint
+                # can expose them to Prometheus on the next scrape.
+                if self.redis_client:
+                    try:
+                        if succeeded:
+                            await record_triage_success(self.redis_client)
+                        else:
+                            await record_triage_fail(self.redis_client)
+                        await record_triage_latency(self.redis_client, latency_ms)
+                    except Exception:
+                        pass  # metrics are best-effort — never fail a triage for them
 
                 # Persist the triage verdict for future RAG retrieval and cache it
                 # for near-duplicate alerts.
@@ -521,6 +630,12 @@ class TriageWorker:
             logger.error("Failed to process triage for alert %s: %s", alert_id, e, exc_info=True)
             # Fail the manual pending row so the dashboard stops polling.
             await self._mark_manual_failed(triage_id, str(e))
+            # Record failure metric
+            if self.redis_client:
+                try:
+                    await record_triage_fail(self.redis_client)
+                except Exception:
+                    pass
             # Push to dead-letter queue so no job is silently lost
             if self.redis_client:
                 await self.redis_client.lpush(

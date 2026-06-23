@@ -101,21 +101,83 @@ class TestSimilarity:
 class TestFeaturesText:
     def test_concatenates_expected_fields(self):
         features = {
+            "rule_id": "5712",
             "rule_description": "Possible RDP brute force",
             "source_ip": "10.0.0.5",
             "mitre_technique": "T1110",
             "rule_groups": "windows,authentication_failure",
         }
         text = _features_text(features)
-        assert "Possible RDP brute force" in text
+        assert "5712" in text
+        assert "possible rdp brute force" in text
         assert "10.0.0.5" in text
-        assert "T1110" in text
+        assert "t1110" in text
         assert "windows" in text
 
     def test_missing_fields_omitted(self):
         features = {"rule_description": "test", "source_ip": "1.2.3.4"}
         text = _features_text(features)
         assert text == "test 1.2.3.4"
+
+    def test_normalization_lowercases(self):
+        """Feature values are lowercased so casing differences don't change the embedding."""
+        features_mixed = {
+            "rule_id": "5712",
+            "rule_description": "Possible RDP Brute Force",
+            "source_ip": "192.168.1.100",
+            "mitre_technique": "T1110",
+            "rule_groups": "Windows,Authentication_Failure",
+        }
+        features_lower = {
+            "rule_id": "5712",
+            "rule_description": "possible rdp brute force",
+            "source_ip": "192.168.1.100",
+            "mitre_technique": "t1110",
+            "rule_groups": "windows,authentication_failure",
+        }
+        text_mixed = _features_text(features_mixed)
+        text_lower = _features_text(features_lower)
+        assert text_mixed == text_lower
+        # Embeddings should be identical
+        emb_mixed = _compute_embedding(text_mixed)
+        emb_lower = _compute_embedding(text_lower)
+        assert emb_mixed == emb_lower
+
+    def test_normalization_strips_whitespace(self):
+        """Leading/trailing whitespace is stripped from feature values."""
+        features = {
+            "rule_id": "  5712  ",
+            "rule_description": "  RDP brute force  ",
+            "source_ip": "192.168.1.100",
+            "mitre_technique": "T1110  ",
+            "rule_groups": " windows,authentication_failure ",
+        }
+        text = _features_text(features)
+        assert "  5712" not in text
+        assert "  rdp" not in text
+        assert "5712" in text
+        assert "rdp brute force" in text
+
+    def test_different_rule_ids_produce_different_texts(self):
+        """Alerts with same description but different rule_ids should differ."""
+        features_a = {
+            "rule_id": "5712",
+            "rule_description": "Brute force detected",
+            "source_ip": "10.0.0.1",
+            "mitre_technique": "T1110",
+            "rule_groups": "authentication_failure",
+        }
+        features_b = dict(features_a)
+        features_b["rule_id"] = "5710"
+        text_a = _features_text(features_a)
+        text_b = _features_text(features_b)
+        # The texts should differ because rule_id differs
+        assert text_a != text_b
+        # But embeddings should still be reasonably similar since most tokens match
+        emb_a = _compute_embedding(text_a)
+        emb_b = _compute_embedding(text_b)
+        sim = _similarity(emb_a, emb_b)
+        assert sim > 0.5, f"Similar alerts with different rule_ids should have sim > 0.5, got {sim:.4f}"
 
 
 # ── SemanticCache with mocked Redis ──────────────────────────────────────────
@@ -175,6 +237,7 @@ def cache(redis_mock):
 @pytest.fixture
 def alert_rdp():
     return {
+        "rule_id": "5712",
         "rule_description": "Possible RDP brute force attack detected",
         "source_ip": "192.168.1.100",
         "mitre_technique": "T1110",
@@ -185,6 +248,7 @@ def alert_rdp():
 @pytest.fixture
 def alert_ssh():
     return {
+        "rule_id": "5710",
         "rule_description": "SSH authentication failure threshold exceeded",
         "source_ip": "10.0.0.50",
         "mitre_technique": "T1110",
@@ -314,12 +378,14 @@ class TestEmbeddingQuality:
     def test_similar_alerts_produce_similar_embeddings(self):
         """Two alerts with similar features should have high cosine similarity."""
         rdp1 = {
+            "rule_id": "5712",
             "rule_description": "Possible RDP brute force attack detected on host dc01",
             "source_ip": "192.168.1.100",
             "mitre_technique": "T1110",
             "rule_groups": "windows,authentication_failure,brute_force",
         }
         rdp2 = {
+            "rule_id": "5712",
             "rule_description": "RDP brute force attempt observed on host dc01",
             "source_ip": "192.168.1.100",
             "mitre_technique": "T1110",
@@ -335,12 +401,14 @@ class TestEmbeddingQuality:
     def test_different_alerts_produce_low_similarity(self):
         """Two alerts with very different features should have low similarity."""
         rdp = {
+            "rule_id": "5712",
             "rule_description": "RDP brute force detected",
             "source_ip": "192.168.1.100",
             "mitre_technique": "T1110",
             "rule_groups": "windows,authentication_failure",
         }
         web = {
+            "rule_id": "31151",
             "rule_description": "Web server returning 200 OK for health check",
             "source_ip": "10.0.0.1",
             "mitre_technique": "",

@@ -3,6 +3,10 @@
 Drains the `triage_dlq` Redis list, re-enqueues failed jobs with bounded
 retries and exponential backoff, and parks permanently failed jobs in
 `triage_dlq_parked` so nothing is silently lost.
+
+Uses CircuitBreaker to protect the re-enqueue path: if the triage_queue
+or Redis keep failing, the circuit opens and all new DLQ jobs are parked
+until the cooldown window expires.
 """
 
 import asyncio
@@ -13,6 +17,7 @@ from datetime import datetime, timezone
 import redis.asyncio as redis
 
 from shared.config import settings
+from shared.connectors.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +33,13 @@ class DLQWorker:
         self.max_retries = getattr(settings, "dlq_max_retries", 3)
         self.poll_interval = getattr(settings, "dlq_poll_interval", 5)
         self._shutdown = False
+        # Circuit breaker: open after N consecutive re-enqueue failures,
+        # half-open after recovery_timeout seconds, park all jobs while open.
+        self._breaker = CircuitBreaker(
+            name="triage_dlq_re_enqueue",
+            failure_threshold=getattr(settings, "dlq_cb_failure_threshold", 3),
+            recovery_timeout=getattr(settings, "dlq_cb_recovery_timeout", 60.0),
+        )
 
     async def start(self):
         self.redis_client = await redis.from_url(settings.redis_url, decode_responses=True)
@@ -79,6 +91,7 @@ class DLQWorker:
                 error,
             )
             await self._park(job)
+            await self._clear_retry_count(alert_id)
             return
 
         next_retry = retry_count + 1
@@ -98,7 +111,31 @@ class DLQWorker:
         # Re-enqueue without the DLQ fields so the triage worker treats it as
         # a normal job. Preserve any original fields like manual/force_fast.
         requeue = {k: v for k, v in job.items() if k not in ("error", "_error", "_dlq_at")}
-        await self.redis_client.lpush(TRIAGE_QUEUE, json.dumps(requeue))
+
+        # ── Circuit breaker gate (re-enqueue noise gate) ──
+        # Protect the re-enqueue path: if the triage_queue or Redis keep
+        # failing, the circuit opens and all new DLQ jobs are parked until
+        # the recovery timeout expires.
+        try:
+            await self._breaker.call(
+                self._push_to_triage_queue, json.dumps(requeue)
+            )
+        except CircuitBreakerOpenError:
+            logger.warning(
+                "DLQ circuit breaker open; parking alert %s", alert_id
+            )
+            await self._park(job)
+            return
+
+        # Successful re-enqueue → clear the retry counter so future DLQ
+        # cycles for this alert start fresh.
+        await self._clear_retry_count(alert_id)
+
+    async def _push_to_triage_queue(self, payload: str) -> None:
+        """Re-enqueue a cleaned job onto triage_queue (CircuitBreaker target)."""
+        if not self.redis_client:
+            raise RuntimeError("Redis client not connected")
+        await self.redis_client.lpush(TRIAGE_QUEUE, payload)
 
     async def _get_retry_count(self, alert_id: str) -> int:
         if not self.redis_client:
@@ -109,6 +146,11 @@ class DLQWorker:
     async def _set_retry_count(self, alert_id: str, count: int):
         if self.redis_client:
             await self.redis_client.hset(TRIAGE_DLQ_RETRIES, str(alert_id), count)
+
+    async def _clear_retry_count(self, alert_id: str):
+        """Remove retry count after successful re-enqueue or parking."""
+        if self.redis_client:
+            await self.redis_client.hdel(TRIAGE_DLQ_RETRIES, str(alert_id))
 
     async def _park(self, job: dict):
         if not self.redis_client:

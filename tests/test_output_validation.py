@@ -239,3 +239,349 @@ async def test_analyze_with_validation_respects_max_retries_zero():
     )
     assert result.verdict == "malicious"
     assert provider.analyze.await_count == 1
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TriageResult schema tests (shared.models.triage)
+# ══════════════════════════════════════════════════════════════════════════════
+
+from shared.models.triage import TriageResult, validate_triage_output
+
+
+# ── TriageResult model tests ──────────────────────────────────────────────────
+
+VALID_RESULT = {
+    "category": "malicious",
+    "severity": "high",
+    "confidence": 0.92,
+    "summary": "C2 beaconing detected via anomalous DNS queries",
+    "false_positive_likelihood": 0.05,
+    "mitre_mapping": ["T1071.001", "T1573"],
+    "investigation_steps": ["Check DNS logs for the queried domains.", "Correlate with EDR network events."],
+    "do_not_do": ["Block the IP without confirmation -- it may be a CDN edge."],
+    "escalation_required": True,
+    "recommended_soc_action": "Escalate to Tier 2 for beacon analysis.",
+    "success": True,
+}
+
+
+def test_triageresult_valid_parses_all_fields():
+    """Valid dict with all fields produces a correct TriageResult."""
+    result = TriageResult.model_validate(VALID_RESULT)
+    assert result.category == "malicious"
+    assert result.severity == "high"
+    assert result.confidence == 0.92
+    assert result.summary.startswith("C2 beaconing")
+    assert result.false_positive_likelihood == 0.05
+    assert result.mitre_mapping == ["T1071.001", "T1573"]
+    assert len(result.investigation_steps) == 2
+    assert len(result.do_not_do) == 1
+    assert result.escalation_required is True
+    assert result.recommended_soc_action is not None
+    assert result.success is True
+
+
+def test_triageresult_extra_fields_ignored():
+    """Extra fields outside the schema are silently dropped."""
+    raw = {**VALID_RESULT, "extra_key": "should be dropped", "another": 123}
+    result = TriageResult.model_validate(raw)
+    assert result.category == "malicious"
+    assert not hasattr(result, "extra_key")
+    assert not hasattr(result, "another")
+
+
+def test_triageresult_defaults_applied():
+    """Missing optional fields receive schema defaults."""
+    minimal = {"summary": "Just a summary"}
+    result = TriageResult.model_validate(minimal)
+    assert result.category == "unknown"
+    assert result.severity == "medium"
+    assert result.confidence == 0.5
+    assert result.false_positive_likelihood == 0.3
+    assert result.mitre_mapping == []
+    assert result.investigation_steps == []
+    assert result.do_not_do == []
+    assert result.escalation_required is False
+    assert result.recommended_soc_action is None
+    assert result.success is True
+    assert result.summary == "Just a summary"
+
+
+def test_triageresult_confidence_clamped():
+    """Confidence outside [0,1] is clamped to valid range."""
+    result = TriageResult.model_validate({"confidence": 1.5})
+    assert result.confidence == 1.0
+    result = TriageResult.model_validate({"confidence": -0.3})
+    assert result.confidence == 0.0
+    result = TriageResult.model_validate({"confidence": 1.0})
+    assert result.confidence == 1.0
+    result = TriageResult.model_validate({"confidence": 0.0})
+    assert result.confidence == 0.0
+
+
+def test_triageresult_fp_likelihood_clamped():
+    """False-positive likelihood outside [0,1] is clamped."""
+    result = TriageResult.model_validate({"false_positive_likelihood": 2.0})
+    assert result.false_positive_likelihood == 1.0
+    result = TriageResult.model_validate({"false_positive_likelihood": -0.5})
+    assert result.false_positive_likelihood == 0.0
+
+
+def test_triageresult_severity_normalised():
+    """Invalid severity values fall back to 'medium'."""
+    result = TriageResult.model_validate({"severity": "extreme"})
+    assert result.severity == "medium"
+    result = TriageResult.model_validate({"severity": ""})
+    assert result.severity == "medium"
+    result = TriageResult.model_validate({"severity": None})
+    assert result.severity == "medium"
+    for sv in ("critical", "high", "medium", "low"):
+        result = TriageResult.model_validate({"severity": sv})
+        assert result.severity == sv
+
+
+def test_triageresult_category_normalised():
+    """Empty category falls back to 'unknown'."""
+    result = TriageResult.model_validate({"category": ""})
+    assert result.category == "unknown"
+    result = TriageResult.model_validate({"category": None})
+    assert result.category == "unknown"
+    result = TriageResult.model_validate({})
+    assert result.category == "unknown"
+
+
+def test_triageresult_escalation_coerced():
+    """escalation_required coerces string representations to bool."""
+    assert TriageResult.model_validate({"escalation_required": "true"}).escalation_required is True
+    assert TriageResult.model_validate({"escalation_required": "True"}).escalation_required is True
+    assert TriageResult.model_validate({"escalation_required": "1"}).escalation_required is True
+    assert TriageResult.model_validate({"escalation_required": "false"}).escalation_required is False
+    assert TriageResult.model_validate({"escalation_required": "0"}).escalation_required is False
+    assert TriageResult.model_validate({"escalation_required": True}).escalation_required is True
+    assert TriageResult.model_validate({"escalation_required": 1}).escalation_required is True
+
+
+def test_triageresult_list_fields_coerced():
+    """Scalar values for list fields are wrapped in a single-element list."""
+    result = TriageResult.model_validate({"mitre_mapping": "T1059"})
+    assert result.mitre_mapping == ["T1059"]
+    result = TriageResult.model_validate({"investigation_steps": "Check logs"})
+    assert result.investigation_steps == ["Check logs"]
+    result = TriageResult.model_validate({"do_not_do": None})
+    assert result.do_not_do == []
+
+
+def test_triageresult_summary_coerced():
+    """Non-string summary values are coerced to string."""
+    result = TriageResult.model_validate({"summary": 12345})
+    assert result.summary == "12345"
+    result = TriageResult.model_validate({"summary": {"summary": "nested summary"}})
+    assert "nested summary" in result.summary
+
+
+def test_triageresult_optional_str_normalised():
+    """Optional string fields: None stays None, empty becomes None."""
+    result = TriageResult.model_validate({"recommended_soc_action": "  Do X  "})
+    assert result.recommended_soc_action == "Do X"
+    result = TriageResult.model_validate({"recommended_soc_action": ""})
+    assert result.recommended_soc_action is None
+    result = TriageResult.model_validate({"recommended_soc_action": None})
+    assert result.recommended_soc_action is None
+    result = TriageResult.model_validate({"error": "Something broke"})
+    assert result.error == "Something broke"
+    result = TriageResult.model_validate({"error": ""})
+    assert result.error is None
+
+
+def test_triageresult_model_dump_excludes_extra():
+    """model_dump() excludes fields not in the schema."""
+    raw = {**VALID_RESULT, "extra_field": "drop"}
+    result = TriageResult.model_validate(raw)
+    dumped = result.model_dump()
+    assert "extra_field" not in dumped
+    assert dumped["category"] == "malicious"
+
+
+def test_triageresult_fusion_fields():
+    """Fusion metadata fields are handled correctly."""
+    raw = {
+        "fusion_applied": True,
+        "fusion_overrides": ["TI overrode benign -> suspicious"],
+    }
+    result = TriageResult.model_validate(raw)
+    assert result.fusion_applied is True
+    assert result.fusion_overrides == ["TI overrode benign -> suspicious"]
+
+
+# ── validate_triage_output (noise-gate) tests ──────────────────────────────────
+
+def test_validate_triage_output_returns_validated_dict():
+    """Returns a validated dict with all defaults applied."""
+    result = validate_triage_output(VALID_RESULT)
+    assert isinstance(result, dict)
+    assert result["category"] == "malicious"
+    assert result["confidence"] == 0.92
+    assert result["summary"] == VALID_RESULT["summary"]
+    assert "fusion_applied" in result
+    assert "fusion_overrides" in result
+
+
+def test_validate_triage_output_never_raises():
+    """validate_triage_output returns a degraded dict on any failure, never raises."""
+    result = validate_triage_output({})
+    assert isinstance(result, dict)
+    assert "_validation_error" not in result
+    assert result["category"] == "unknown"
+    result = validate_triage_output(None)
+    assert isinstance(result, dict)
+    assert "_validation_error" in result
+    assert result["success"] is False
+    result = validate_triage_output("not a dict")
+    assert isinstance(result, dict)
+    assert "_validation_error" in result
+
+
+def test_validate_triage_output_marks_degraded():
+    """When validation fails, the output is marked degraded."""
+    # Non-dict input triggers degradation
+    result = validate_triage_output(["not", "a", "dict"])
+    assert isinstance(result, dict)
+    assert "_validation_error" in result
+    assert result["success"] is False
+    assert "expected dict" in result["_validation_error"]
+
+
+def test_validate_triage_output_preserves_cache_metadata():
+    """Internal cache metadata keys (_cached, _cache_source) survive validation."""
+    raw = {**VALID_RESULT, "_cached": True, "_cache_source": "semantic"}
+    result = validate_triage_output(raw)
+    assert result["_cached"] is True
+    assert result["_cache_source"] == "semantic"
+    assert result["category"] == "malicious"
+
+
+def test_validate_triage_output_default_minimal():
+    """Minimal dict with no fields gets all defaults -- passes validation."""
+    result = validate_triage_output({"summary": "OK"})
+    assert "_validation_error" not in result
+    assert result["category"] == "unknown"
+    assert result["severity"] == "medium"
+    assert result["confidence"] == 0.5
+    assert result["success"] is True
+
+
+def test_validate_triage_output_clamps_out_of_range():
+    """Out-of-range numeric values are clamped, not rejected."""
+    result = validate_triage_output({
+        "confidence": 5.0,
+        "false_positive_likelihood": -2.0,
+    })
+    assert "_validation_error" not in result
+    assert result["confidence"] == 1.0
+    assert result["false_positive_likelihood"] == 0.0
+    assert result["success"] is True
+
+
+# ── Integration: triage_worker validation gate contract ────────────────────────
+
+def test_validation_gate_accepts_l3_deterministic_output():
+    """L3/L4 deterministic override dicts pass validation without degradation."""
+    override_result = {
+        "severity": "critical",
+        "category": "malicious",
+        "escalation_required": True,
+        "confidence": 0.95,
+        "summary": "C2 beaconing confirmed",
+    }
+    result = validate_triage_output(override_result)
+    assert "_validation_error" not in result
+    assert result["severity"] == "critical"
+    assert result["category"] == "malicious"
+    assert result["escalation_required"] is True
+    assert result["confidence"] == 0.95
+
+
+def test_validation_gate_accepts_fusion_output():
+    """Post-fusion dicts with fusion_applied / fusion_overrides pass validation."""
+    fusion_result = {
+        **VALID_RESULT,
+        "severity": "suspicious",
+        "fusion_applied": True,
+        "fusion_overrides": [
+            "TI is_known_bad overrode benign -> suspicious, confidence >= 0.8"
+        ],
+    }
+    result = validate_triage_output(fusion_result)
+    assert "_validation_error" not in result
+    assert result["fusion_applied"] is True
+    assert len(result["fusion_overrides"]) == 1
+    assert result["severity"] == "suspicious"
+
+
+def test_validation_gate_accepts_shadow_mode_l3l4_output():
+    """Shadow mode L3/L4 (LLM verdict preserved, no override) passes validation."""
+    llm_natural = {
+        "category": "suspicious",
+        "severity": "medium",
+        "confidence": 0.65,
+        "summary": "Unusual login pattern, possible brute force",
+        "false_positive_likelihood": 0.3,
+        "mitre_mapping": ["T1110.001"],
+        "investigation_steps": ["Review auth logs for the source IP."],
+        "escalation_required": False,
+        "success": True,
+    }
+    result = validate_triage_output(llm_natural)
+    assert "_validation_error" not in result
+    assert result["category"] == "suspicious"
+    assert result["severity"] == "medium"
+
+
+def test_validation_gate_error_enrichment_contract():
+    """When degraded, result_data carries error for triage_worker to use."""
+    # Non-dict input triggers the degradation path
+    bad_result = validate_triage_output(42)
+    assert "_validation_error" in bad_result
+    assert bad_result["success"] is False
+    val_error = bad_result.pop("_validation_error")
+    bad_result["error"] = bad_result.get("error") or val_error
+    assert bad_result["error"] is not None
+    assert "expected dict" in bad_result["error"].lower() or "int" in bad_result["error"]
+
+
+def test_validation_gate_accepts_investigation_steps():
+    """LLMs returning 'investigation_steps' pass validation."""
+    result = validate_triage_output({
+        "investigation_steps": ["Check DNS", "Review EDR"],
+    })
+    assert "_validation_error" not in result
+    assert result["investigation_steps"] == ["Check DNS", "Review EDR"]
+
+
+def test_validation_gate_accepts_suggested_soc_action_alias():
+    """The 'suggested_soc_action' alias is accepted."""
+    result = validate_triage_output({
+        "suggested_soc_action": "Escalate to on-call analyst",
+    })
+    assert "_validation_error" not in result
+    assert result["suggested_soc_action"] == "Escalate to on-call analyst"
+
+
+# ── Roundtrip: TriageResult -> dict -> TriageResult ──────────────────────────
+
+def test_model_dump_roundtrips():
+    """model_dump() output passes validate_triage_output() without degradation."""
+    original = TriageResult.model_validate(VALID_RESULT)
+    dumped = original.model_dump()
+    result = validate_triage_output(dumped)
+    assert "_validation_error" not in result
+    assert result["category"] == original.category
+    assert result["confidence"] == original.confidence
+
+
+def test_validate_triage_output_idempotent():
+    """Calling validate_triage_output twice on the same data is safe."""
+    first = validate_triage_output(VALID_RESULT)
+    second = validate_triage_output(first)
+    assert "_validation_error" not in second
+    assert second["category"] == first["category"]

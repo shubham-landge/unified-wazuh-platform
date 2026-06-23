@@ -52,3 +52,6 @@ static/dist/
 **/credentials/
 *.pem
 *.key
+
+# Internal orchestration notes (not for the repo)
+.omo/

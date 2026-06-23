@@ -301,6 +301,12 @@ class Settings(BaseSettings):
     dlq_max_retries: int = 3
     dlq_poll_interval: int = 5
 
+    # ── Worker Concurrency ──
+    # Number of parallel triage consumers consuming from triage_queue.
+    # Each consumer runs an independent Redis BLPOP→process_message loop.
+    # Increase for higher throughput when DB/enrichment overlap is needed.
+    worker_triage_concurrency: int = 1
+
     # ── ARQ Durable Queue ──
     queue_backend: str = "legacy"  # "arq" or "legacy"; arq replaces DLQ+reaper
     arq_max_tries: int = 3

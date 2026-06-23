@@ -116,7 +116,10 @@ class TestL0Suppress:
             "services.worker.app.triage_worker.TieredRouter",
         ) as mock_router_cls, patch(
             "services.worker.app.triage_worker.triage_cache",
-        ) as mock_cache:
+        ) as mock_cache, patch(
+            "services.worker.app.triage_worker.settings",
+        ) as mock_settings:
+            mock_settings.automation_mode = "enforce"
             # Use manual=True to skip noise_reduction path
             await worker.process_message({"alert_id": str(alert.id), "manual": True})
 

@@ -10,7 +10,8 @@ Architecture:
   - Lookup: scan tenant keys, compute cosine similarity, return best match > threshold
   - Fail-open: if Redis unavailable, returns (False, {})
 
-Alert features for embedding: rule_description + source_ip + mitre_technique + rule_groups.
+Alert features for embedding: rule_id + rule_description + source_ip + mitre_technique + rule_groups.
+Each feature value is normalised (stripped, lowercased) for embedding consistency.
 """
 from __future__ import annotations
 
@@ -105,13 +106,15 @@ def _similarity(a: list[float], b: list[float]) -> float:
 def _features_text(alert_features: dict) -> str:
     """Concatenate alert features into a single text for embedding.
 
-    Fields used: rule_description, source_ip, mitre_technique, rule_groups.
+    Fields used: rule_id, rule_description, source_ip, mitre_technique, rule_groups.
+    Each value is normalised (stripped, lowercased) so that the embedding is
+    resilient to casing and whitespace differences.
     """
     parts = []
-    for key in ("rule_description", "source_ip", "mitre_technique", "rule_groups"):
+    for key in ("rule_id", "rule_description", "source_ip", "mitre_technique", "rule_groups"):
         val = alert_features.get(key, "")
         if val:
-            parts.append(str(val))
+            parts.append(str(val).strip().lower())
     return " ".join(parts)
 
 
@@ -203,7 +206,7 @@ class SemanticCache:
         """Check if a semantically similar alert was already triaged.
 
         Args:
-            alert_features: Dict with rule_description, source_ip,
+            alert_features: Dict with rule_id, rule_description, source_ip,
                             mitre_technique, rule_groups.
             threshold: Cosine similarity threshold (0.0–1.0). Default 0.92.
             max_scan: Maximum number of cached entries to scan.

@@ -42,22 +42,27 @@ class AutoCloseAudit:
 def should_auto_close(
     ctx: EnrichmentContext,
     score: int,
+    rule_level: int = 0,
     llm_verdict: Optional[str] = None,
     llm_confidence: Optional[float] = None,
 ) -> tuple[bool, str]:
     """Determine if alert qualifies for auto-close.
 
     Returns (eligible, reason). Requires POSITIVE evidence:
+    - Rule level < 10 (low-level alert)
     - Score < threshold
     - No TI hit
     - Normal UEBA (z < 2.5)
     - No vuln match
+    - No crown-jewel asset
     - LLM verdict benign (if available) with confidence >= threshold
     """
     auto_close_score_threshold = int(getattr(settings, 'auto_close_score_threshold', 25))
     auto_close_confidence = float(getattr(settings, 'auto_close_confidence_threshold', 0.85))
 
-    # Hard blockers
+    # Hard blockers — any single one disqualifies auto-close
+    if rule_level >= 10:
+        return False, f"rule level {rule_level} >= 10 (not low-level)"
     if ctx.ti_confidence > 0.1 or ctx.ti_is_known_bad:
         return False, "TI hit detected"
     if ctx.ueba_zscore >= 2.5:
@@ -77,7 +82,7 @@ def should_auto_close(
 
     if llm_verdict is None:
         # L1 path — deterministic only, no LLM
-        return True, f"deterministic benign (score={score}, no TI, normal UEBA)"
+        return True, f"deterministic benign (score={score}, level={rule_level}, no TI, normal UEBA)"
 
     return False, f"verdict '{llm_verdict}' not benign"
 
