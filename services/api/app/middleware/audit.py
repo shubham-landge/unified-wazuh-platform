@@ -6,7 +6,7 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from shared.models.audit_log import AuditLog
-from services.api.app.db import async_session
+from app.db import async_session
 
 logger = logging.getLogger(__name__)
 

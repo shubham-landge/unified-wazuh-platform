@@ -64,6 +64,7 @@ async def list_cases(
     status: str | None = Query(default=None),
     severity: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
     tenant_id: str | None = Depends(get_tenant_id),
@@ -76,7 +77,7 @@ async def list_cases(
         query = query.where(Case.status == status)
     if severity:
         query = query.where(Case.severity == severity)
-    query = query.limit(limit)
+    query = query.offset(offset).limit(limit)
     result = await db.execute(query)
     cases = result.scalars().all()
     return {

@@ -158,11 +158,18 @@ services:
     container_name: soc-mcp
     restart: unless-stopped
     depends_on:
-      - api
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
     env_file:
       - .env
     environment:
       API_BASE_URL: http://api:8000
+      DATABASE_URL: postgresql+asyncpg://soc_user:${DATABASE_PASSWORD:-soc_password}@postgres:5432/soc_platform
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/tools')"]
       interval: 30s

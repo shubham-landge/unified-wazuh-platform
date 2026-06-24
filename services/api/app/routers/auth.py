@@ -38,7 +38,10 @@ class RefreshRequest(BaseModel):
 @router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Authenticate user and return JWT access token."""
-    result = await db.execute(select(User).where(User.email == request.email))
+    identifier = request.email.strip()
+    result = await db.execute(
+        select(User).where((User.email == identifier) | (User.username == identifier))
+    )
     user = result.scalar_one_or_none()
 
     if not user or not user.password_hash or not verify_password(request.password, user.password_hash):

@@ -70,15 +70,18 @@ class AssetSyncWorker:
         Returns the number of upserted / skipped agents.
         """
         api = WazuhAPIConnector()
+        agents_list = []
         try:
-            raw_agents = await api.get_agents_summary()
+            offset = 0
+            page_size = 500
+            while True:
+                page = await api.get_agents(limit=page_size, offset=offset)
+                if not page:
+                    break
+                agents_list.extend(page)
+                offset += page_size
         finally:
             await api.close()
-
-        agents_list = raw_agents.get("data", raw_agents.get("agents", []))
-        if not isinstance(agents_list, list):
-            logger.warning("Unexpected agent payload shape: %s", type(agents_list))
-            return 0
 
         count = 0
         async with self.session_factory() as session:

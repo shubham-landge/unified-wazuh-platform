@@ -1447,7 +1447,7 @@ async def login_submit(request: Request):
 
     # Dev-only escape hatch for local testing without seeded API users.
     dev_allowed = os.getenv("DASHBOARD_DEV_ALLOW_HARDCODED", "").lower() in ("1", "true", "yes")
-    if dev_allowed and email == "admin@company.com" and password == "admin123":
+    if dev_allowed and email in ("admin", "admin@payless.com", "admin@company.com") and password == "Payless@2027":
         resp = RedirectResponse("/", status_code=303)
         session_payload = {
             "sub": email,

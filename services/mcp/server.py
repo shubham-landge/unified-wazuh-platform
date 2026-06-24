@@ -695,9 +695,10 @@ async def _get_syscollector(agent_id: str) -> dict[str, Any]:
 
 
 TOOL_DISPATCH = {
+    "list_alerts": list_alerts,  # tool wrapper (creates its own DB session)
     "query_indexer": _query_indexer,
     "get_agent_info": _get_agent_info,
-    "list_agents": _list_agents,
+    "list_agents": list_agents,  # tool wrapper
     "manager_status": _manager_status,
     "search_rules": _search_rules,
     "get_syscollector": _get_syscollector,
@@ -833,7 +834,12 @@ async def get_agent_info(agent_id: str):
 
 
 @server.tool()
-async def list_agents(limit: int = 50, offset: int = 0, status: str | None = None):
+async def list_agents(
+    limit: int = 50,
+    offset: int = 0,
+    status: str | None = None,
+    tenant_id: str | None = None,
+):
     try:
         return await _list_agents(status=status, limit=limit, offset=offset)
     except Exception as exc:

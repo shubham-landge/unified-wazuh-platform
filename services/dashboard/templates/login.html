@@ -44,7 +44,7 @@
     </script>
 </head>
 <body class="bg-deep text-primary min-h-screen flex items-center justify-center font-sans">
-    <div class="w-full max-w-md p-6" x-data="{ loading: false, email: '', password: '', error: '{{ error or '' }}' }">
+    <div class="w-full max-w-md p-6" x-data="{ loading: false, identifier: '', password: '', error: '{{ error or '' }}' }">
         <!-- Brand Header -->
         <div class="text-center mb-8">
             <div class="inline-flex p-3 bg-accent-blue/15 border border-accent-blue/30 rounded-xl mb-3 shadow-[0_0_15px_rgba(59,130,246,0.1)]">
@@ -69,8 +69,8 @@
             <!-- Login Form -->
             <form action="/login" method="POST" @submit="loading = true; error = ''" class="space-y-4">
                 <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Email Address</label>
-                    <input type="email" name="email" x-model="email" required placeholder="analyst@company.com" class="w-full bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2.5 rounded-lg text-primary outline-none transition-all">
+                    <label class="text-[10px] text-muted font-bold uppercase tracking-wider">Username or Email</label>
+                    <input type="text" name="email" x-model="identifier" required placeholder="admin or analyst@company.com" class="w-full bg-deep border border-white/5 focus:border-accent-blue/50 text-xs px-3 py-2.5 rounded-lg text-primary outline-none transition-all">
                 </div>
 
                 <div class="flex flex-col gap-1.5">
