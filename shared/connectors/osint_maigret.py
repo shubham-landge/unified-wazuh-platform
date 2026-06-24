@@ -12,9 +12,8 @@ class MaigretConnector:
     def __init__(self, maigret_url: str | None = None):
         self.maigret_url = (maigret_url or settings.osint_maigret_url).rstrip("/")
 
-    async def lookup_username(self, username: str) -> list[dict]:
+    async def _lookup(self, payload: dict) -> list[dict]:
         started = perf_counter()
-        payload = {"username": username}
         try:
             async with httpx.AsyncClient(timeout=settings.osint_sandbox_timeout) as client:
                 response = await client.post(f"{self.maigret_url}/lookup", json=payload)
@@ -22,8 +21,17 @@ class MaigretConnector:
             data = response.json()
             return self._normalize_results(data, started)
         except Exception as exc:
-            logger.error("Maigret lookup failed for %s: %s", username, exc)
+            logger.error("Maigret lookup failed for %s: %s", payload, exc)
             return []
+
+    async def lookup_username(self, username: str) -> list[dict]:
+        return await self._lookup({"username": username})
+
+    async def lookup_email(self, email: str) -> list[dict]:
+        return await self._lookup({"email": email})
+
+    async def lookup_domain(self, domain: str) -> list[dict]:
+        return await self._lookup({"domain": domain})
 
     async def health(self) -> dict:
         started = perf_counter()

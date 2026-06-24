@@ -497,30 +497,36 @@ async def mttr_statistics(
     days: int = Query(default=30, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
-    total_query = select(func.count(Case.id))
+    # Base filters
+    base_filter = [Case.created_at >= cutoff]
+    if tenant_id:
+        base_filter.append(Case.tenant_id == uuid.UUID(tenant_id))
+
+    total_query = select(func.count(Case.id)).where(*base_filter)
     total_result = await db.execute(total_query)
     total_cases = total_result.scalar()
 
-    open_query = select(func.count(Case.id)).where(Case.status == "open")
+    open_query = select(func.count(Case.id)).where(Case.status == "open", *base_filter)
     open_result = await db.execute(open_query)
     open_count = open_result.scalar()
 
-    in_progress_query = select(func.count(Case.id)).where(Case.status == "in_progress")
+    in_progress_query = select(func.count(Case.id)).where(Case.status == "in_progress", *base_filter)
     in_progress_result = await db.execute(in_progress_query)
     in_progress_count = in_progress_result.scalar()
 
-    resolved_query = select(func.count(Case.id)).where(Case.status == "resolved")
+    resolved_query = select(func.count(Case.id)).where(Case.status == "resolved", *base_filter)
     resolved_result = await db.execute(resolved_query)
     resolved_count = resolved_result.scalar()
 
-    closed_query = select(func.count(Case.id)).where(Case.status == "closed")
+    closed_query = select(func.count(Case.id)).where(Case.status == "closed", *base_filter)
     closed_result = await db.execute(closed_query)
     closed_count = closed_result.scalar()
 
-    fp_query = select(func.count(Case.id)).where(Case.status == "false_positive")
+    fp_query = select(func.count(Case.id)).where(Case.status == "false_positive", *base_filter)
     fp_result = await db.execute(fp_query)
     fp_count = fp_result.scalar()
 
@@ -529,6 +535,7 @@ async def mttr_statistics(
             Case.status.in_(["resolved", "closed"]),
             Case.closed_at.isnot(None),
             Case.created_at >= cutoff,
+            *([Case.tenant_id == uuid.UUID(tenant_id)] if tenant_id else []),
         )
     )
     resolved_rows = resolved_cases.all()
@@ -569,15 +576,19 @@ async def mttr_statistics(
 async def mitre_heatmap(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(validate_api_key),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
+    # Primary source: AI triage results
     result = await db.execute(select(AiTriageResult.mitre_mapping))
     rows = result.scalars().all()
 
     tactic_map = {}
+    has_triage_data = False
     for row in rows:
         mappings = row if isinstance(row, list) else []
         if not mappings:
             continue
+        has_triage_data = True
         for m in mappings:
             tactic = m.get("tactic", "Unknown")
             technique = m.get("technique", "Unknown")
@@ -585,6 +596,26 @@ async def mitre_heatmap(
             key = f"{tactic}::{technique}"
             if key not in tactic_map:
                 tactic_map[key] = {"tactic": tactic, "technique": technique, "name": name, "count": 0}
+            tactic_map[key]["count"] += 1
+
+    # Fallback: query alerts.mitre_tactic / alerts.mitre_technique when
+    # no triage verdicts exist yet (fresh deployment or empty triage table).
+    if not has_triage_data:
+        from shared.models.alert import Alert
+
+        alert_stmt = select(Alert.mitre_tactic, Alert.mitre_technique)
+        if tenant_id:
+            alert_stmt = alert_stmt.where(Alert.tenant_id == uuid.UUID(tenant_id))
+        alert_rows = (await db.execute(alert_stmt)).all()
+
+        for tactic, technique in alert_rows:
+            if not tactic and not technique:
+                continue
+            t = tactic or "Unknown"
+            tech = technique or "Unknown"
+            key = f"{t}::{tech}"
+            if key not in tactic_map:
+                tactic_map[key] = {"tactic": t, "technique": tech, "name": tech, "count": 0}
             tactic_map[key]["count"] += 1
 
     tactics_order = ["TA0001", "TA0002", "TA0003", "TA0004", "TA0005", "TA0006", "TA0007", "TA0008", "TA0009", "TA0010", "TA0011", "TA0040", "TA0043"]

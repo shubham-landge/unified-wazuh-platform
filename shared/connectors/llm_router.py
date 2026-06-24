@@ -59,8 +59,21 @@ def rule_historical_accuracy(rule_id: int | None) -> float | None:
     return None
 
 
-def asset_criticality(agent_id: str | None) -> int:
-    return 0
+async def asset_criticality(agent_id: str | None, db_session=None, tenant_id: str | None = None) -> int:
+    """Look up asset criticality from the assets table.
+
+    Delegates to :func:`shared.enrichment.asset.get_asset_criticality` for
+    the actual DB query. Returns 0 when no agent_id, no session, or no record.
+    """
+    if not agent_id or not db_session:
+        return 0
+    try:
+        from shared.enrichment.asset import get_asset_criticality as _real_crit
+        crit, _ = await _real_crit(db_session, agent_id, tenant_id or "")
+        return crit
+    except Exception as exc:
+        logger.debug("asset_criticality lookup failed for %s: %s", agent_id, exc)
+        return 0
 
 
 def is_burst_alert(alert) -> bool:
@@ -166,7 +179,8 @@ class TieredRouter:
             if alert.source_ip in known_bad:
                 score += 2
 
-        if asset_criticality(alert.agent_id) >= 4:
+        crit = await asset_criticality(alert.agent_id, db_session, tenant_id)
+        if crit >= 4:
             score += 2
 
         hist_acc = rule_historical_accuracy(alert.rule_id)

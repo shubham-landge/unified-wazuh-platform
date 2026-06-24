@@ -64,7 +64,13 @@ class WazuhIndexerConnector:
         index: str = "wazuh-alerts-*",
         lookback_hours: int = 24,
         size: int = 100,
+        scroll: str = "1m",
     ) -> list[dict]:
+        """Search alerts with scroll-based pagination.
+
+        Returns all matching documents across pages by iterating with the
+        Elasticsearch scroll API.
+        """
         try:
             async def _do():
                 client = await self._get_client()
@@ -80,27 +86,56 @@ class WazuhIndexerConnector:
                     "sort": [{"@timestamp": {"order": "desc"}}],
                     "size": size,
                 }
+                # Initial search with scroll
                 resp = await client.post(
-                    f"{self.base_url}/{index}/_search",
+                    f"{self.base_url}/{index}/_search?scroll={scroll}",
                     json=query,
                     headers={"Content-Type": "application/json"},
                 )
                 resp.raise_for_status()
                 data = resp.json()
+                scroll_id = data.get("_scroll_id")
                 hits = data.get("hits", {}).get("hits", [])
-                return [h.get("_source", {}) for h in hits]
+                documents = [h.get("_source", {}) for h in hits]
+
+                # Scroll until no more hits
+                while scroll_id and hits:
+                    scroll_resp = await client.post(
+                        f"{self.base_url}/_search/scroll",
+                        json={"scroll": scroll, "scroll_id": scroll_id},
+                        headers={"Content-Type": "application/json"},
+                    )
+                    scroll_resp.raise_for_status()
+                    data = scroll_resp.json()
+                    scroll_id = data.get("_scroll_id")
+                    hits = data.get("hits", {}).get("hits", [])
+                    documents.extend(h.get("_source", {}) for h in hits)
+
+                # Clear scroll context
+                if scroll_id:
+                    try:
+                        await client.delete(
+                            f"{self.base_url}/_search/scroll",
+                            json={"scroll_id": scroll_id},
+                            headers={"Content-Type": "application/json"},
+                        )
+                    except Exception:
+                        pass
+
+                return documents
             return await self._cb_call(_do)
         except Exception as e:
             logger.error("Failed to search alerts: %s", e)
             return []
 
-    async def search_vulnerabilities(self, size: int = 100) -> list[dict]:
+    async def search_vulnerabilities(self, size: int = 100, from_: int = 0) -> list[dict]:
         try:
             client = await self._get_client()
             query = {
                 "query": {"match_all": {}},
                 "sort": [{"@timestamp": {"order": "desc"}}],
                 "size": size,
+                "from": from_,
             }
             resp = await client.post(
                 f"{self.base_url}/wazuh-vulnerabilities-*/_search",

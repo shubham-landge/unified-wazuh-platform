@@ -149,7 +149,7 @@ class VulnIngester:
         all_docs = []
         offset = 0
         while True:
-            docs = await connector.search_vulnerabilities(size=BATCH_SIZE)
+            docs = await connector.search_vulnerabilities(size=BATCH_SIZE, from_=offset)
             if not docs:
                 break
             all_docs.extend(docs)

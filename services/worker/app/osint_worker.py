@@ -40,6 +40,9 @@ class OSINTWorker:
         if not target_id:
             return
 
+        target_type = msg.get("target_type", "username")
+        target_value = msg.get("target_value", "")
+
         try:
             async with self.session_factory() as session:
                 result = await session.execute(select(OsintTarget).where(OsintTarget.id == target_id))
@@ -49,11 +52,23 @@ class OSINTWorker:
                     return
 
                 connector = MaigretConnector()
-                lookup_value = target.target_value
-                results = await asyncio.wait_for(
-                    connector.lookup_username(lookup_value),
-                    timeout=settings.osint_sandbox_timeout,
-                )
+
+                if target_type == "email":
+                    results = await asyncio.wait_for(
+                        connector.lookup_email(target_value),
+                        timeout=settings.osint_sandbox_timeout,
+                    )
+                elif target_type == "domain":
+                    results = await asyncio.wait_for(
+                        connector.lookup_domain(target_value),
+                        timeout=settings.osint_sandbox_timeout,
+                    )
+                else:
+                    # Default: username
+                    results = await asyncio.wait_for(
+                        connector.lookup_username(target_value),
+                        timeout=settings.osint_sandbox_timeout,
+                    )
 
                 for item in results:
                     session.add(
@@ -68,7 +83,7 @@ class OSINTWorker:
                     )
 
                 await session.commit()
-                logger.info("Enriched OSINT target %s with %d results", target_id, len(results))
+                logger.info("Enriched OSINT target %s (%s) with %d results", target_id, target_type, len(results))
         except Exception as exc:
             logger.error("Failed to process OSINT target %s: %s", target_id, exc, exc_info=True)
             if self.redis_client:

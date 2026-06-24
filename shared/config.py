@@ -281,6 +281,13 @@ class Settings(BaseSettings):
     llm_model_top_k: int = 40
     llm_model_repeat_penalty: float = 1.15
 
+    # ── Shadow mode behavior ──
+    # When True (default), shadow-mode L0/L1 still runs the LLM and writes a
+    # verdict with shadow_action metadata so the dashboard shows a result instead
+    # of "pending forever".  Set to False to preserve the strict "log only, no
+    # result" contract.
+    shadow_still_triages: bool = True
+
     # ── LLM Stability (CPU-only hardening) ──
     # Keep the model resident in Ollama between requests. Without this the 8B
     # unloads after ~5 min idle and every cold request pays a 1-2 min load

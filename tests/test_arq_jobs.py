@@ -188,7 +188,7 @@ def test_worker_settings_has_expected_structure():
     assert WorkerSettings.max_tries == 3
     assert WorkerSettings.keep_result_seconds == 3600
     assert WorkerSettings.cron_jobs is not None
-    assert len(WorkerSettings.cron_jobs) == 2
+    assert len(WorkerSettings.cron_jobs) == 3
 
     # Cron jobs reference the expected coroutine functions
     cron_funcs = {c.coroutine.__name__ for c in WorkerSettings.cron_jobs}

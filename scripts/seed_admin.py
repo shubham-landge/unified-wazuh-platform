@@ -1,6 +1,7 @@
 """Seed the SOC platform with an admin user."""
 import asyncio
 import logging
+import os
 import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
@@ -12,8 +13,8 @@ from shared.models.user import User, ROLES
 logger = logging.getLogger(__name__)
 
 DEFAULT_TENANT_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
-ADMIN_EMAIL = "admin@company.com"
-ADMIN_PASSWORD = "admin123"
+ADMIN_EMAIL = os.environ.get("SEED_ADMIN_EMAIL", "admin@company.com")
+ADMIN_PASSWORD = os.environ.get("SEED_ADMIN_PASSWORD", "")
 
 
 async def seed():

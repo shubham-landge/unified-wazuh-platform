@@ -9,7 +9,7 @@ httpx==0.27.2
 python-dateutil>=2.9.0
 python-dotenv==1.0.1
 alembic==1.13.3
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.3.0  # pinned; see python-jose GHSA-84pw-4w6g-9x88
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 jinja2==3.1.4

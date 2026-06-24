@@ -164,6 +164,7 @@ class TestL0ShadowMode:
             "services.worker.app.triage_worker.settings",
         ) as mock_settings:
             mock_settings.automation_mode = "shadow"
+            mock_settings.shadow_still_triages = False
 
             await worker.process_message({"alert_id": str(alert.id), "manual": True})
 
@@ -240,6 +241,7 @@ class TestL1ShadowMode:
             "services.worker.app.triage_worker.settings",
         ) as mock_settings:
             mock_settings.automation_mode = "shadow"
+            mock_settings.shadow_still_triages = False
             mock_settings.auto_close_enabled = True
 
             await worker.process_message({"alert_id": str(alert.id), "manual": True})

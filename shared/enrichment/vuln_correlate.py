@@ -53,7 +53,7 @@ async def correlate(
             q = text("""
                 SELECT v.cve_id, v.epss_score, v.is_kev
                 FROM vulnerabilities v
-                WHERE v.agent_id = :agent_id
+                WHERE v.asset_id = :agent_id
                   AND v.status IN ('open', 'active')
                   AND (:cve IS NULL OR v.cve_id = :cve)
                 LIMIT 1

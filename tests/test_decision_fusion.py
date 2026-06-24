@@ -153,7 +153,7 @@ class TestGeneral:
         ctx = EnrichmentContext()
         result = fuse_verdict({}, ctx, risk_score=10)
         assert result["severity"] == "medium"
-        assert result["confidence"] == pytest.approx(0.5)
+        assert result["confidence"] == pytest.approx(0.0)
         assert result["fusion_applied"] is False
 
     def test_multiple_rules_can_trigger(self):

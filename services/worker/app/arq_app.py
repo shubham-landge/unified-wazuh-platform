@@ -95,6 +95,96 @@ async def health_cron(ctx) -> None:
     logger.info("Health: triage_queue=%d", triage_depth)
 
 
+async def usage_aggregation_cron(ctx) -> None:
+    """Aggregate per-tenant usage counters and write a TenantUsage summary.
+
+    Runs every hour.  Counts alerts, cases, agents, and AI triage rows for
+    the current hour window and upserts a ``TenantUsage`` row per tenant.
+    """
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import select, func
+    from shared.models.alert import Alert
+    from shared.models.case import Case
+    from shared.models.asset import Asset
+    from shared.models.ai_triage_result import AiTriageResult
+    from shared.models.usage import TenantUsage
+
+    engine = _get_engine()
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    redis_client = await _get_redis()
+
+    now = datetime.now(timezone.utc)
+    period_start = now.replace(minute=0, second=0, microsecond=0)
+    period_end = period_start + timedelta(hours=1)
+
+    async with factory() as session:
+        # Discover tenants that have data this hour.
+        tenant_rows = await session.execute(
+            select(Alert.tenant_id).distinct()
+            .where(Alert.created_at >= period_start, Alert.created_at < period_end)
+        )
+        tenant_ids = [row[0] for row in tenant_rows if row[0]]
+
+        for tid in tenant_ids:
+            # Count alerts
+            alert_count = (
+                await session.execute(
+                    select(func.count(Alert.id))
+                    .where(Alert.tenant_id == tid, Alert.created_at >= period_start, Alert.created_at < period_end)
+                )
+            ).scalar() or 0
+
+            # Count cases
+            case_count = (
+                await session.execute(
+                    select(func.count(Case.id))
+                    .where(Case.tenant_id == tid, Case.created_at >= period_start, Case.created_at < period_end)
+                )
+            ).scalar() or 0
+
+            # Count agents
+            agent_count = (
+                await session.execute(
+                    select(func.count(Asset.id))
+                    .where(Asset.tenant_id == tid)
+                )
+            ).scalar() or 0
+
+            # Count AI triages
+            triage_count = (
+                await session.execute(
+                    select(func.count(AiTriageResult.id))
+                    .where(
+                        AiTriageResult.tenant_id == tid,
+                        AiTriageResult.created_at >= period_start,
+                        AiTriageResult.created_at < period_end,
+                    )
+                )
+            ).scalar() or 0
+
+            usage = TenantUsage(
+                tenant_id=tid,
+                period_start=period_start,
+                period_end=period_end,
+                alerts_count=alert_count,
+                api_calls_count=0,          # populated by UsageMeteringMiddleware
+                cases_count=case_count,
+                agents_count=agent_count,
+                storage_mb=0.0,
+                ai_triage_count=triage_count,
+                report_count=0,
+                total_score=0,
+            )
+            session.add(usage)
+
+        await session.commit()
+        if tenant_ids:
+            logger.info("Usage aggregation: %d tenant(s) recorded", len(tenant_ids))
+
+    # Track last-run timestamp for monitoring.
+    await redis_client.set("usage_aggregation:last_run", now.isoformat())
+
+
 # ── Main job functions ─────────────────────────────────────────────────────
 
 async def triage_job(ctx, alert_id: str, **kwargs: Any) -> dict[str, Any]:
@@ -183,8 +273,9 @@ class WorkerSettings:
     keep_result_seconds = settings.arq_keep_result_seconds
 
     cron_jobs = [
-        cron(reaper_cron, second=0),       # every 60 seconds
-        cron(health_cron, minute="*/2"),    # every 2 minutes
+        cron(reaper_cron, second=0),                # every 60 seconds
+        cron(health_cron, minute="*/2"),             # every 2 minutes
+        cron(usage_aggregation_cron, minute="0"),    # every hour
     ]
 
     @staticmethod

@@ -29,6 +29,7 @@ async def main():
         ("app.feedback_worker", "FeedbackWorker"),
         ("app.rag_worker", "RAGWorker"),
         ("app.agent_worker", "AgentWorker"),
+        ("app.asset_sync_worker", "AssetSyncWorker"),
         ("app.ticketing_worker", "TicketingWorker"),
         ("app.approval_worker", "ApprovalWorker"),
         ("app.osint_worker", "OSINTWorker"),

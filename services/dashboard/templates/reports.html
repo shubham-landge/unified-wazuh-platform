@@ -132,12 +132,15 @@
                             <td class="py-3 font-mono text-secondary">{{ rep.format }}</td>
                             <td class="py-3 font-mono text-[10px] text-secondary">{{ rep.created_at[:19].replace('T', ' ') }}</td>
                             <td class="py-3">
-                                <span class="badge-dot badge-dot-open">
+                                <span class="badge-dot {% if rep.status == 'failed' %}badge-dot-critical{% elif rep.status == 'completed' %}badge-dot-closed{% else %}badge-dot-open{% endif %}">
                                     {{ rep.status | capitalize }}
                                 </span>
+                                {% if rep.status == 'failed' and rep.error_message %}
+                                <p class="text-[9px] text-accent-red mt-0.5 max-w-[120px] truncate" title="{{ rep.error_message }}">{{ rep.error_message }}</p>
+                                {% endif %}
                             </td>
                             <td class="py-3 text-right">
-                                <a href="#" class="px-2.5 py-1.5 bg-elevated hover:bg-white/5 border border-white/5 hover:border-white/10 rounded text-[10px] font-bold text-white transition-all">
+                                <a href="/reports/{{ rep.id }}/download" class="px-2.5 py-1.5 bg-elevated hover:bg-white/5 border border-white/5 hover:border-white/10 rounded text-[10px] font-bold text-white transition-all">
                                     Download ({{ rep.size or 'N/A' }})
                                 </a>
                             </td>

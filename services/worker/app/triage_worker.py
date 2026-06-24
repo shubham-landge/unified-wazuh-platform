@@ -224,27 +224,53 @@ class TriageWorker:
                 # Skip L0/L1 suppression when the analyst explicitly requested
                 # triage via the "Analyze" button (manual + force_fast).
                 skip_gate = manual and force_fast_req
+                _shadow_pass = False
+                _shadow_reason = None
+                _shadow_action = None
                 if not skip_gate:
                     if decision_result.level == DecisionLevel.L0_SUPPRESS:
                         logger.info("L0 suppress: alert %s", alert_id)
-                        if self._is_shadow_mode():
+                        if self._is_shadow_mode() and getattr(settings, 'shadow_still_triages', True):
+                            _shadow_pass = True
+                            _shadow_reason = decision_result.reason
+                            _shadow_action = "suppress"
+                            logger.info(
+                                "[SHADOW] would suppress alert %s: %s (score=%d)"
+                                " — still triaging for measurement",
+                                alert_id, decision_result.reason, score,
+                            )
+                        elif self._is_shadow_mode():
                             logger.info(
                                 "[SHADOW] would suppress alert %s: %s (score=%d)",
                                 alert_id, decision_result.reason, score,
                             )
+                            return
                         else:
                             alert.status = "suppressed"
                             await session.commit()
-                        return
+                            return
 
                     if decision_result.level == DecisionLevel.L1_AUTO_CLOSE:
                         eligible, reason = should_auto_close(ctx, score, alert.rule_level)
                         if eligible and settings.auto_close_enabled:
-                            await execute_auto_close(
-                                session, str(alert_id), str(alert.tenant_id),
-                                reason, score, ctx,
-                            )
-                            return
+                            if self._is_shadow_mode() and getattr(settings, 'shadow_still_triages', True):
+                                _shadow_pass = True
+                                _shadow_reason = reason
+                                _shadow_action = "auto_close"
+                                logger.info(
+                                    "[SHADOW] would auto-close alert %s: %s (score=%d)"
+                                    " — still triaging for measurement",
+                                    alert_id, reason, score,
+                                )
+                            else:
+                                # Strict shadow (execute_auto_close logs only) or
+                                # enforce (execute_auto_close persists).  The
+                                # function handles shadow mode internally.
+                                await execute_auto_close(
+                                    session, str(alert_id), str(alert.tenant_id),
+                                    reason, score, ctx,
+                                )
+                                return
 
                 # L3/L4: deterministic verdict, fast tier for narrative only
                 l3_l4_deterministic = decision_result.level in (
@@ -378,6 +404,15 @@ class TriageWorker:
                         result_data["category"] = decision_result.auto_verdict
                         result_data["escalation_required"] = True
                         result_data["confidence"] = max(result_data.get("confidence", 0.7), 0.90)
+
+                # ── Shadow pass-through metadata ──
+                # When shadow_still_triages is active, L0/L1 decisions fell through
+                # to the LLM. Tag the result so the UI can display "would-suppress"
+                # or "would-auto-close" instead of a misleading "pending 50%".
+                if _shadow_pass:
+                    result_data["shadow_action"] = _shadow_action
+                    result_data["shadow_reason"] = _shadow_reason
+                    result_data["confidence"] = 0.0  # no real confidence for shadow actions
 
                 # ── Output validation gate ──
                 # Validate the fully-processed LLM result (fusion + overrides

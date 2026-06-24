@@ -137,6 +137,9 @@ class AlertPoller:
         dst_ip = raw.get("dstip") or data.get("dstip")
         mitre = rule.get("mitre", {})
 
+        # Extract Sysmon / Windows event fields from nested data.win
+        win_event = data.get("win", {}).get("event", {}) if isinstance(data.get("win"), dict) else {}
+
         def _join(v):
             if isinstance(v, list):
                 return ", ".join(str(x) for x in v if x)
@@ -157,12 +160,22 @@ class AlertPoller:
             agent_name=agent.get("name"),
             agent_ip=agent.get("ip"),
             source_ip=src_ip,
+            source_port=raw.get("srcport") or data.get("srcport"),
             destination_ip=dst_ip,
+            destination_port=raw.get("dstport") or data.get("dstport"),
+            protocol=raw.get("protocol") or data.get("protocol"),
             user_name=data.get("user"),
-            process_name=data.get("process") or data.get("win", {}).get("event", {}).get("processName"),
-            file_name=data.get("file") or data.get("win", {}).get("event", {}).get("fileName"),
-            file_hash=data.get("hash") or data.get("win", {}).get("event", {}).get("hash"),
+            process_name=data.get("process") or win_event.get("processName"),
+            process_pid=data.get("process_pid") or win_event.get("processId"),
+            file_path=data.get("file_path") or win_event.get("filePath"),
+            file_name=data.get("file") or win_event.get("fileName"),
+            file_hash=data.get("hash") or win_event.get("hash"),
             event_id=raw.get("id"),
+            event_type=raw.get("type") or data.get("type"),
+            event_action=data.get("action") or win_event.get("eventAction"),
+            log_source=raw.get("log_source") or data.get("log_source"),
+            source_type="endpoint",
+            principal=raw.get("principal") or data.get("principal"),
             alert_timestamp=self._parse_timestamp(raw.get("timestamp")),
             raw_alert_redacted=self._redact_alert(raw),
         )

@@ -52,7 +52,7 @@ def fuse_verdict(
     fused["fusion_overrides"] = []
 
     severity = fused.get("severity", "medium") or "medium"
-    confidence = fused.get("confidence", 0.5) or 0.5
+    confidence = fused.get("confidence", 0.0) or 0.0
     overrides: list[str] = []
 
     # ---- Rule 1: benign → suspicious when TI says known-bad ----------------

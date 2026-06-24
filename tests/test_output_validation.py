@@ -296,7 +296,7 @@ def test_triageresult_defaults_applied():
     result = TriageResult.model_validate(minimal)
     assert result.category == "unknown"
     assert result.severity == "medium"
-    assert result.confidence == 0.5
+    assert result.confidence == 0.0
     assert result.false_positive_likelihood == 0.3
     assert result.mitre_mapping == []
     assert result.investigation_steps == []
@@ -466,7 +466,7 @@ def test_validate_triage_output_default_minimal():
     assert "_validation_error" not in result
     assert result["category"] == "unknown"
     assert result["severity"] == "medium"
-    assert result["confidence"] == 0.5
+    assert result["confidence"] == 0.0
     assert result["success"] is True
 
 
