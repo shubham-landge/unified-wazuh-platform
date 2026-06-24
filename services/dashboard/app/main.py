@@ -1157,11 +1157,22 @@ async def create_exception(request: Request):
 
 @app.get("/playbooks", response_class=HTMLResponse)
 async def playbooks_page(request: Request):
-    store = get_store()
+    playbooks = []
+    runs = []
+    try:
+        pb_resp = await api_request("GET", "/playbooks?limit=100", request=request)
+        playbooks = (pb_resp or {}).get("playbooks", [])
+    except Exception:
+        pass
+    try:
+        runs_resp = await api_request("GET", "/playbooks/runs?limit=50", request=request)
+        runs = (runs_resp or {}).get("runs", [])
+    except Exception:
+        pass
     return templates.TemplateResponse("playbooks.html", {
         "request": request,
-        "playbooks": store.get("playbooks", []),
-        "runs": store.get("playbook_runs", []),
+        "playbooks": playbooks,
+        "runs": runs,
         "page": "playbooks"
     })
 
@@ -1175,67 +1186,55 @@ async def save_playbook(request: Request):
         payload = {
             "name": form_data.get("name"),
             "description": form_data.get("description"),
-            "nodes": json.loads(form_data.get("nodes", "[]")),
-            "enabled": form_data.get("enabled") == "on" or form_data.get("enabled") == "true"
+            "actions": json.loads(form_data.get("nodes", "[]")),
+            "is_active": True,
         }
-    
-    store = get_store()
-    new_play = {
-        "id": f"play-{int(datetime.now().timestamp())}",
-        "name": payload.get("name"),
-        "description": payload.get("description"),
-        "nodes": payload.get("nodes", []),
-        "enabled": payload.get("enabled", True)
-    }
-    store.setdefault("playbooks", []).append(new_play)
-    save_store(store)
+    try:
+        await api_request("POST", "/playbooks", json_data=payload, request=request)
+    except Exception as e:
+        logger.warning("Failed to save playbook via API: %s", e)
     return RedirectResponse(url="/playbooks", status_code=303)
 
 
 @app.post("/playbooks/{playbook_id}/toggle")
 async def toggle_playbook(request: Request, playbook_id: str):
-    store = get_store()
-    for play in store.setdefault("playbooks", []):
-        if play["id"] == playbook_id:
-            play["enabled"] = not play["enabled"]
-            break
-    save_store(store)
+    try:
+        pb_resp = await api_request("GET", f"/playbooks?limit=100", request=request)
+        playbooks = (pb_resp or {}).get("playbooks", [])
+        current = next((p for p in playbooks if p.get("id") == playbook_id), None)
+        if current is not None:
+            new_active = not current.get("is_active", True)
+            await api_request("PATCH", f"/playbooks/{playbook_id}", json_data={"is_active": new_active}, request=request)
+    except Exception as e:
+        logger.warning("Failed to toggle playbook: %s", e)
     return RedirectResponse(url="/playbooks", status_code=303)
 
 
 @app.post("/playbooks/{playbook_id}/delete")
 async def delete_playbook(request: Request, playbook_id: str):
-    store = get_store()
-    store["playbooks"] = [p for p in store.setdefault("playbooks", []) if p["id"] != playbook_id]
-    save_store(store)
+    try:
+        await api_request("DELETE", f"/playbooks/{playbook_id}", request=request)
+    except Exception as e:
+        logger.warning("Failed to delete playbook: %s", e)
     return RedirectResponse(url="/playbooks", status_code=303)
 
 
 @app.post("/playbooks/{playbook_id}/run")
 async def run_playbook_manual(request: Request, playbook_id: str):
-    store = get_store()
-    play = next((p for p in store.setdefault("playbooks", []) if p["id"] == playbook_id), None)
-    if not play:
-        return JSONResponse({"status": "error", "message": "Playbook not found"}, status_code=404)
-        
-    new_run = {
-        "id": f"run-{int(datetime.now().timestamp())}",
-        "playbook_name": play["name"],
-        "trigger": "Manual Operator Trigger",
-        "started_at": datetime.now().isoformat() + "Z",
-        "duration": "3.1s",
-        "status": "success",
-        "logs": [
-            f"{datetime.now().strftime('%H:%M:%S')} - Playbook '{play['name']}' manually executed.",
-            f"{datetime.now().strftime('%H:%M:%S')} - Verifying workflow triggers and conditions...",
-            f"{datetime.now().strftime('%H:%M:%S')} - Running nodes sequence (Total: {len(play['nodes'])} nodes).",
-            f"{datetime.now().strftime('%H:%M:%S')} - Completed manual playbook execution."
-        ]
-    }
-    store.setdefault("playbook_runs", []).insert(0, new_run)
-    save_store(store)
+    try:
+        run_resp = await api_request("POST", f"/playbooks/{playbook_id}/run", json_data={"context": {}}, request=request)
+        run_data = (run_resp or {}).get("run", {})
+        if run_data:
+            headers = {"X-Toast": json.dumps({"type": "success", "message": "Playbook queued for execution!"})}
+            return HTMLResponse(
+                status_code=200,
+                content="<script>window.location.reload();</script>",
+                headers=headers
+            )
+    except Exception as e:
+        logger.warning("Failed to run playbook: %s", e)
     
-    headers = {"X-Toast": json.dumps({"type": "success", "message": f"Playbook '{play['name']}' executed successfully!"})}
+    headers = {"X-Toast": json.dumps({"type": "error", "message": "Failed to queue playbook execution."})}
     return HTMLResponse(
         status_code=200,
         content="<script>window.location.reload();</script>",

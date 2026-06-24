@@ -192,11 +192,11 @@
                         <tbody class="divide-y divide-white/5">
                             {% for run in runs %}
                             <tr class="hover:bg-white/5 transition-all">
-                                <td class="py-3 font-semibold text-primary">{{ run.playbook_name }}</td>
-                                <td class="py-3 text-secondary">{{ run.trigger }}</td>
-                                <td class="py-3 font-mono text-secondary">{{ run.duration }}</td>
+                                <td class="py-3 font-semibold text-primary">{{ run.playbook_id[:8] + '...' if run.playbook_id else 'N/A' }}</td>
+                                <td class="py-3 text-secondary">{{ run.status }}</td>
+                                <td class="py-3 font-mono text-secondary">{{ run.actions_completed }}/{{ run.actions_total }} actions</td>
                                 <td class="py-3">
-                                    <span class="badge-dot badge-dot-{% if run.status == 'success' %}open{% else %}critical{% endif %}">
+                                    <span class="badge-dot {% if run.status == 'completed' %}badge-dot-closed{% elif run.status == 'failed' %}badge-dot-critical{% else %}badge-dot-open{% endif %}">
                                         {{ run.status | capitalize }}
                                     </span>
                                 </td>
@@ -219,20 +219,36 @@
 
                 <div x-show="viewRunLogs" class="space-y-4">
                     <div>
-                        <span class="text-[10px] text-muted block font-bold uppercase tracking-wider">Playbook Name:</span>
-                        <span class="text-xs font-bold text-white block mt-0.5" x-text="viewRunLogs ? viewRunLogs.playbook_name : ''"></span>
+                        <span class="text-[10px] text-muted block font-bold uppercase tracking-wider">Status:</span>
+                        <span class="text-xs font-bold text-white block mt-0.5" x-text="viewRunLogs ? viewRunLogs.status : ''"></span>
                     </div>
                     <div>
-                        <span class="text-[10px] text-muted block font-bold uppercase tracking-wider">Trigger Source:</span>
-                        <span class="text-xs text-secondary block mt-0.5" x-text="viewRunLogs ? viewRunLogs.trigger : ''"></span>
+                        <span class="text-[10px] text-muted block font-bold uppercase tracking-wider">Actions:</span>
+                        <span class="text-xs text-secondary block mt-0.5" x-text="viewRunLogs ? (viewRunLogs.actions_completed + '/' + viewRunLogs.actions_total + ' completed') : ''"></span>
+                    </div>
+                    <div x-show="viewRunLogs && viewRunLogs.started_at">
+                        <span class="text-[10px] text-muted block font-bold uppercase tracking-wider">Started:</span>
+                        <span class="text-xs text-secondary block mt-0.5" x-text="viewRunLogs.started_at"></span>
+                    </div>
+                    <div x-show="viewRunLogs && viewRunLogs.completed_at">
+                        <span class="text-[10px] text-muted block font-bold uppercase tracking-wider">Completed:</span>
+                        <span class="text-xs text-secondary block mt-0.5" x-text="viewRunLogs.completed_at"></span>
+                    </div>
+                    <div x-show="viewRunLogs && viewRunLogs.error">
+                        <span class="text-[10px] text-muted block font-bold uppercase tracking-wider">Error:</span>
+                        <span class="text-xs text-accent-red block mt-0.5" x-text="viewRunLogs.error"></span>
                     </div>
 
-                    <div class="space-y-2 pt-2 border-t border-white/5">
-                        <span class="text-[10px] text-muted font-bold uppercase tracking-wider block mb-2">Step Log Execution Console</span>
-                        <div class="bg-deep/50 border border-white/5 rounded-lg p-3 font-mono text-[10px] text-accent-green space-y-2 h-48 overflow-y-auto leading-relaxed">
-                            <template x-for="log in (viewRunLogs ? viewRunLogs.logs : [])">
-                                <div class="border-b border-white/5 pb-1 last:border-0" x-text="log"></div>
-                            </template>
+                    <div class="space-y-2 pt-2 border-t border-white/5" x-show="viewRunLogs && viewRunLogs.result">
+                        <span class="text-[10px] text-muted font-bold uppercase tracking-wider block mb-2">Execution Result</span>
+                        <div class="bg-deep/50 border border-white/5 rounded-lg p-3 font-mono text-[10px] text-accent-green h-48 overflow-y-auto leading-relaxed">
+                            <pre x-text="JSON.stringify(viewRunLogs.result, null, 2)"></pre>
+                        </div>
+                    </div>
+                    <div class="space-y-2 pt-2 border-t border-white/5" x-show="!viewRunLogs || !viewRunLogs.result">
+                        <span class="text-[10px] text-muted font-bold uppercase tracking-wider block mb-2">Execution Result</span>
+                        <div class="bg-deep/50 border border-white/5 rounded-lg p-3 font-mono text-[10px] text-muted h-48 overflow-y-auto leading-relaxed">
+                            <p>No result data available yet. The playbook may still be running or has not produced output.</p>
                         </div>
                     </div>
                 </div>

@@ -23,6 +23,7 @@ from app.routers import (
     reports,
     notifications,
     soar,
+    playbooks,
     threat_intel,
     ueba,
     users,
@@ -88,6 +89,7 @@ app.include_router(audit.router)
 app.include_router(reports.router)
 app.include_router(notifications.router)
 app.include_router(soar.router)
+app.include_router(playbooks.router)
 app.include_router(threat_intel.router)
 app.include_router(ueba.router)
 app.include_router(users.router)
